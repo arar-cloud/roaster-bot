@@ -40,7 +40,6 @@ Want to make it even meaner?
     Create a `.env` file:
     ```env
     WEBHOOK_SECRET=your_secret_here
-    OPENAI_API_KEY=your_openai_key
     ```
 
 4.  **Run Locally**
