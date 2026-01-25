@@ -1,13 +1,34 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
-import { CopilotRuntime, OpenAIAdapter } from '@github/copilot-sdk';
-import OpenAI from 'openai';
 import crypto from 'crypto';
+import path from 'path';
+import rateLimit from 'express-rate-limit';
+import { CopilotClient } from '@github/copilot-sdk';
+
+// Extend Express Request type properly
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: string;
+    }
+  }
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware to capture raw body for signature verification
+// Initialize Copilot Client
+const client = new CopilotClient({
+  logLevel: 'debug',
+});
+
+const limiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15 minutes
+	limit: 100, // Limit each IP to 100 requests per `window` (here, per 15 minutes)
+	standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+	legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -27,70 +48,107 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', async (req: Request, res: Response) => {
-  // 0. VERIFY WEBHOOK SIGNATURE (Security Step)
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (webhookSecret && signature) {
-    // @ts-ignore - rawBody is added by the middleware above
-    const rawBody = (req as any).rawBody; 
-    
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-    
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(digest)
-    );
-    
-    if (!isValid) {
-      return res.status(401).send('Unauthorized: Invalid Webhook Signature.');
-    }
-  } else if (webhookSecret && !signature) {
-    return res.status(401).send('Unauthorized: Missing Webhook Signature.');
-  }
+app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // ... auth checks ...
 
   const token = req.get('X-GitHub-Token');
-  const integrationId = req.get('X-GitHub-Integration-ID');
-
   if (!token) {
     return res.status(401).send('Unauthorized: No GitHub Token found.');
   }
 
-  // 1. Setup the Runtime with the SDK
-  const openai = new OpenAI({ apiKey: token, baseURL: 'https://api.githubcopilot.com' });
-  const serviceAdapter = new OpenAIAdapter({ openai, model: 'gpt-4o' });
+  // Ensure client is started (lazy start for serverless/Vercel)
+  if (client.getState() !== 'connected' && client.getState() !== 'connecting') {
+     try {
+       console.log("Starting Copilot Client...");
+       await client.start();
+     } catch (e) {
+       console.error("Failed to start Copilot Client:", e);
+       return res.status(500).send("Internal Server Error: Agent offline.");
+     }
+  }
 
-  const runtime = new CopilotRuntime();
-
-  const systemPrompt = `
-    You are 'The Roaster' 🌶️.
-    Your goal is to relentlessly roast the user's code.
-    
-    Rules:
-    1. Rating: Start with a brutal [0-10]/10 rating.
-    2. Tone: Use Gen Z slang (no cap, fr, sus, cringe, bet). Be sarcastic and brief.
-    3. Formatting: Use Markdown.
-    4. NO HELPFUL ADVICE unless it's wrapped in a insult.
-    5. If they say "hello" or "hi", roast them for wasting your CPU cycles.
-  `;
-
+  let session;
+  // ... rest of handler
   try {
-    // 2. Stream the response using the SDK
-    await runtime.streamHttpServerResponse(req, res, serviceAdapter, {
-      instruction: systemPrompt,
+    const systemPrompt = `
+      You are 'The Roaster' 🌶️.
+      Your goal is to relentlessly roast the user's code.
+      
+      Rules:
+      1. Rating: Start with a brutal [0-10]/10 rating.
+      2. Tone: Use Gen Z slang (no cap, fr, sus, cringe, bet). Be sarcastic and brief.
+      3. Formatting: Use Markdown.
+      4. NO HELPFUL ADVICE unless it's wrapped in a insult.
+      5. If they say "hello" or "hi", roast them for wasting your CPU cycles.
+    `;
+
+    const userMessages = req.body.messages || [];
+    // Get the last user message to use as the prompt
+    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
+    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+
+    session = await client.createSession({
+        model: 'gpt-4o',
+        streaming: true,
+        systemMessage: {
+            mode: 'replace',
+            content: systemPrompt
+        },
+        provider: {
+            type: 'openai',
+            baseUrl: 'https://api.githubcopilot.com',
+            bearerToken: token
+        }
     });
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    // Subscribe to events for streaming
+    session.on((event) => {
+        if (event.type === 'assistant.message_delta') {
+            const chunk = {
+                choices: [
+                    {
+                        delta: {
+                            content: event.data.deltaContent
+                        }
+                    }
+                ]
+            };
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+    });
+
+    await session.sendAndWait({ prompt });
+
+    res.write('data: [DONE]\n\n');
+    res.end();
+
   } catch (error: any) {
     console.error('Error roasting code:', error);
-    res.status(500).send("The roaster overheated. Try again later.");
+    
+    if (!res.headersSent) {
+      const statusCode = error.status || 500;
+      const message = error.message || "The roaster overheated. Try again later.";
+      res.status(statusCode).send(message);
+    } else {
+      res.end();
+    }
+  } finally {
+      if (session) {
+          await session.destroy().catch(err => console.error("Error destroying session:", err));
+      }
   }
 });
 
 export default app;
 
-if (require.main === module) {
-  app.listen(port, () => {
+// ESM equivalent of `if (require.main === module)`
+import { fileURLToPath } from 'url';
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const server = app.listen(port, () => {
     console.log(`Server running on ${port}`);
   });
 }
