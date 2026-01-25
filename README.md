@@ -17,8 +17,8 @@
 
 1.  **Install the Extension:** (Link to marketplace listing if applicable, or local install instructions)
 2.  **Open GitHub Copilot Chat** in VS Code or Visual Studio.
-3.  **Mention the bot:** Type `@roaster-bot` followed by your code or question.
-    -   *Example:* `@roaster-bot Rate this function.`
+3.  **Mention the bot:** Type `@the-roaster-bot` followed by your code or question.
+    -   *Example:* `@the-roaster-bot Rate this function.`
 4.  **Cry:** (Optional but recommended).
 
 ## 🛠️ Local Development
