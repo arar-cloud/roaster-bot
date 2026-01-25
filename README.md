@@ -15,7 +15,7 @@
 
 ## 🚀 Installation
 
-1.  **Install the Extension:** (Link to marketplace listing if applicable, or local install instructions)
+1.  **Install the Extension:** [Install Roaster Bot](https://github.com/apps/roaster-bot)
 2.  **Open GitHub Copilot Chat** in VS Code or Visual Studio.
 3.  **Mention the bot:** Type `@roaster-bot` followed by your code or question.
     -   *Example:* `@roaster-bot Rate this function.`
