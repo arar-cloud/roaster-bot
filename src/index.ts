@@ -57,6 +57,10 @@ app.get('/', (req, res) => {
   `);
 });
 
+app.post('/webhook', webhookLimiter, (req, res) => {
+  res.status(200).send('Webhook received');
+});
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
