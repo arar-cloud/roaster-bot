@@ -66,7 +66,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const client = new CopilotClient({
     env: {
       GITHUB_TOKEN: token,
-      ...process.env
+      GITHUB_API_VERSION: process.env.GITHUB_API_VERSION || '2024-01-01'
     }
   });
   
