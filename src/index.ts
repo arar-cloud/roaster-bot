@@ -23,6 +23,13 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
