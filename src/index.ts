@@ -269,7 +269,16 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     return;
   }
   const expectedToken = process.env.API_TOKEN || '';
+  if (!expectedToken) {
+    res.status(500).json({ error: 'Server misconfigured' });
+    return;
+  }
   const token = authHeader.slice(7);
+  if (!token || token.length < 10) {
+    res.status(401).json({ error: 'Unauthorized: invalid token format' });
+    return;
+  }
+  // Constant-time comparison to prevent timing attacks
   if (!crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken))) {
     res.status(401).json({ error: 'Unauthorized: Invalid token' });
     return;
