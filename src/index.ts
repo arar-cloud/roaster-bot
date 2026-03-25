@@ -129,6 +129,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+app.post('/roast', async (req: Request, res: Response) => {
+  // Validate authentication token
+  const authHeader = req.headers.authorization as string;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
+    return;
+  }
+  const expectedToken = process.env.API_TOKEN || '';
+  const token = authHeader.slice(7);
+  if (!crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken))) {
+    res.status(401).json({ error: 'Unauthorized: Invalid token' });
+    return;
+  }
+  // Sanitize and validate input
+  let { code } = req.body;
+  if (typeof code !== 'string' || code.length === 0 || code.length > 50000) {
+    res.status(400).json({ error: 'Bad request: Invalid code parameter' });
+    return;
+  }
+  code = code.trim();
+  res.json({ message: 'Code received and validated', length: code.length });
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
