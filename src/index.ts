@@ -89,7 +89,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) {
+    return res.status(401).json({ error: 'Missing X-GitHub-Token header' });
+  }
+  
+  // Validate token format (GitHub tokens are base64 or standard format)
+  if (typeof token !== 'string' || token.length === 0 || token.length > 256) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
+  
+  // Do NOT log or expose tokens in response headers
+  if (token.includes('\n') || token.includes('\r')) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
