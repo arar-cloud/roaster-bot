@@ -26,8 +26,24 @@ const limiter = rateLimit({
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
-  }
+  },
+  limit: '10kb' // Prevent payload bomb attacks
 }));
+
+// Input validation middleware
+app.use((req: Request, Response, next) => {
+  if (req.method === 'POST' && req.path === '/webhook') {
+    // Validate webhook event structure
+    const event = req.get('x-github-event');
+    if (!event || typeof event !== 'string' || event.length > 50) {
+      return res.status(400).send('Invalid webhook event header');
+    }
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).send('Invalid JSON payload');
+    }
+  }
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send(`
