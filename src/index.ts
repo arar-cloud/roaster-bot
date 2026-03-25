@@ -32,6 +32,16 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Token verification middleware
+const verifyToken = (req: Request, res: Response, next: Function) => {
+  const token = req.headers['x-auth-token'] as string;
+  const expectedToken = process.env.ROASTER_AUTH_TOKEN;
+  if (!token || !expectedToken || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken))) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -179,7 +189,7 @@ const roastLimiter = rateLimit({
   limit: 10,
 });
 
-app.post('/roast', roastLimiter, async (req: Request, res: Response) => {
+app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response) => {
   // Validate authentication token
   const authHeader = req.headers.authorization as string;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
