@@ -295,23 +295,20 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     "'": '&#39;'
   }[char] || char));
   
-  // Security: safe code parsing without eval (issue-7c08b303ad)
-  // Replace with AST parsing instead of pattern matching
-  let isValidCode = true;
-  try {
-    // Use simple validation: check for eval/Function constructor patterns
-    const forbiddenPatterns = /(\beval\s*\(|new\s+Function\s*\(|\bsetTimeout\s*\(|\bsetInterval\s*\()/gi;
-    if (forbiddenPatterns.test(sanitized)) {
-      isValidCode = false;
-    }
-  } catch (e) {
-    isValidCode = false;
+  // Security: safe code parsing without eval (issue-f772c76b6c)
+  // Reject dangerous eval/Function patterns before any processing
+  const forbiddenPatterns = /(\beval\s*\(|new\s+Function\s*\(|\brequire\s*\(|\bimport\s+|\bchild_process|\bfs\.|\bos\.)/gi;
+  if (forbiddenPatterns.test(sanitized)) {
+    return res.status(400).json({ error: 'Code contains forbidden patterns: eval, Function, require, import, or system module access' });
   }
   
-  if (!isValidCode) {
-    res.status(400).json({ error: 'Bad request: Code contains unsafe patterns (eval, Function constructor, or dynamic execution)' });
-    return;
-  }
+  // Safe: perform static analysis only, no execution
+  const codeAnalysis = {
+    analyzed: true,
+    length: sanitized.length,
+    preview: sanitized.substring(0, 100),
+    timestamp: new Date().toISOString()
+  };
 
   try {
     const client = new CopilotClient();
@@ -322,7 +319,7 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     if (!roastResult || typeof roastResult !== 'object') {
       throw new Error('Invalid response from AI client');
     }
-    res.json(roastResult);
+    res.json({ ...roastResult, codeAnalysis });
   } catch (error) {
     res.status(500).json({ error: 'Failed to roast code' });
   }
