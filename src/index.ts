@@ -129,7 +129,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.post('/roast', async (req: Request, res: Response) => {
+const roastLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+});
+
+app.post('/roast', roastLimiter, async (req: Request, res: Response) => {
   // Validate authentication token
   const authHeader = req.headers.authorization as string;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
