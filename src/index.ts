@@ -37,7 +37,21 @@ if (missingVars.length > 0) {
 const app = express();
 const port = process.env.PORT || 3000;
 
-
+// Middleware to preserve raw body for webhook signature verification
+app.use(express.raw({type: 'application/json'}));
+app.use((req: Request, res: Response, next: any) => {
+  if (req.is('application/json')) {
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => {
+      (req as any).rawBody = data;
+      req.body = JSON.parse(data);
+      next();
+    });
+  } else {
+    next();
+  }
+});
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
