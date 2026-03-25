@@ -84,6 +84,31 @@ const verifyWebhookSignature = (req: express.Request, res: express.Response, nex
   next();
 };
 
+// Add raw body middleware for webhook signature verification
+app.use(express.raw({ type: 'application/json' }));
+
+// Middleware to verify webhook signature
+const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const signature = req.headers['x-hub-signature-256'] as string;
+  const secret = process.env.WEBHOOK_SECRET;
+
+  if (!signature || !secret) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const bodyBuffer = req.body instanceof Buffer ? req.body : Buffer.from(JSON.stringify(req.body));
+  const hash = crypto.createHmac('sha256', secret).update(bodyBuffer).digest('hex');
+  const expectedSignature = `sha256=${hash}`;
+
+  if (signature !== expectedSignature) {
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+
+  // Convert body back to object for downstream handlers
+  (req as any).body = JSON.parse(bodyBuffer.toString());
+  next();
+};
+
 
 
 // Add raw body middleware for webhook signature verification
@@ -281,6 +306,14 @@ app.post('/webhook', verifyWebhookSignature, async (req: Request, res: Response)
   }
 
   const payload = req.body;
+  
+  // Validate payload structure - required fields for webhook processing
+  const { action, pull_request, issue } = payload;
+  if (!action || (!pull_request && !issue)) {
+    console.warn('Webhook payload missing required fields (action, pull_request/issue)');
+    return res.status(400).json({ error: 'Invalid webhook payload' });
+  }
+  
   if (!payload.repository || !payload.pull_request) {
     console.warn('Webhook payload missing expected fields, skipping processing');
     return res.status(200).json({ message: 'Webhook received but skipped' });
