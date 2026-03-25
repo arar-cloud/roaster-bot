@@ -121,7 +121,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    let prompt = lastMessage ? lastMessage.content : "Roast me.";
+    
+    // Validate and sanitize prompt parameter
+    if (typeof prompt !== 'string') return res.status(400).send('Prompt must be a string.');
+    if (prompt.length > 10000) return res.status(400).send('Prompt exceeds maximum length of 10000 characters.');
+    if (prompt.trim().length === 0) return res.status(400).send('Prompt cannot be empty or whitespace only.');
 
     // Create session following SDK docs
     const session = await client.createSession({
