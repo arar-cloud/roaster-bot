@@ -9,6 +9,9 @@ if (missingVars.length > 0) {
   console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
   process.exit(1);
 }
+
+// Additional validation: log warnings for deprecation notices
+console.log('Environment validation passed. Required variables initialized.');
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
@@ -20,6 +23,15 @@ declare global {
         rawBody?: string;
     }
   }
+}
+
+// Validate required environment variables at startup
+const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'COPILOT_API_KEY'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+  console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}. Server cannot start.`);
+  process.exit(1);
 }
 
 const app = express();
