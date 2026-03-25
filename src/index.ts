@@ -15,8 +15,39 @@ if (process.env.WEBHOOK_SECRET && process.env.WEBHOOK_SECRET.length < 32) {
   console.warn('WARNING: WEBHOOK_SECRET should be at least 32 characters for cryptographic strength');
 }
 
+// CSRF token validation middleware
+function verifyCsrfToken(req: any, res: any, next: any) {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
+    const sessionToken = req.session?.csrf_token;
+    
+    if (!token || token !== sessionToken) {
+      return res.status(403).json({ error: 'CSRF token validation failed' });
+    }
+  }
+  next();
+}
+
 // Input validation helper: sanitize and validate user input
 function validateInput(input: unknown, maxLength: number = 1000): string {
+  if (typeof input !== 'string') {
+    throw new Error('Input must be a string');
+  }
+  if (input.length > maxLength) {
+    throw new Error(`Input exceeds maximum length of ${maxLength}`);
+  }
+  // Remove potentially dangerous characters
+  return input.replace(/[<>"'&]/g, (char) => {
+    const escapeMap: { [key: string]: string } = {
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '&': '&amp;'
+    };
+    return escapeMap[char] || char;
+  });
+}umber = 1000): string {
   if (typeof input !== 'string') {
     throw new Error('Input must be a string');
   }
