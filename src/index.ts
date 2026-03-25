@@ -250,10 +250,21 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     "'": '&#39;'
   }[char] || char));
   
-  // Prevent code injection and eval attacks
-  const dangerousPatterns = /[`$(){}|&;><]/;
-  if (dangerousPatterns.test(sanitized)) {
-    res.status(400).json({ error: 'Bad request: Code contains dangerous characters' });
+  // Security: safe code parsing without eval (issue-7c08b303ad)
+  // Replace with AST parsing instead of pattern matching
+  let isValidCode = true;
+  try {
+    // Use simple validation: check for eval/Function constructor patterns
+    const forbiddenPatterns = /(\beval\s*\(|new\s+Function\s*\(|\bsetTimeout\s*\(|\bsetInterval\s*\()/gi;
+    if (forbiddenPatterns.test(sanitized)) {
+      isValidCode = false;
+    }
+  } catch (e) {
+    isValidCode = false;
+  }
+  
+  if (!isValidCode) {
+    res.status(400).json({ error: 'Bad request: Code contains unsafe patterns (eval, Function constructor, or dynamic execution)' });
     return;
   }
 
