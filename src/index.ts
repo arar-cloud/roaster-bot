@@ -64,7 +64,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   console.log('[Webhook] Received payload. Signature header present:', !!req.headers['x-hub-signature-256']);
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
