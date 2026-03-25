@@ -28,6 +28,32 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   next();
 }
 
+// CSRF token validation middleware
+function verifyCsrfToken(req: any, res: any, next: any) {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
+    const sessionToken = req.session?.csrf_token;
+    
+    if (!token || token !== sessionToken) {
+      return res.status(403).json({ error: 'CSRF token validation failed' });
+    }
+  }
+  next();
+}
+
+// CSRF token validation middleware
+function verifyCsrfToken(req: any, res: any, next: any) {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
+    const sessionToken = req.session?.csrf_token;
+    
+    if (!token || token !== sessionToken) {
+      return res.status(403).json({ error: 'CSRF token validation failed' });
+    }
+  }
+  next();
+}
+
 // Input validation helper: sanitize and validate user input
 function validateInput(input: unknown, maxLength: number = 1000): string {
   if (typeof input !== 'string') {
