@@ -113,6 +113,13 @@ const verifyWebhookSignature = (req: express.Request, res: express.Response, nex
 
   // Convert body back to object for downstream handlers
   (req as any).body = JSON.parse(bodyBuffer.toString());
+  
+  // Validate payload structure
+  const { action, pull_request, issue } = (req as any).body;
+  if (!action || (!pull_request && !issue)) {
+    return res.status(400).json({ error: 'Invalid webhook payload' });
+  }
+  
   next();
 };
 
@@ -275,6 +282,10 @@ app.use(express.raw({ type: 'application/json' }));
 const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const signature = req.headers['x-hub-signature-256'] as string;
   const secret = process.env.WEBHOOK_SECRET;
+
+  if (!signature || !secret) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
 
   try {
     // Validate payload structure
