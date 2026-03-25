@@ -23,6 +23,13 @@ app.use(express.json({
   }
 }));
 
+// Middleware to capture raw body for webhook signature verification
+app.use(express.json({
+  verify: (req: any, res: any, buf: Buffer) => {
+    req.rawBody = buf.toString('utf8');
+  }
+}));
+
 // Validate required environment variables at startup
 if (!process.env.GITHUB_WEBHOOK_SECRET) {
   console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
