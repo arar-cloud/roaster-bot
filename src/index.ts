@@ -356,7 +356,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/webhook', async (req: Request, res: Response) => {
+app.post('/webhook', verifyWebhookSignature, async (req: Request, res: Response) => {
   // Security: Validate GitHub webhook signature
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
