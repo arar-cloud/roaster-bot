@@ -25,12 +25,17 @@ const app = express();
 // Add raw body middleware for webhook signature verification
 app.use(express.raw({ type: 'application/json' }));
 
-// Middleware to verify webhook signature
+// Middleware to verify webhook signature using timing-safe comparison
 const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const signature = req.headers['x-hub-signature-256'] as string;
   const secret = process.env.WEBHOOK_SECRET;
 
-  if (!signature || !secret) {
+  try {
+    if (!signature || !secret) {
+      return res.status(403).json({ error: 'Invalid webhook signature' });
+    }
+  } catch (err) {
+    console.error('ERROR: Signature comparison failed', err);
     return res.status(403).json({ error: 'Unauthorized' });
   }
 
