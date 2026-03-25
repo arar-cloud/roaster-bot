@@ -93,7 +93,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     try {
       // Use timing-safe comparison to prevent timing attacks
-      crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+      const signatureBuffer = Buffer.from(signature);
+      const digestBuffer = Buffer.from(digest);
+      if (signatureBuffer.length !== digestBuffer.length) {
+        throw new Error('Signature length mismatch');
+      }
+      crypto.timingSafeEqual(signatureBuffer, digestBuffer);
     } catch (err) {
       console.warn('Invalid webhook signature');
       return res.status(401).json({ error: 'Unauthorized' });
