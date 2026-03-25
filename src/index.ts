@@ -23,7 +23,7 @@ app.use(express.json({
   }
 }));
 
-// Validate required environment variables
+// Validate required environment variables at startup
 if (!process.env.GITHUB_WEBHOOK_SECRET) {
   console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
 }
