@@ -130,15 +130,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     if (prompt.length > 10000) return res.status(400).send('Prompt exceeds maximum length of 10000 characters.');
     if (prompt.trim().length === 0) return res.status(400).send('Prompt cannot be empty or whitespace only.');
 
-    // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    // Create session following SDK docs with validation
+    let session;
+    try {
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+      if (!session || typeof session !== 'object') throw new Error('Invalid session object returned from createSession');
+    } catch (err) {
+      console.error('Session creation failed:', err instanceof Error ? err.message : String(err));
+      return res.status(500).send('Failed to initialize session.');
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
