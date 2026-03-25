@@ -52,6 +52,33 @@ npm run test
 
 ```bash
 npm run test
+```
+
+## Security Hardening
+
+### Environment Variables
+- `GITHUB_TOKEN`: GitHub API token with appropriate scopes
+- `WEBHOOK_SECRET`: Minimum 32 characters; used for HMAC-SHA256 signature verification
+- `COPILOT_API_KEY`: API key for Copilot integration
+
+### Webhook Security
+- All webhooks are verified using HMAC-SHA256 with timing-safe comparison
+- Webhook signatures must match the `x-hub-signature-256` header
+- Invalid signatures result in 401 Unauthorized responses
+
+### Input Validation
+- All user inputs are sanitized and length-validated before processing
+- Maximum input length: 5000 characters
+- Malformed inputs are rejected with 400 Bad Request
+
+### No Dynamic Code Execution
+- `eval()`, `Function()` constructor, and `child_process.exec()` are explicitly prohibited
+- All operations use safe APIs and explicit handlers
+
+## Running Tests
+
+```bash
+npm run test
 ``` 🌶️💀
 
 > "An AI coding assistant that doesn't fix your bugs, but makes sure you feel bad about them."
