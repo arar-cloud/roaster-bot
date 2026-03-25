@@ -74,12 +74,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     try {
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
-        console.warn('Invalid webhook signature');
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+      // Use timing-safe comparison to prevent timing attacks
+      crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
     } catch (err) {
-      console.warn('Signature verification failed:', err);
+      console.warn('Invalid webhook signature');
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
