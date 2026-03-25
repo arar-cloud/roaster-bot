@@ -1,7 +1,7 @@
 import 'dotenv.config()';
 import crypto from 'crypto';
 
-// Consolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment validation - run once at startup
+// Consolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment variable validationConsolidated environment validation - run once at startup
 const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET', 'COPILOT_API_KEY'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
