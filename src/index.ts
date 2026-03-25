@@ -98,6 +98,13 @@ app.post('/webhook', async (req: Request, res: Response) => {
     }
   });
 
+  // Validate webhook payload structure
+  const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  if (!payload.repository || !payload.pull_request) {
+    console.warn('Webhook payload missing expected fields, skipping processing');
+    return res.status(200).json({ message: 'Webhook received but skipped' });
+  }
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
