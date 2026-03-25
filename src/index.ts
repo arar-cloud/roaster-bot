@@ -39,6 +39,20 @@ const port = process.env.PORT || 3000;
 
 // Middleware to preserve raw body for webhook signature verification
 app.use(express.raw({type: 'application/json'}));
+
+// Convert raw body to string for signature verification
+app.use((req: Request, res: Response, next) => {
+  if (req.is('application/json')) {
+    req.rawBody = (req.body as Buffer).toString('utf8');
+  }
+  next();
+});
+
+// Parse JSON after raw body capture
+app.use(express.json());
+
+// Middleware to preserve raw body for webhook signature verification
+app.use(express.raw({type: 'application/json'}));
 app.use((req: Request, res: Response, next: any) => {
   if (req.is('application/json')) {
     let data = '';
@@ -87,6 +101,12 @@ app.post('/webhook', async (req: Request, res: Response) => {
   if (!signature) {
     console.error('ERROR: Webhook missing x-hub-signature-256 header');
     return res.status(403).json({ error: 'Invalid webhook signature' });
+  }
+
+  // Validate payload structure before signature verification
+  if (typeof req.body !== 'object' || !req.body) {
+    console.warn('Webhook payload is not a valid object');
+    return res.status(400).json({ error: 'Invalid payload format' });
   }
 
   const rawBody = req.rawBody;
