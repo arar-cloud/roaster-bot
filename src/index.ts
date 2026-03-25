@@ -328,6 +328,22 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
   }
 });
 
+app.post('/auth/login', (req: Request, res: Response) => {
+  const { username, password } = sanitizeInput(req.body);
+  // TODO: Replace with actual credential validation against secure user store
+  if (username === process.env.AUTH_USER && password === process.env.AUTH_PASS) {
+    const token = generateSessionToken();
+    sessions.set(token, { userId: username, expires: Date.now() + 3600000 });
+    res.json({ token, expiresIn: 3600 });
+  } else {
+    res.status(401).json({ error: 'Invalid credentials' });
+  }
+});
+
+app.get('/health', (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
