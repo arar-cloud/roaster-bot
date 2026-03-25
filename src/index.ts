@@ -23,6 +23,33 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// CSRF protection middleware (issue-14b16fa020)
+const csrfTokens = new Map<string, { token: string; createdAt: number }>();
+const generateCSRFToken = (): string => crypto.randomBytes(32).toString('hex');
+
+app.use((req: Request, res: Response, next) => {
+  const token = generateCSRFToken();
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  csrfTokens.set(sessionId, { token, createdAt: Date.now() });
+  res.cookie('sessionId', sessionId, { httpOnly: true, secure: true, sameSite: 'strict' });
+  res.setHeader('X-CSRF-Token', token);
+  next();
+});
+
+// CSRF validation for state-changing methods
+const validateCSRF = (req: Request, res: Response, next) => {
+  if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
+    const sessionId = req.cookies?.sessionId;
+    const token = req.headers['x-csrf-token'];
+    const stored = sessionId ? csrfTokens.get(sessionId) : null;
+    if (!stored || stored.token !== token || Date.now() - stored.createdAt > 3600000) {
+      return res.status(403).json({ error: 'CSRF validation failed' });
+    }
+  }
+  next();
+};
+app.use(validateCSRF);
+
 // Security headers
 app.use((req: Request, res: Response, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
