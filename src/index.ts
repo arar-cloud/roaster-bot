@@ -23,6 +23,29 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation middleware
+const validateInput = (req: Request, res: Response, next: Function) => {
+  const contentType = req.get('content-type');
+  if (contentType && !contentType.includes('application/json')) {
+    return res.status(400).json({ error: 'Invalid content-type' });
+  }
+  next();
+};
+
+const sanitizeInput = (data: any): any => {
+  if (typeof data === 'string') {
+    // Remove potentially dangerous characters and patterns
+    return data.replace(/[<>"'`]/g, '').slice(0, 10000);
+  }
+  if (typeof data === 'object' && data !== null) {
+    return Object.keys(data).reduce((acc, key) => {
+      acc[key] = sanitizeInput(data[key]);
+      return acc;
+    }, {} as any);
+  }
+  return data;
+};
+
 // CSRF protection middleware (issue-14b16fa020)
 const csrfTokens = new Map<string, { token: string; createdAt: number }>();
 const generateCSRFToken = (): string => crypto.randomBytes(32).toString('hex');
