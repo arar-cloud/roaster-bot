@@ -36,7 +36,7 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
 }
 
 if (!process.env.COPILOT_API_KEY) {
-  console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
+  console.error('FATAL: COPILOT_API_KEY environment variable not set. Cannot process code review requests.');
 }
 
 const limiter = rateLimit({
