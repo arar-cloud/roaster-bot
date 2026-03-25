@@ -217,7 +217,19 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     return;
   }
 
-  res.json({ message: 'Code received and validated', length: code.length });
+  try {
+    const client = new CopilotClient();
+    const sanitizedPrompt = `Roast this code snippet: ${code.slice(0, 1000)}`;
+    const roastResult = await client.generateCompletion({
+      prompt: sanitizedPrompt,
+    });
+    if (!roastResult || typeof roastResult !== 'object') {
+      throw new Error('Invalid response from AI client');
+    }
+    res.json(roastResult);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to roast code' });
+  }
 });
 
 app.listen(port, () => {
