@@ -22,6 +22,15 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Security headers
+app.use((req: Request, res: Response, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -144,7 +153,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   } finally {
     await client.stop();
   }
