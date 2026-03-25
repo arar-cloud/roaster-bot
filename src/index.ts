@@ -1,7 +1,8 @@
 import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import express, onse } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { body, validationResult } from 'express-validator';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -95,7 +96,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
   if (typeof token !== 'string' || token.length < 32 || token.length > 256) return res.status(401).send('Invalid X-GitHub-Token format or length.');
   if (!/^[a-zA-Z0-9_-]+$/.test(token)) return res.status(401).send('Invalid X-GitHub-Token: contains forbidden characters.');
-  
+
   // Validate token format (prevent injection)
   const tokenPattern = /^[a-zA-Z0-9_.-]+$/;
   if (!tokenPattern.test(token)) {
@@ -124,7 +125,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     let prompt = lastMessage ? lastMessage.content : "Roast me.";
-    
+
     // Validate and sanitize prompt parameter
     if (typeof prompt !== 'string') return res.status(400).send('Prompt must be a string.');
     if (prompt.length > 10000) return res.status(400).send('Prompt exceeds maximum length of 10000 characters.');
@@ -198,14 +199,14 @@ app.post('/roast', roastLimiter, async (req: Request, res: Response) => {
     return;
   }
   code = code.trim();
-  
+
   // Prevent code injection and eval attacks
   const dangerousPatterns = /[`$(){}|&;><]/;
   if (dangerousPatterns.test(code)) {
     res.status(400).json({ error: 'Bad request: Code contains dangerous characters' });
     return;
   }
-  
+
   res.json({ message: 'Code received and validated', length: code.length });
 });
 
