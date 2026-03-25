@@ -34,6 +34,15 @@ if (!process.env.COPILOT_API_KEY) {
   console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
 }
 
+// Validate required environment variables
+if (!process.env.GITHUB_WEBHOOK_SECRET) {
+  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
+}
+
+if (!process.env.COPILOT_API_KEY) {
+  console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
