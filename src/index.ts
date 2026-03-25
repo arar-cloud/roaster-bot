@@ -74,11 +74,33 @@ const validateCSRF = (req: Request, res: Response, next) => {
 app.use(validateCSRF);
 
 // Security headers
+// Secure session store (in-memory for this example; use Redis in production)
+const sessions = new Map<string, { userId: string; expires: number }>();
+
+const generateSessionToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+const validateSession = (req: Request, res: Response, next: Function) => {
+  const token = req.get('authorization')?.replace('Bearer ', '');
+  if (!token || !sessions.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const session = sessions.get(token);
+  if (session && session.expires < Date.now()) {
+    sessions.delete(token);
+    return res.status(401).json({ error: 'Session expired' });
+  }
+  (req as any).userId = session?.userId;
+  next();
+};
+
 app.use((req: Request, res: Response, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  res.setHeader('Content-Security-Policy', "default-src 'self'");
   next();
 });
 
