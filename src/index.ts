@@ -63,28 +63,37 @@ app.post('/webhook', async (req: Request, res: Response) => {
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+  // Webhook signature validation is REQUIRED
+  if (!webhookSecret) {
+    console.error('ERROR: Webhook received but GITHUB_WEBHOOK_SECRET is not set');
+    return res.status(403).json({ error: 'Webhook secret not configured' });
+  }
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  if (!signature) {
+    console.error('ERROR: Webhook missing x-hub-signature-256 header');
+    return res.status(403).json({ error: 'Invalid webhook signature' });
+  }
 
-    try {
-      // Use timing-safe comparison to prevent timing attacks
-      const signatureBuffer = Buffer.from(signature);
-      const digestBuffer = Buffer.from(digest);
-      if (signatureBuffer.length !== digestBuffer.length) {
-        throw new Error('Signature length mismatch');
-      }
-      const isValid = crypto.timingSafeEqual(signatureBuffer, digestBuffer);
-      if (!isValid) {
-        throw new Error('Signature verification failed');
-      }
-    } catch (err) {
-      console.warn('Invalid webhook signature');
-      return res.status(401).json({ error: 'Unauthorized' });
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).send('Missing raw body.');
+
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+
+  try {
+    // Use timing-safe comparison to prevent timing attacks
+    const signatureBuffer = Buffer.from(signature);
+    const digestBuffer = Buffer.from(digest);
+    if (signatureBuffer.length !== digestBuffer.length) {
+      throw new Error('Signature length mismatch');
     }
+    const isValid = crypto.timingSafeEqual(signatureBuffer, digestBuffer);
+    if (!isValid) {
+      throw new Error('Signature verification failed');
+    }
+  } catch (err) {
+    console.error('ERROR: Webhook signature verification failed - unauthorized access attempt');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const token = req.get('X-GitHub-Token');
