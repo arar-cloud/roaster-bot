@@ -98,7 +98,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       if (signatureBuffer.length !== digestBuffer.length) {
         throw new Error('Signature length mismatch');
       }
-      crypto.timingSafeEqual(signatureBuffer, digestBuffer);
+      const isValid = crypto.timingSafeEqual(signatureBuffer, digestBuffer);
+      if (!isValid) {
+        throw new Error('Signature verification failed');
+      }
     } catch (err) {
       console.warn('Invalid webhook signature');
       return res.status(401).json({ error: 'Unauthorized' });
