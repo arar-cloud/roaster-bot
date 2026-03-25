@@ -1,5 +1,14 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
+
+// Validate required environment variables at startup
+const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'COPILOT_API_KEY'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+
+if (missingVars.length > 0) {
+  console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
@@ -16,28 +25,7 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Middleware to capture raw body for webhook signature verification
-app.use(express.json({
-  verify: (req: any, res: any, buf: Buffer) => {
-    req.rawBody = buf.toString('utf8');
-  }
-}));
 
-// Middleware to capture raw body for webhook signature verification
-app.use(express.json({
-  verify: (req: any, res: any, buf: Buffer) => {
-    req.rawBody = buf.toString('utf8');
-  }
-}));
-
-// Validate required environment variables at startup
-if (!process.env.GITHUB_WEBHOOK_SECRET) {
-  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
-}
-
-if (!process.env.COPILOT_API_KEY) {
-  console.error('FATAL: COPILOT_API_KEY environment variable not set. Cannot process code review requests.');
-}
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -45,12 +33,6 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
 
 app.get('/', (req, res) => {
   res.send(`
@@ -115,7 +97,12 @@ app.post('/webhook', async (req: Request, res: Response) => {
   });
 
   // Validate webhook payload structure
-  const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+  if (typeof req.body !== 'object' || !req.body) {
+    console.warn('Webhook payload is not a valid object');
+    return res.status(400).json({ error: 'Invalid payload format' });
+  }
+
+  const payload = req.body;
   if (!payload.repository || !payload.pull_request) {
     console.warn('Webhook payload missing expected fields, skipping processing');
     return res.status(200).json({ message: 'Webhook received but skipped' });
