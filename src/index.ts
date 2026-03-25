@@ -10,6 +10,24 @@ if (missingEnvVars.length > 0) {
 }
 
 // Validate required environment variables
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}
+
+// Validate required environment variables
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}
+
+// Validate required environment variables
 const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET', 'COPILOT_API_KEY'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
@@ -250,6 +268,11 @@ const verifyWebhookSignature = (req: express.Request, res: express.Response, nex
   const secret = process.env.WEBHOOK_SECRET;
 
   try {
+    // Validate payload structure
+    const { action, pull_request, issue } = req.body;
+    if (!action || (!pull_request && !issue)) {
+      return res.status(400).json({ error: 'Invalid webhook payload' });
+    }
     if (!signature || !secret) {
       return res.status(403).json({ error: 'Invalid webhook signature' });
     }
