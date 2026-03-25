@@ -68,15 +68,23 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
+  if (webhookSecret) {
+    if (!signature) {
+      return res.status(401).json({ error: 'Missing X-Hub-Signature-256 header' });
+    }
+    // Validate signature format (sha256=<64 hex chars>)
+    if (!/^sha256=[a-f0-9]{64}$/.test(signature)) {
+      return res.status(401).json({ error: 'Invalid signature format' });
+    }
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    // Use timing-safe comparison to prevent timing attacks
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
   }
 
