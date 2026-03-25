@@ -1,25 +1,21 @@
 import 'dotenv.config();
 
 // Validate required environment variables
-const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET', 'COPILOT_API_KEY'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
-  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  console.error(`FATAL: Missing required environment variables: ${missingEnvVars.join(', ')}. Cannot proceed.`);
   process.exit(1);
 }
 
-// Validate required environment variables
-const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
-const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
-
-if (missingEnvVars.length > 0) {
-  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+// Validate COPILOT_API_KEY specifically for core functionality
+if (!process.env.COPILOT_API_KEY) {
+  console.error('FATAL: COPILOT_API_KEY environment variable not set. Cannot process code review requests.');
   process.exit(1);
 }
 
-// Validate required environment variables
-const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+// Already validated above:
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
 if (missingEnvVars.length > 0) {
