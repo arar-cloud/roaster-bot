@@ -16,7 +16,25 @@ if (process.env.WEBHOOK_SECRET && process.env.WEBHOOK_SECRET.length < 32) {
 }
 
 // Input validation helper: sanitize and validate user input
-function validateInput(input: unknown, maxLength: number = 5000): string {
+function validateInput(input: unknown, maxLength: number = 1000): string {
+  if (typeof input !== 'string') {
+    throw new Error('Input must be a string');
+  }
+  if (input.length > maxLength) {
+    throw new Error(`Input exceeds maximum length of ${maxLength}`);
+  }
+  // Remove potentially dangerous characters
+  return input.replace(/[<>"'&]/g, (char) => {
+    const escapeMap: { [key: string]: string } = {
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '&': '&amp;'
+    };
+    return escapeMap[char] || char;
+  });
+}umber = 5000): string {
   if (typeof input !== 'string') {
     throw new Error('Invalid input: expected string');
   }
