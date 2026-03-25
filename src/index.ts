@@ -16,6 +16,15 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate required environment variables
+if (!process.env.GITHUB_WEBHOOK_SECRET) {
+  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
+}
+
+if (!process.env.COPILOT_API_KEY) {
+  console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
