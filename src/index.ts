@@ -84,6 +84,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  
+  // Validate token format (prevent injection)
+  const tokenPattern = /^[a-zA-Z0-9_.-]+$/;
+  if (!tokenPattern.test(token)) {
+    return res.status(400).send('Invalid token format.');
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
@@ -169,6 +175,14 @@ app.post('/roast', roastLimiter, async (req: Request, res: Response) => {
     return;
   }
   code = code.trim();
+  
+  // Prevent code injection and eval attacks
+  const dangerousPatterns = /[`$(){}|&;><]/;
+  if (dangerousPatterns.test(code)) {
+    res.status(400).json({ error: 'Bad request: Code contains dangerous characters' });
+    return;
+  }
+  
   res.json({ message: 'Code received and validated', length: code.length });
 });
 
