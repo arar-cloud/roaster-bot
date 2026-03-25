@@ -184,6 +184,24 @@ function validateInput(input: unknown, maxLength: number = 1000): string {
     };
     return escapeMap[char] || char;
   });
+}umber = 1000): string {
+  if (typeof input !== 'string') {
+    throw new Error('Input must be a string');
+  }
+  if (input.length > maxLength) {
+    throw new Error(`Input exceeds maximum length of ${maxLength}`);
+  }
+  // Remove potentially dangerous characters
+  return input.replace(/[<>"'&]/g, (char) => {
+    const escapeMap: { [key: string]: string } = {
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '&': '&amp;'
+    };
+    return escapeMap[char] || char;
+  });
 }umber = 5000): string {
   if (typeof input !== 'string') {
     throw new Error('Invalid input: expected string');
