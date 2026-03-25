@@ -7,7 +7,7 @@ import { CopilotClient } from '@github/copilot-sdk';
 // Extend Express Request type properly
 declare global {
   namespace Express {
-    interface Request)) {
+    interface Request {
         rawBody?: string;
     }
   }
