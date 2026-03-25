@@ -25,15 +25,6 @@ declare global {
   }
 }
 
-// Validate required environment variables at startup
-const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'COPILOT_API_KEY'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-
-if (missingVars.length > 0) {
-  console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}. Server cannot start.`);
-  process.exit(1);
-}
-
 const app = express();
 const port = process.env.PORT || 3000;
 
