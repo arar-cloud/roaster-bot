@@ -103,6 +103,25 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
+
+    // Input validation: check array bounds and structure
+    if (!Array.isArray(userMessages)) {
+      return res.status(400).json({ error: 'messages must be an array' });
+    }
+    if (userMessages.length > 50) {
+      return res.status(400).json({ error: 'messages array exceeds maximum length (50)' });
+    }
+
+    // Validate each message object
+    for (const msg of userMessages) {
+      if (typeof msg !== 'object' || msg === null) {
+        return res.status(400).json({ error: 'Invalid message format' });
+      }
+      if (msg.content && typeof msg.content === 'string' && msg.content.length > 4096) {
+        return res.status(400).json({ error: 'Message content exceeds maximum length (4096)' });
+      }
+    }
+
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
