@@ -1,7 +1,7 @@
 import 'dotenv.config()';
 import crypto from 'crypto';
 
-// Consolidated environment validation - run once at startup
+// Consolidated environment variable validationConsolidated environment validation - run once at startup
 const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET', 'COPILOT_API_KEY'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
@@ -20,7 +20,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -33,7 +33,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -46,7 +46,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -59,7 +59,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -72,7 +72,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -85,7 +85,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -98,7 +98,7 @@ function verifyCsrfToken(req: any, res: any, next: any) {
   if (['POST', 'PUT', 'DELETE'].includes(req.method)) {
     const token = req.headers['x-csrf-token'] || req.body?.csrf_token;
     const sessionToken = req.session?.csrf_token;
-    
+
     if (!token || token !== sessionToken) {
       return res.status(403).json({ error: 'CSRF token validation failed' });
     }
@@ -230,17 +230,17 @@ function verifyWebhookSignature(payload: string, signature: string, secret: stri
   if (!signature || !secret) {
     throw new Error('Missing signature or secret for webhook verification');
   }
-  
+
   try {
     const hmac = crypto.createHmac('sha256', secret);
     const digest = 'sha256=' + hmac.update(payload).digest('hex');
     const signatureBuffer = Buffer.from(signature);
     const digestBuffer = Buffer.from(digest);
-    
+
     if (signatureBuffer.length !== digestBuffer.length) {
       return false;
     }
-    
+
     return crypto.timingSafeEqual(signatureBuffer, digestBuffer);
   } catch (err) {
     console.error('Webhook signature verification error:', err);
@@ -253,7 +253,7 @@ function webhookAuthMiddleware(req: any, res: any, next: any) {
   try {
     const signature = req.headers['x-hub-signature-256'] as string;
     const payload = req.rawBody || JSON.stringify(req.body);
-    
+
     if (!verifyWebhookSignature(payload, signature, process.env.WEBHOOK_SECRET!)) {
       return res.status(401).json({ error: 'Unauthorized: invalid webhook signature' });
     }
@@ -271,10 +271,10 @@ async function handleWebhook(event: any): Promise<void> {
     if (!event || typeof event !== 'object') {
       throw new Error('Invalid webhook event: not an object');
     }
-    
+
     const action = validateInput(event.action || '', 100);
     const eventType = validateInput(event.type || '', 100);
-    
+
     console.log(`Processing GitHub event: ${eventType} - ${action}`);
     // Add your event handling logic here
   } catch (err) {
