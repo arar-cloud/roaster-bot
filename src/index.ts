@@ -204,7 +204,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+    // Validate messages array: max 50 items, each item must be object with content string
+    const userMessages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    if (userMessages.length > 50) {
+      return res.status(400).json({ error: 'Too many messages' });
+    }
+    for (const msg of userMessages) {
+      if (typeof msg !== 'object' || typeof msg.content !== 'string' || msg.content.length > 5000) {
+        return res.status(400).json({ error: 'Invalid message format' });
+      }
+    }
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     let prompt = lastMessage ? lastMessage.content : "Roast me.";
 
