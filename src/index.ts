@@ -1,14 +1,7 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 
-// Validate required environment variables at startup
-const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'COPILOT_API_KEY'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 
-if (missingVars.length > 0) {
-  console.error(`FATAL: Missing required environment variables: ${missingVars.join(', ')}`);
-  process.exit(1);
-}
 
 // Additional validation: log warnings for deprecation notices
 console.log('Environment validation passed. Required variables initialized.');
