@@ -25,33 +25,6 @@ if (!process.env.COPILOT_API_KEY) {
   console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
 }
 
-// Validate required environment variables
-if (!process.env.GITHUB_WEBHOOK_SECRET) {
-  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
-}
-
-if (!process.env.COPILOT_API_KEY) {
-  console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
-}
-
-// Validate required environment variables
-if (!process.env.GITHUB_WEBHOOK_SECRET) {
-  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
-}
-
-if (!process.env.COPILOT_API_KEY) {
-  console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
-}
-
-// Validate required environment variables
-if (!process.env.GITHUB_WEBHOOK_SECRET) {
-  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable not set. Webhook verification will fail.');
-}
-
-if (!process.env.COPILOT_API_KEY) {
-  console.warn('WARNING: COPILOT_API_KEY environment variable not set.');
-}
-
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -78,9 +51,8 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
-  console.log('[Webhook] Received payload. Signature header present:', !!req.headers['x-hub-signature-256']);
-  // Webhook signature verification
+app.post('/webhook', async (req: Request, res: Response) => {
+  // Security: Validate GitHub webhook signature
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
