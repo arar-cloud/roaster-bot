@@ -7,6 +7,24 @@ const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 if (missingEnvVars.length > 0) {
   console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
   process.exit(1);
+}
+
+// Validate required environment variables
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}
+
+// Validate required environment variables
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
 }import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import crypto from 'crypto';
@@ -32,30 +50,7 @@ declare global {
 
 const app = express();
 
-// Add raw body middleware for webhook signature verification
-app.use(express.raw({ type: 'application/json' }));
 
-// Middleware to verify webhook signature
-const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-  const signature = req.headers['x-hub-signature-256'] as string;
-  const secret = process.env.WEBHOOK_SECRET;
-
-  if (!signature || !secret) {
-    return res.status(403).json({ error: 'Unauthorized' });
-  }
-
-  const bodyBuffer = req.body instanceof Buffer ? req.body : Buffer.from(JSON.stringify(req.body));
-  const hash = crypto.createHmac('sha256', secret).update(bodyBuffer).digest('hex');
-  const expectedSignature = `sha256=${hash}`;
-
-  if (signature !== expectedSignature) {
-    return res.status(403).json({ error: 'Invalid signature' });
-  }
-
-  // Convert body back to object for downstream handlers
-  (req as any).body = JSON.parse(bodyBuffer.toString());
-  next();
-};
 
 // Add raw body middleware for webhook signature verification
 app.use(express.raw({ type: 'application/json' }));
@@ -163,35 +158,12 @@ const verifyWebhookSignature = (req: express.Request, res: express.Response, nex
 };
 const port = process.env.PORT || 3000;
 
-// Middleware to preserve raw body for webhook signature verification
-app.use(express.raw({type: 'application/json'}));
-
-// Convert raw body to string for signature verification
-app.use((req: Request, res: Response, next) => {
-  if (req.is('application/json')) {
-    req.rawBody = (req.body as Buffer).toString('utf8');
+// Middleware to capture raw body for webhook signature verification
+app.use(express.json({
+  verify: (req: any, res: any, buf: Buffer) => {
+    req.rawBody = buf.toString('utf8');
   }
-  next();
-});
-
-// Parse JSON after raw body capture
-app.use(express.json());
-
-// Middleware to preserve raw body for webhook signature verification
-app.use(express.raw({type: 'application/json'}));
-app.use((req: Request, res: Response, next: any) => {
-  if (req.is('application/json')) {
-    let data = '';
-    req.on('data', chunk => { data += chunk; });
-    req.on('end', () => {
-      (req as any).rawBody = data;
-      req.body = JSON.parse(data);
-      next();
-    });
-  } else {
-    next();
-  }
-});
+}));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
