@@ -1,5 +1,13 @@
-import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import 'dotenv.config();
+
+// Validate required environment variables
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import crypto from 'crypto';
 import crypto from 'crypto';
@@ -23,6 +31,31 @@ declare global {
 }
 
 const app = express();
+
+// Add raw body middleware for webhook signature verification
+app.use(express.raw({ type: 'application/json' }));
+
+// Middleware to verify webhook signature
+const verifyWebhookSignature = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const signature = req.headers['x-hub-signature-256'] as string;
+  const secret = process.env.WEBHOOK_SECRET;
+
+  if (!signature || !secret) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+
+  const bodyBuffer = req.body instanceof Buffer ? req.body : Buffer.from(JSON.stringify(req.body));
+  const hash = crypto.createHmac('sha256', secret).update(bodyBuffer).digest('hex');
+  const expectedSignature = `sha256=${hash}`;
+
+  if (signature !== expectedSignature) {
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+
+  // Convert body back to object for downstream handlers
+  (req as any).body = JSON.parse(bodyBuffer.toString());
+  next();
+};
 
 // Add raw body middleware for webhook signature verification
 app.use(express.raw({ type: 'application/json' }));
