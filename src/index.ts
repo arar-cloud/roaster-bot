@@ -23,11 +23,32 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation and size limits
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
-  }
+  },
+  limit: '1mb' // Prevent large payload attacks
 }));
+
+// Middleware to validate and sanitize inputs
+app.use((req: Request, res: Response, next) => {
+  // Validate Content-Type if body is present
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    const contentType = req.get('Content-Type');
+    if (contentType && !contentType.includes('application/json')) {
+      return res.status(400).json({ error: 'Invalid Content-Type. Expected application/json' });
+    }
+  }
+
+  // Sanitize headers - reject suspicious patterns
+  const token = req.get('X-GitHub-Token');
+  if (token && (token.length > 256 || !/^[A-Za-z0-9_-]+$/.test(token))) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
+
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send(`
