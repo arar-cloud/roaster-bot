@@ -202,24 +202,37 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     res.status(401).json({ error: 'Unauthorized: Invalid token' });
     return;
   }
-  // Sanitize and validate input
+  // Security: strict input validation (issue-7166c46bfe)
   let { code } = req.body;
-  if (typeof code !== 'string' || code.length === 0 || code.length > 50000) {
-    res.status(400).json({ error: 'Bad request: Invalid code parameter' });
-    return;
+  
+  if (typeof code !== 'string' || code.trim().length === 0) {
+    return res.status(400).json({ error: 'Invalid code input' });
   }
+  if (code.length > 50000) {
+    return res.status(413).json({ error: 'Code exceeds maximum length' });
+  }
+  
   code = code.trim();
-
+  
+  // Sanitize: prevent XSS by escaping HTML
+  const sanitized = code.replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char] || char));
+  
   // Prevent code injection and eval attacks
   const dangerousPatterns = /[`$(){}|&;><]/;
-  if (dangerousPatterns.test(code)) {
+  if (dangerousPatterns.test(sanitized)) {
     res.status(400).json({ error: 'Bad request: Code contains dangerous characters' });
     return;
   }
 
   try {
     const client = new CopilotClient();
-    const sanitizedPrompt = `Roast this code snippet: ${code.slice(0, 1000)}`;
+    const sanitizedPrompt = `Roast this code snippet: ${sanitized.slice(0, 1000)}`;
     const roastResult = await client.generateCompletion({
       prompt: sanitizedPrompt,
     });
