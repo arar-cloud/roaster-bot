@@ -10,6 +10,36 @@ const generateSecureToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
 
+// Simple response cache to prevent N+1 API calls
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+}
+const responseCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 300000; // 5 minutes
+const MAX_CACHE_SIZE = 100;
+
+const getCacheKey = (endpoint: string, params: any): string => {
+  return `${endpoint}:${JSON.stringify(params)}`;
+};
+
+const getCached = (key: string): any => {
+  const entry = responseCache.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL_MS) {
+    return entry.data;
+  }
+  responseCache.delete(key);
+  return null;
+};
+
+const setCached = (key: string, data: any): void => {
+  if (responseCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = responseCache.keys().next().value;
+    responseCache.delete(firstKey);
+  }
+  responseCache.set(key, { data, timestamp: Date.now() });
+};
+
 // Precompile validation regex patterns (cached at module load time)
 const VALIDATION_PATTERNS = Object.freeze({
   CODE: /^[a-zA-Z0-9\s\-_.,;:(){}[\]"']+$/,
