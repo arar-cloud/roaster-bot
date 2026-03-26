@@ -119,9 +119,22 @@ const validateSessionMiddleware = (req: Request, res: Response, next: Function) 
 // Security headers
 // Secure session store (in-memory for this example; use Redis in production)
 const sessions = new Map<string, { userId: string; expires: number }>();
+const sessionRevocations = new Set<string>(); // Track explicitly revoked sessions
+const SESSION_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes
+
+// Periodic cleanup of expired sessions (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions.entries()) {
+    if (session.expires < now) {
+      sessions.delete(token);
+      sessionRevocations.delete(token); // Also clean up revocation tracking
+    }
+  }
+}, 5 * 60 * 1000);
 
 // Store active sessions with expiration and secure token generation
-const SESSION_TIMEOUT = 3600000; // 1 hour in ms
+const SESSION_TIMEOUT = SESSION_LIFETIME_MS; // Use consistent session lifetime
 
 const generateSessionToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
@@ -140,6 +153,12 @@ const validateSession = (req: Request, res: Response, next: Function) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const token = authHeader.replace('Bearer ', '');
+  
+  // Check for revoked sessions first
+  if (token && sessionRevocations.has(token)) {
+    return res.status(401).json({ error: 'Session has been revoked' });
+  }
+  
   if (!token || token.length < 32 || !sessions.has(token)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -149,6 +168,7 @@ const validateSession = (req: Request, res: Response, next: Function) => {
   }
   if (session.expires <= Date.now()) {
     sessions.delete(token);
+    sessionRevocations.delete(token);
     return res.status(401).json({ error: 'Session expired' });
   }
   if (!session.userId) {
