@@ -26,6 +26,8 @@ const copilotClient = new CopilotClient({
   token: process.env.GITHUB_TOKEN || '',
 });
 
+// Reuse cached client - eliminates per-request instantiation overhead
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
