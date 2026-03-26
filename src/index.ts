@@ -234,6 +234,20 @@ const createSession = (userId: string): string => {
   return token;
 };
 
+const validateSessionToken = (token: string, storedTimestamp?: number): boolean => {
+  // Strict token validation: format, length, expiration
+  if (!token || typeof token !== 'string' || token.length !== 64) {
+    return false;
+  }
+  // Check token expiration (30 min default SESSION_TIMEOUT)
+  const now = Date.now();
+  if (storedTimestamp && (now - storedTimestamp) > SESSION_TIMEOUT) {
+    return false;
+  }
+  // Verify hex format (secure token is 32 bytes = 64 hex chars)
+  return /^[a-f0-9]{64}$/.test(token);
+};
+
 const validateSession = (req: Request, res: Response, next: Function) => {
   const authHeader = req.get('authorization');
   const clientIp = req.ip || 'unknown';
@@ -252,6 +266,16 @@ const validateSession = (req: Request, res: Response, next: Function) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const token = authHeader.replace('Bearer ', '');
+  
+  // Validate token format and expiration before checking session store
+  if (!validateSessionToken(token)) {
+    logSessionEvent('AUTH_INVALID_TOKEN_FORMAT', token, undefined, 'Invalid token format or expired');
+    const record = failedAuthAttempts.get(clientIp) || { count: 0, lastAttempt: Date.now() };
+    record.count++;
+    record.lastAttempt = Date.now();
+    failedAuthAttempts.set(clientIp, record);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   
   // Check for revoked sessions first
   if (token && sessionRevocations.has(token)) {
