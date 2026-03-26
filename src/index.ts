@@ -71,6 +71,19 @@ const getCopilotClient = async (): Promise<CopilotClient> => {
 
 const app = express();
 
+// Security headers middleware
+app.use((req, res, next) => {
+  // Content-Security-Policy: strict policy to prevent XSS
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self'; connect-src 'self'");
+  // Prevent clickjacking
+  res.setHeader('X-Frame-Options', 'DENY');
+  // Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Enforce HTTPS
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
 // Rate limiting: prevent brute force and abuse
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
