@@ -173,6 +173,8 @@ const validateCSRF = (req: Request, res: Response, next) => {
 };
 app.use(validateCSRF);
 
+app.use(validateSessionToken);
+
 app.use(limiter);
 
 // Secure session validation middleware with HMAC-SHA256 token validation
@@ -256,6 +258,15 @@ const validateSessionToken = (token: string, storedTimestamp?: number): boolean 
   }
   // Verify hex format (secure token is 32 bytes = 64 hex chars)
   return /^[a-f0-9]{64}$/.test(token);
+};
+
+// Session token validation middleware with stricter per-request validation
+const validateSessionToken = (req: Request, res: Response, next: Function) => {
+  const token = req.headers['x-session-token'] as string;
+  if (token && !/^[a-f0-9]{64}$/.test(token)) {
+    return res.status(401).json({ error: 'Invalid session token format' });
+  }
+  next();
 };
 
 const validateSession = (req: Request, res: Response, next: Function) => {
