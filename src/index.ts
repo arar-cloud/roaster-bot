@@ -68,6 +68,17 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // Early exit on client disconnect to free resources
+  if (req.socket.destroyed) {
+    return;
+  }
+
+  req.on('close', () => {
+    if (!res.headersSent) {
+      console.log('Request cancelled by client');
+    }
+  });
+
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -110,10 +121,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Reuse cached session or create new one
-    let session = cachedSession && !sessionInUse ? cachedSession : null;
-    if (!session) {
-      session = await client.createSession({
+    // Use cache-aware session retrieval with unique key per request context
+    const sessionKey = `copilot-session-${process.env.GITHUB_APP_ID || 'default'}`;
+    const sessionCreator = async () => await client.createSession({
       model: "gpt-4o",
       streaming: true,
       systemMessage: {
