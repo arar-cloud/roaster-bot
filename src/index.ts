@@ -5,6 +5,11 @@ import rateLimit from 'express-rate-limit';
 import { body, validationResult } from 'express-validator';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Secure token generation
+const generateSecureToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
