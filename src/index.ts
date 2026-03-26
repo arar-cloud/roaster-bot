@@ -231,7 +231,7 @@ app.get('/', (req, res) => {
 });
 
 // Route with explicit parameterized API calls - no eval/Function/exec patterns
-app.post('/api/roast', [
+app.post('/api/roast', validateSession, [
   body('prompt').isString().trim().isLength({ min: 1, max: 5000 }),
   body('model').optional().isIn(['gpt-4', 'gpt-4o', 'gpt-3.5-turbo'])
 ], limiter, async (req: Request, res: Response) => {
