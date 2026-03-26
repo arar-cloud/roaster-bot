@@ -26,8 +26,13 @@ const limiter = rateLimit({
 // Input validation middleware
 const validateInput = (req: Request, res: Response, next: Function) => {
   const contentType = req.get('content-type');
-  if (contentType && !contentType.includes('application/json')) {
-    return res.status(400).json({ error: 'Invalid content-type' });
+  // Strict content-type validation
+  if (contentType && !/^application\/(json|x-www-form-urlencoded)/.test(contentType)) {
+    return res.status(400).json({ error: 'Invalid content-type. Only application/json or application/x-www-form-urlencoded allowed' });
+  }
+  // Enforce max request size
+  if (req.get('content-length') && parseInt(req.get('content-length')!) > 1048576) {
+    return res.status(413).json({ error: 'Payload too large' });
   }
   next();
 };
@@ -131,6 +136,8 @@ const verifyToken = (req: Request, res: Response, next: Function) => {
   }
   next();
 };
+
+app.use(validateInput);
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
