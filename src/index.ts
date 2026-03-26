@@ -7,6 +7,9 @@ import { CopilotClient } from '@github/copilot-sdk';
 
 // Secure token generation
 const generateSecureToken = (): string => {
+  if (!modelName || typeof modelName !== 'string') {
+    return 'gpt-3.5-turbo';
+  }
   return crypto.randomBytes(32).toString('hex');
 };
 
@@ -181,19 +184,19 @@ app.use(limiter);
 const validateSessionMiddleware = (req: Request, res: Response, next: Function) => {
   const token = req.get('x-session-token');
   const expectedToken = process.env.SESSION_TOKEN;
-  
+
   if (!token || !expectedToken) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   // Use timing-safe comparison to prevent timing attacks
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   const expectedHash = crypto.createHash('sha256').update(expectedToken).digest('hex');
-  
+
   if (!crypto.timingSafeEqual(Buffer.from(tokenHash), Buffer.from(expectedHash))) {
     return res.status(401).json({ error: 'Invalid token' });
   }
-  
+
   next();
 };
 
@@ -272,14 +275,14 @@ const validateSessionToken = (req: Request, res: Response, next: Function) => {
 const validateSession = (req: Request, res: Response, next: Function) => {
   const authHeader = req.get('authorization');
   const clientIp = req.ip || 'unknown';
-  
+
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     // Track failed attempt
     const record = failedAuthAttempts.get(clientIp) || { count: 0, lastAttempt: Date.now() };
     record.count++;
     record.lastAttempt = Date.now();
     failedAuthAttempts.set(clientIp, record);
-    
+
     if (record.count > MAX_FAILED_ATTEMPTS) {
       logSessionEvent('AUTH_FAILED_LOCKOUT', 'unknown', undefined, `Client locked out: ${clientIp}`);
       return res.status(429).json({ error: 'Too many failed attempts. Try again later.' });
@@ -287,7 +290,7 @@ const validateSession = (req: Request, res: Response, next: Function) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const token = authHeader.replace('Bearer ', '');
-  
+
   // Validate token format and expiration before checking session store
   if (!validateSessionToken(token)) {
     logSessionEvent('AUTH_INVALID_TOKEN_FORMAT', token, undefined, 'Invalid token format or expired');
@@ -297,13 +300,13 @@ const validateSession = (req: Request, res: Response, next: Function) => {
     failedAuthAttempts.set(clientIp, record);
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   // Check for revoked sessions first
   if (token && sessionRevocations.has(token)) {
     logSessionEvent('AUTH_REVOKED_SESSION', token, undefined, 'Attempted to use revoked session');
     return res.status(401).json({ error: 'Session has been revoked' });
   }
-  
+
   if (!token || token.length < 32 || !sessions.has(token)) {
     const record = failedAuthAttempts.get(clientIp) || { count: 0, lastAttempt: Date.now() };
     record.count++;
@@ -436,7 +439,7 @@ app.get('/', (req, res) => {
 });
 
 // Route with explicit parameterized API calls - no eval/Function/exec patterns
-app.post('/auth/login', [  
+app.post('/auth/login', [
   body('username').isString().trim().isLength({ min: 1, max: 128 }),
   body('password').isString().trim().isLength({ min: 1, max: 256 })
 ], async (req: Request, res: Response) => {
@@ -444,7 +447,7 @@ app.post('/auth/login', [
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  
+
   // Invalidate any existing session to prevent fixation
   const oldToken = req.cookies?.sessionToken;
   if (oldToken && sessions.has(oldToken)) {
@@ -453,7 +456,7 @@ app.post('/auth/login', [
     sessionRevocations.add(oldToken);
     logSessionEvent('SESSION_FIXATION_PREVENTION', oldToken, oldSession?.userId, 'Old session invalidated on re-login');
   }
-  
+
   // Validate credentials (simplified for demo)
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, { userId: req.body.username, expires: Date.now() + SESSION_LIFETIME_MS });
@@ -470,10 +473,10 @@ app.post('/api/roast', validateSession, [
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  
+
   const { prompt, model = 'gpt-4o' } = req.body;
   const sanitized = sanitizeInput(prompt);
-  
+
   // Webhook signature verification using HMAC-SHA256
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
@@ -611,16 +614,16 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
   }
   // Security: strict input validation (issue-7166c46bfe)
   let { code } = req.body;
-  
+
   if (typeof code !== 'string' || code.trim().length === 0) {
     return res.status(400).json({ error: 'Invalid code input' });
   }
   if (code.length > 50000) {
     return res.status(413).json({ error: 'Code exceeds maximum length' });
   }
-  
+
   code = code.trim();
-  
+
   // Sanitize: prevent XSS by escaping HTML
   const sanitized = code.replace(/[&<>"']/g, (char) => ({
     '&': '&amp;',
@@ -629,7 +632,7 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
     '"': '&quot;',
     "'": '&#39;'
   }[char] || char));
-  
+
   // Security: safe code parsing without eval (issue-f772c76b6c)
   // Reject dangerous eval/Function patterns before any processing
   const forbiddenPatterns = /(\beval\s*\(|new\s+Function\s*\(|new\s+RegExp\s*\(|\brequire\s*\(|\bimport\s+|\bchild_process|\bfs\.|\bos\.|\bexec|\bspawn|\bshell|\bsetTimeout|\bsetInterval)/gi;
@@ -637,7 +640,7 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
   if (forbiddenPatterns.test(sanitized)) {
     return res.status(400).json({ error: 'Code contains forbidden patterns: eval, Function, require, import, or system module access' });
   }
-  
+
   // Safe: perform static analysis only, no execution
   const codeAnalysis = {
     analyzed: true,
