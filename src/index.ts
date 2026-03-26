@@ -26,6 +26,16 @@ declare global {
   }
 }
 
+// Initialize CopilotClient once at module level (singleton pattern)
+let copilotClient: CopilotClient | null = null;
+
+const getCopilotClient = async (): Promise<CopilotClient> => {
+  if (!copilotClient) {
+    copilotClient = new CopilotClient();
+  }
+  return copilotClient;
+};
+
 const app = express();
 
 // Configure JSON body parser with size limit
