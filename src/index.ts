@@ -13,6 +13,8 @@ const generateSecureToken = (): string => {
 // Precompile validation regex patterns
 const CODE_REGEX = /^[a-zA-Z0-9\s\-_.,;:(){}[\]"']+$/;
 const LANGUAGE_REGEX = /^[a-zA-Z0-9_\-+.]+$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const URL_REGEX = /^https?:\/\/.+/;
 
 // Extend Express Request type properly
 declare global {
