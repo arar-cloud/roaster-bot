@@ -54,6 +54,17 @@ app.use(express.json({
   }
 }));
 
+// Periodic cache cleanup: remove expired sessions every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of sessionCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL) {
+      sessionCache.delete(key);
+    }
+  }
+  console.log(`[Cache cleanup] Removed expired entries. Current cache size: ${sessionCache.size}`);
+}, 5 * 60 * 1000);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
