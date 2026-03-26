@@ -28,12 +28,12 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Input validation middleware
+// Input validation middleware with stricter enforcement
 const validateInput = (req: Request, res: Response, next: Function) => {
   const contentType = req.get('content-type');
-  // Strict content-type validation
-  if (contentType && !/^application\/(json|x-www-form-urlencoded)/.test(contentType)) {
-    return res.status(400).json({ error: 'Invalid content-type. Only application/json or application/x-www-form-urlencoded allowed' });
+  // Strict content-type validation - only application/json
+  if (!contentType || !/^application\/json/.test(contentType)) {
+    return res.status(400).json({ error: 'Content-Type must be application/json' });
   }
   // Enforce max request size
   if (req.get('content-length') && parseInt(req.get('content-length')!) > 1048576) {
@@ -43,12 +43,16 @@ const validateInput = (req: Request, res: Response, next: Function) => {
 };
 
 const sanitizeInput = (data: any): any => {
-  const MAX_STRING_LENGTH = 1000;
+  const MAX_STRING_LENGTH = 4096;
   if (typeof data === 'string') {
     if (data.length > MAX_STRING_LENGTH) {
       throw new Error('Input string exceeds maximum allowed length');
     }
-    return data.replace(/[<>"'`]/g, '').replace(/[;\\]/g, '');
+    // HTML escape dangerous characters to prevent injection
+    return data.replace(/[<>"']/g, (char) => {
+      const map: Record<string, string> = { '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return map[char] || char;
+    });
   }
   if (typeof data === 'object' && data !== null) {
     const keys = Object.keys(data);
