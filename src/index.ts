@@ -89,8 +89,18 @@ app.use(validateCSRF);
 // Secure session store (in-memory for this example; use Redis in production)
 const sessions = new Map<string, { userId: string; expires: number }>();
 
+// Store active sessions with expiration and secure token generation
+const SESSION_TIMEOUT = 3600000; // 1 hour in ms
+
 const generateSessionToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
+};
+
+const createSession = (userId: string): string => {
+  const token = generateSessionToken();
+  const expiresAt = Date.now() + SESSION_TIMEOUT;
+  sessions.set(token, { userId, expires: expiresAt });
+  return token;
 };
 
 const validateSession = (req: Request, res: Response, next: Function) => {
