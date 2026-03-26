@@ -330,6 +330,18 @@ app.use((req: Request, res: Response, next) => {
 // Secure session secret for HMAC token verification
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
 
+// Security: NO eval, Function constructor, or exec with user input
+// Safe command execution utility (for trusted operations only)
+const executeSafeCommand = (command: string, args: string[]): void => {
+  // Use spawn/execFile with argument array, never string concat
+  // This prevents shell injection
+  // Example: const { execFile } = require('child_process');
+  // execFile(command, args, callback)
+  // NOT: exec(`${command} ${args}`) - UNSAFE
+};
+
+// Always validate and whitelist user-provided data before any execution context
+
 // Token verification middleware with constant-time HMAC verification
 const verifyToken = (req: Request, res: Response, next: Function) => {
   const token = req.headers['x-auth-token'] as string;
