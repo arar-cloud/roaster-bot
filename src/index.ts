@@ -365,7 +365,8 @@ app.post('/roast', roastLimiter, verifyToken, async (req: Request, res: Response
   
   // Security: safe code parsing without eval (issue-f772c76b6c)
   // Reject dangerous eval/Function patterns before any processing
-  const forbiddenPatterns = /(\beval\s*\(|new\s+Function\s*\(|\brequire\s*\(|\bimport\s+|\bchild_process|\bfs\.|\bos\.)/gi;
+  const forbiddenPatterns = /(\beval\s*\(|new\s+Function\s*\(|new\s+RegExp\s*\(|\brequire\s*\(|\bimport\s+|\bchild_process|\bfs\.|\bos\.|\bexec|\bspawn|\bshell|\bsetTimeout|\bsetInterval)/gi;
+  const dangerousGlobals = /^(eval|Function|RegExp|require|setTimeout|setInterval|process|child_process|fs|os|net|http|https|path)$/;
   if (forbiddenPatterns.test(sanitized)) {
     return res.status(400).json({ error: 'Code contains forbidden patterns: eval, Function, require, import, or system module access' });
   }
