@@ -15,8 +15,31 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
-let cachedSession: any = null;
-let sessionInUse = false;
+// LRU cache for Copilot sessions: Map(key -> { session, timestamp })
+const sessionCache = new Map<string, { session: any; timestamp: number }>();
+const MAX_CACHE_SIZE = 10;
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
+  const now = Date.now();
+  const cached = sessionCache.get(sessionKey);
+  
+  if (cached && now - cached.timestamp < CACHE_TTL) {
+    return cached.session;
+  }
+  
+  // Create new session and cache it
+  const session = creator();
+  sessionCache.set(sessionKey, { session, timestamp: now });
+  
+  // Evict oldest entry if cache is full (simple FIFO, not LRU)
+  if (sessionCache.size > MAX_CACHE_SIZE) {
+    const firstKey = sessionCache.keys().next().value;
+    sessionCache.delete(firstKey);
+  }
+  
+  return session;
+}
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
