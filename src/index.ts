@@ -35,6 +35,7 @@ const copilotClient = new CopilotClient({
 
 // Reuse cached client - eliminates per-request instantiation overhead
 
+// Initialize rate limiter once at module load to avoid per-request allocation overhead
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
