@@ -10,6 +10,10 @@ const generateSecureToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
 
+// Precompile validation regex patterns
+const CODE_REGEX = /^[a-zA-Z0-9\s\-_.,;:(){}[\]"']+$/;
+const LANGUAGE_REGEX = /^[a-zA-Z0-9_\-+.]+$/;
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
