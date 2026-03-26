@@ -19,6 +19,9 @@ declare global {
 }
 
 const app = express();
+
+// Configure JSON body parser with size limit
+app.use(express.json({ limit: '1mb' }));
 const port = process.env.PORT || 3000;
 
 // Cache Copilot client to avoid repeated initialization
