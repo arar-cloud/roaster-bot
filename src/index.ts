@@ -293,11 +293,24 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Token verification middleware
+// Secure session secret for HMAC token verification
+const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
+
+// Token verification middleware with constant-time HMAC verification
 const verifyToken = (req: Request, res: Response, next: Function) => {
   const token = req.headers['x-auth-token'] as string;
+  if (!token) {
+    return res.status(401).json({ error: 'Missing authorization token' });
+  }
   const expectedToken = process.env.ROASTER_AUTH_TOKEN;
-  if (!token || !expectedToken || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expectedToken))) {
+  if (!expectedToken) {
+    return res.status(401).json({ error: 'Server configuration error' });
+  }
+  const tokenHmac = crypto.createHmac('sha256', SESSION_SECRET).update(token).digest('hex');
+  const expectedHmac = crypto.createHmac('sha256', SESSION_SECRET).update(expectedToken).digest('hex');
+  const tokenBuffer = Buffer.from(tokenHmac);
+  const expectedBuffer = Buffer.from(expectedHmac);
+  if (tokenBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(tokenBuffer, expectedBuffer)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
