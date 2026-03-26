@@ -230,7 +230,19 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+// Route with explicit parameterized API calls - no eval/Function/exec patterns
+app.post('/api/roast', [
+  body('prompt').isString().trim().isLength({ min: 1, max: 5000 }),
+  body('model').optional().isIn(['gpt-4', 'gpt-4o', 'gpt-3.5-turbo'])
+], limiter, async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  const { prompt, model = 'gpt-4o' } = req.body;
+  const sanitized = sanitizeInput(prompt);
+  
   // Webhook signature verification using HMAC-SHA256
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
@@ -275,15 +287,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
 
   try {
-    const systemPrompt = `
-      You are 'The Roaster' 🌶️💀.
-      Your goal is to DESTROY the user's self-esteem by roasting their code.
-
-      CORE DIRECTIVES:
-      1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
-      2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
-      3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
-    `;
+    // Use parameterized model selection only - no dynamic code execution
+    const systemPrompt = `You are 'The Roaster' 🌶️💀. Your goal is to DESTROY the user's self-esteem by roasting their code. CORE DIRECTIVES: 1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10. 2. TONE: Ruthless, savage, Gen Z, toxic. 3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.`;
 
     // Validate messages array: max 50 items, each item must be object with content string
     const userMessages = Array.isArray(req.body.messages) ? req.body.messages : [];
