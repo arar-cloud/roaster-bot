@@ -122,6 +122,18 @@ const sessions = new Map<string, { userId: string; expires: number }>();
 const sessionRevocations = new Set<string>(); // Track explicitly revoked sessions
 const SESSION_LIFETIME_MS = 30 * 60 * 1000; // 30 minutes
 
+// Session audit log (use proper logging in production)
+const sessionLog: Array<{ timestamp: number; event: string; token: string; userId?: string; reason?: string }> = [];
+const logSessionEvent = (event: string, token: string, userId?: string, reason?: string) => {
+  sessionLog.push({ timestamp: Date.now(), event, token, userId, reason });
+  console.log(`[SESSION] ${event}: ${userId || 'unknown'} - ${reason || ''}`);
+};
+
+// Track failed auth attempts for rate limiting
+const failedAuthAttempts = new Map<string, { count: number; lastAttempt: number }>();
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
 // Periodic cleanup of expired sessions (every 5 minutes)
 setInterval(() => {
   const now = Date.now();
@@ -129,6 +141,12 @@ setInterval(() => {
     if (session.expires < now) {
       sessions.delete(token);
       sessionRevocations.delete(token); // Also clean up revocation tracking
+    }
+  }
+  // Clean up stale lockout records
+  for (const [ip, record] of failedAuthAttempts.entries()) {
+    if (now - record.lastAttempt > LOCKOUT_DURATION_MS) {
+      failedAuthAttempts.delete(ip);
     }
   }
 }, 5 * 60 * 1000);
@@ -149,17 +167,34 @@ const createSession = (userId: string): string => {
 
 const validateSession = (req: Request, res: Response, next: Function) => {
   const authHeader = req.get('authorization');
+  const clientIp = req.ip || 'unknown';
+  
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // Track failed attempt
+    const record = failedAuthAttempts.get(clientIp) || { count: 0, lastAttempt: Date.now() };
+    record.count++;
+    record.lastAttempt = Date.now();
+    failedAuthAttempts.set(clientIp, record);
+    
+    if (record.count > MAX_FAILED_ATTEMPTS) {
+      logSessionEvent('AUTH_FAILED_LOCKOUT', 'unknown', undefined, `Client locked out: ${clientIp}`);
+      return res.status(429).json({ error: 'Too many failed attempts. Try again later.' });
+    }
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const token = authHeader.replace('Bearer ', '');
   
   // Check for revoked sessions first
   if (token && sessionRevocations.has(token)) {
+    logSessionEvent('AUTH_REVOKED_SESSION', token, undefined, 'Attempted to use revoked session');
     return res.status(401).json({ error: 'Session has been revoked' });
   }
   
   if (!token || token.length < 32 || !sessions.has(token)) {
+    const record = failedAuthAttempts.get(clientIp) || { count: 0, lastAttempt: Date.now() };
+    record.count++;
+    record.lastAttempt = Date.now();
+    failedAuthAttempts.set(clientIp, record);
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const session = sessions.get(token);
@@ -169,12 +204,15 @@ const validateSession = (req: Request, res: Response, next: Function) => {
   if (session.expires <= Date.now()) {
     sessions.delete(token);
     sessionRevocations.delete(token);
+    logSessionEvent('AUTH_SESSION_EXPIRED', token, session.userId, 'Session expired');
     return res.status(401).json({ error: 'Session expired' });
   }
   if (!session.userId) {
     sessions.delete(token);
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  // Reset failed attempts on successful auth
+  failedAuthAttempts.delete(clientIp);
   (req as any).userId = session.userId;
   next();
 };
@@ -271,13 +309,16 @@ app.post('/auth/login', [
   // Invalidate any existing session to prevent fixation
   const oldToken = req.cookies?.sessionToken;
   if (oldToken && sessions.has(oldToken)) {
+    const oldSession = sessions.get(oldToken);
     sessions.delete(oldToken);
     sessionRevocations.add(oldToken);
+    logSessionEvent('SESSION_FIXATION_PREVENTION', oldToken, oldSession?.userId, 'Old session invalidated on re-login');
   }
   
   // Validate credentials (simplified for demo)
   const token = crypto.randomBytes(32).toString('hex');
   sessions.set(token, { userId: req.body.username, expires: Date.now() + SESSION_LIFETIME_MS });
+  logSessionEvent('LOGIN', token, req.body.username, 'New session created');
   res.cookie('sessionToken', token, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: SESSION_LIFETIME_MS });
   res.json({ message: 'Logged in', token });
 });
