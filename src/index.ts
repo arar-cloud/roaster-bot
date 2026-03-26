@@ -89,16 +89,27 @@ const generateSessionToken = (): string => {
 };
 
 const validateSession = (req: Request, res: Response, next: Function) => {
-  const token = req.get('authorization')?.replace('Bearer ', '');
-  if (!token || !sessions.has(token)) {
+  const authHeader = req.get('authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const token = authHeader.replace('Bearer ', '');
+  if (!token || token.length < 32 || !sessions.has(token)) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const session = sessions.get(token);
-  if (session && session.expires < Date.now()) {
+  if (!session) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (session.expires <= Date.now()) {
     sessions.delete(token);
     return res.status(401).json({ error: 'Session expired' });
   }
-  (req as any).userId = session?.userId;
+  if (!session.userId) {
+    sessions.delete(token);
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  (req as any).userId = session.userId;
   next();
 };
 
