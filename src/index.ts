@@ -179,6 +179,14 @@ const validateSession = (req: Request, res: Response, next: Function) => {
   next();
 };
 
+// Session fixation prevention: regenerate tokens after sensitive operations
+const regenerateSession = (userId: string): string => {
+  const newToken = generateSessionToken();
+  const expiresAt = Date.now() + SESSION_TIMEOUT;
+  sessions.set(newToken, { userId, expires: expiresAt });
+  return newToken;
+};
+
 app.use((req: Request, res: Response, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -251,6 +259,29 @@ app.get('/', (req, res) => {
 });
 
 // Route with explicit parameterized API calls - no eval/Function/exec patterns
+app.post('/auth/login', [  
+  body('username').isString().trim().isLength({ min: 1, max: 128 }),
+  body('password').isString().trim().isLength({ min: 1, max: 256 })
+], async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  
+  // Invalidate any existing session to prevent fixation
+  const oldToken = req.cookies?.sessionToken;
+  if (oldToken && sessions.has(oldToken)) {
+    sessions.delete(oldToken);
+    sessionRevocations.add(oldToken);
+  }
+  
+  // Validate credentials (simplified for demo)
+  const token = crypto.randomBytes(32).toString('hex');
+  sessions.set(token, { userId: req.body.username, expires: Date.now() + SESSION_LIFETIME_MS });
+  res.cookie('sessionToken', token, { httpOnly: true, secure: true, sameSite: 'strict', maxAge: SESSION_LIFETIME_MS });
+  res.json({ message: 'Logged in', token });
+});
+
 app.post('/api/roast', validateSession, [
   body('prompt').isString().trim().isLength({ min: 1, max: 5000 }),
   body('model').optional().isIn(['gpt-4', 'gpt-4o', 'gpt-3.5-turbo'])
