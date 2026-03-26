@@ -33,12 +33,19 @@ const validateInput = (req: Request, res: Response, next: Function) => {
 };
 
 const sanitizeInput = (data: any): any => {
+  const MAX_STRING_LENGTH = 1000;
   if (typeof data === 'string') {
-    // Remove potentially dangerous characters and patterns
-    return data.replace(/[<>"'`]/g, '').slice(0, 10000);
+    if (data.length > MAX_STRING_LENGTH) {
+      throw new Error('Input string exceeds maximum allowed length');
+    }
+    return data.replace(/[<>"'`]/g, '').replace(/[;\\]/g, '');
   }
   if (typeof data === 'object' && data !== null) {
-    return Object.keys(data).reduce((acc, key) => {
+    const keys = Object.keys(data);
+    if (keys.length > 50) {
+      throw new Error('Input object exceeds maximum allowed properties');
+    }
+    return keys.reduce((acc, key) => {
       acc[key] = sanitizeInput(data[key]);
       return acc;
     }, {} as any);
