@@ -10,11 +10,13 @@ const generateSecureToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
 
-// Precompile validation regex patterns
-const CODE_REGEX = /^[a-zA-Z0-9\s\-_.,;:(){}[\]"']+$/;
-const LANGUAGE_REGEX = /^[a-zA-Z0-9_\-+.]+$/;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const URL_REGEX = /^https?:\/\/.+/;
+// Precompile validation regex patterns (cached at module load time)
+const VALIDATION_PATTERNS = Object.freeze({
+  CODE: /^[a-zA-Z0-9\s\-_.,;:(){}[\]"']+$/,
+  LANGUAGE: /^[a-zA-Z0-9_\-+.]+$/,
+  EMAIL: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+  URL: /^https?:\/\/.+/
+});
 
 // Extend Express Request type properly
 declare global {
