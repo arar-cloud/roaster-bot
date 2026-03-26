@@ -152,6 +152,8 @@ const sanitizeErrorResponse = (err: any, req: Request, res: Response, next: Func
 
 app.use(sanitizeErrorResponse);
 
+app.use(sanitizeErrorResponse);
+
 // Input validation middleware
 app.use((req: Request, Response, next) => {
   if (req.method === 'POST' && req.path === '/webhook') {
