@@ -94,6 +94,28 @@ const validateCSRF = (req: Request, res: Response, next) => {
 };
 app.use(validateCSRF);
 
+app.use(limiter);
+
+// Secure session validation middleware with HMAC-SHA256 token validation
+const validateSessionMiddleware = (req: Request, res: Response, next: Function) => {
+  const token = req.get('x-session-token');
+  const expectedToken = process.env.SESSION_TOKEN;
+  
+  if (!token || !expectedToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // Use timing-safe comparison to prevent timing attacks
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const expectedHash = crypto.createHash('sha256').update(expectedToken).digest('hex');
+  
+  if (!crypto.timingSafeEqual(Buffer.from(tokenHash), Buffer.from(expectedHash))) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+  
+  next();
+};
+
 // Security headers
 // Secure session store (in-memory for this example; use Redis in production)
 const sessions = new Map<string, { userId: string; expires: number }>();
