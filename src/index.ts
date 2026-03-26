@@ -15,6 +15,8 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+let cachedSession: any = null;
+let sessionInUse = false;
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
