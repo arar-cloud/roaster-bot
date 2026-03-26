@@ -21,6 +21,11 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Cache Copilot client to avoid repeated initialization
+const copilotClient = new CopilotClient({
+  token: process.env.GITHUB_TOKEN || '',
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
