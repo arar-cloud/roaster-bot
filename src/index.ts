@@ -139,6 +139,19 @@ app.use(express.json({
   limit: '10kb' // Prevent payload bomb attacks
 }));
 
+// Error response sanitization middleware
+const sanitizeErrorResponse = (err: any, req: Request, res: Response, next: Function) => {
+  const isDevelopment = process.env.NODE_ENV === 'development';
+  const statusCode = err.statusCode || 500;
+  const clientError = {
+    error: isDevelopment ? err.message : 'Internal server error',
+    ...(isDevelopment && { stack: err.stack }),
+  };
+  res.status(statusCode).json(clientError);
+};
+
+app.use(sanitizeErrorResponse);
+
 // Input validation middleware
 app.use((req: Request, Response, next) => {
   if (req.method === 'POST' && req.path === '/webhook') {
