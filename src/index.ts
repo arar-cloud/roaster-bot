@@ -68,6 +68,16 @@ const getCopilotClient = async (): Promise<CopilotClient> => {
 
 const app = express();
 
+// Rate limiting: prevent brute force and abuse
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later'
+});
+
+// Apply rate limiting to all requests
+app.use(limiter);
+
 // Configure JSON body parser with size limit
 app.use(express.json({ limit: '1mb' }));
 
