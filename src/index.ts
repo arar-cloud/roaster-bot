@@ -252,6 +252,25 @@ setInterval(() => {
   console.log(`[Cache cleanup] Removed expired entries. Current cache size: ${sessionCache.size}`);
 }, 5 * 60 * 1000);
 
+// Middleware to validate session tokens with strict expiry checks
+app.use((req: Request, res: Response, next) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const token = authHeader.replace(/^Bearer\s+/, '');
+    // Validate token format strictly before use
+    if (!isValidSessionToken(token)) {
+      return res.status(401).json({ error: 'Invalid token format' });
+    }
+    // Check session cache and enforce timestamp-based expiry
+    const cached = sessionCache.get(token);
+    if (cached && Date.now() - cached.timestamp > CACHE_TTL) {
+      sessionCache.delete(token);
+      return res.status(401).json({ error: 'Session expired' });
+    }
+  }
+  next();
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
