@@ -150,8 +150,10 @@ app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
       const bodyBuffer = typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody;
       const hmac = crypto.createHmac('sha256', webhookSecret);
       const digest = 'sha256=' + hmac.update(bodyBuffer).digest('hex');
+      const expectedSignature = `sha256=${digest}`;
 
-      if (signature !== digest && signature !== `sha256=${digest}`) {
+      // Use timing-safe comparison to prevent timing attacks
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
         return res.status(401).send('Unauthorized');
       }
     }
