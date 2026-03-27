@@ -36,17 +36,28 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
   // Create new session and cache it
   const session = creator();
 
-  // Evict oldest entry if cache is full (proper LRU eviction)
+  // Lazy cleanup: only prune expired sessions if cache exceeds max size
   if (sessionCache.size >= MAX_CACHE_SIZE) {
-    let oldestKey = sessionKey;
-    let oldestTime = now;
+    const expiredKeys: string[] = [];
     for (const [key, value] of sessionCache.entries()) {
-      if (value.timestamp < oldestTime) {
-        oldestTime = value.timestamp;
-        oldestKey = key;
+      if (now - value.timestamp > CACHE_TTL) {
+        expiredKeys.push(key);
       }
     }
-    sessionCache.delete(oldestKey);
+    // If expired keys found, delete them; otherwise fall back to LRU eviction
+    if (expiredKeys.length > 0) {
+      expiredKeys.forEach(key => sessionCache.delete(key));
+    } else {
+      let oldestKey = sessionKey;
+      let oldestTime = now;
+      for (const [key, value] of sessionCache.entries()) {
+        if (value.timestamp < oldestTime) {
+          oldestTime = value.timestamp;
+          oldestKey = key;
+        }
+      }
+      sessionCache.delete(oldestKey);
+    }
   }
 
   sessionCache.set(sessionKey, { session, timestamp: now });
