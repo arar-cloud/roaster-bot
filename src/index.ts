@@ -306,12 +306,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
         .update(bodyBuffer)
         .digest('hex');
 
-      if (algorithm !== 'sha256') {
-        console.warn('Webhook validation failed: unsupported algorithm');
-        return res.status(401).json({ error: 'Unsupported signature algorithm' });
-      }
-
-      if (hash !== expectedHash) {
+      if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(expectedHash))) {
         console.warn('Webhook validation failed: signature mismatch');
         return res.status(401).json({ error: 'Invalid signature' });
       }
