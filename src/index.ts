@@ -379,6 +379,42 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+const server = app.listen(port, () => {
+  console.log(`Server running at http://localhost:${port}`);
+});
+
+// Graceful shutdown handlers to prevent resource leaks
+const gracefulShutdown = async (signal: string) => {
+  console.log(`Received ${signal}, initiating graceful shutdown...`);
+  
+  // Clear session cache and destroy all active sessions
+  for (const [key, { session }] of sessionCache.entries()) {
+    try {
+      if (session && typeof session.destroy === 'function') {
+        session.destroy();
+      }
+    } catch (error) {
+      console.error(`Failed to destroy session for ${key}:`, error);
+    }
+  }
+  sessionCache.clear();
+  
+  // Close HTTP server
+  server.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
+  
+  // Force exit after timeout if server doesn't close gracefully
+  setTimeout(() => {
+    console.error('Forced shutdown after 10s timeout');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
