@@ -37,6 +37,26 @@ const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+// Cleanup expired cache entries and enforce LRU eviction
+function cleanupAndEvictCache(): void {
+  const now = Date.now();
+  const entriesToDelete: string[] = [];
+  
+  // Remove expired entries
+  for (const [key, { timestamp }] of sessionCache.entries()) {
+    if (now - timestamp > CACHE_TTL) {
+      entriesToDelete.push(key);
+    }
+  }
+  entriesToDelete.forEach(key => sessionCache.delete(key));
+  
+  // Enforce LRU size limit by removing oldest entry if needed
+  if (sessionCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = sessionCache.keys().next().value;
+    if (oldestKey) sessionCache.delete(oldestKey);
+  }
+}
+
 // Retry utility with exponential backoff for transient failures
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
