@@ -216,13 +216,23 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Initialize client with the user's token and circuit-breaker pattern
+  let client: any;
+  try {
+    client = await retryWithBackoff(
+      () => Promise.resolve(new CopilotClient({
+        env: {
+          GITHUB_TOKEN: token,
+          ...process.env
+        }
+      })),
+      2,
+      50
+    );
+  } catch (initError) {
+    console.error('Failed to initialize CopilotClient:', initError);
+    return res.status(503).json({ error: 'Service temporarily unavailable' });
+  }
 
   try {
     const systemPrompt = `
@@ -297,7 +307,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     } catch (sessionError) {
       console.error('Copilot session error:', sessionError instanceof Error ? sessionError.message : 'Unknown');
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Failed to generate completion' });
+        res.status(500).json({ error: 'Service temporarily unavailable', message: sessionError instanceof Error ? sessionError.message : 'Unknown error' });
       }
       return;
     } finally {
@@ -309,10 +319,15 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) res.status(500).json({ error: 'Service temporarily unavailable', message: error instanceof Error ? error.message : 'Unknown error' });
   } finally {
-    await client.stop();
+    if (client) await client.stop();
   }
+});
+
+// Global unhandled rejection handler for resilience
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 app.listen(port, () => {
