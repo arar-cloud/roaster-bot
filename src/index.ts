@@ -307,6 +307,22 @@ app.get('/', (req, res) => {
   `);
 });
 
+app.post('/ask', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+    if (!message) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+    const copilotClient = new CopilotClient();
+    const completion = await copilotClient.getCompletions({ prompt: message });
+    res.json({ response: completion });
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Error in /ask endpoint:', errorMessage);
+    res.status(500).json({ error: 'Failed to process request', details: errorMessage });
+  }
+})
+
 app.post('/chat', (req: Request, res: Response) => {
   try {
     let { message, sessionId } = req.body;
