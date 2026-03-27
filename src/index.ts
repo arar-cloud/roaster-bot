@@ -130,7 +130,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
+app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
   // Early exit on client disconnect to free resources
   if (req.socket.destroyed) {
     return;
