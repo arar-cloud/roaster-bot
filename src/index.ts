@@ -202,6 +202,8 @@ app.use((req: Request, res: Response, next) => {
   }
 });
 
+app.use(express.raw({ type: 'application/octet-stream' }));
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf instanceof Buffer ? buf.toString('utf8') : buf;
