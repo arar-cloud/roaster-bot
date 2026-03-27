@@ -9,24 +9,7 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string | undefined;
-    }// Guard: Validate signature and body presence
-    if (!signature || !body) {
-      console.warn('Webhook validation failed: missing signature or body');
-      return res.status(401).json({ error: 'Missing signature or body: Invalid signature' });
     }
-
-    // Guard: Validate signature format before split
-    if (!signature.includes('=')) {
-      console.warn('Webhook validation failed: malformed signature header');
-      return res.status(401).json({ error: 'Malformed signature header' });
-    }
-
-    const [algoName, hash] = signature.split('=');
-    if (!hash) {
-      console.warn('Webhook validation failed: invalid signature format');
-      return res.status(401).json({ error: 'Invalid signature format' });
-    }
-
   }
 }
 
@@ -296,19 +279,33 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       if (webhookSecret) {
         // Only reject if secret is configured but signature is missing
         console.warn('Webhook validation: missing signature, body, or secret');
-        return res.status(400).send('Missing webhook signature or body.');
+        return res.status(400).json({ error: 'Missing webhook signature or body' });
       }
       // If no secret configured, allow request through
     } else {
+      // Guard: Validate signature format before split
+      if (!signature.includes('=')) {
+        console.warn('Webhook validation failed: malformed signature header');
+        return res.status(400).json({ error: 'Malformed signature header format' });
+      }
+
+      // Verify signature using HMAC-SHA256
+      const [algorithm, hash] = signature.split('=');
+      if (algorithm !== 'sha256') {
+        console.warn('Webhook validation failed: unsupported algorithm');
+        return res.status(400).json({ error: 'Unsupported signature algorithm' });
+      }
+
       // Store rawBody reference once to avoid redundant string conversions
       const bodyBuffer = typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody;
-      const hmac = crypto.createHmac('sha256', webhookSecret);
-      const digest = 'sha256=' + hmac.update(bodyBuffer).digest('hex');
-      const expectedSignature = `sha256=${digest}`;
+      const expectedHash = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(bodyBuffer)
+        .digest('hex');
 
-      // Use timing-safe comparison to prevent timing attacks
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
-        return res.status(401).send('Unauthorized');
+      if (hash !== expectedHash) {
+        console.warn('Webhook validation failed: signature mismatch');
+        return res.status(401).json({ error: 'Invalid signature' });
       }
     }
   } catch (error) {
