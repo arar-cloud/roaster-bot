@@ -24,6 +24,12 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 const webhookRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req: Request) => req.headers['x-webhook-bypass'] === process.env.BYPASS_TOKEN,
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  },
 });
 
 function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
