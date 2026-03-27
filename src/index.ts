@@ -244,6 +244,9 @@ app.use(express.raw({ type: 'application/octet-stream' }));
 
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 
+// Apply rate limiter to all routes
+app.use(webhookRateLimiter);
+
 // Retry logic with exponential backoff
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
