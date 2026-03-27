@@ -284,13 +284,14 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       // If no secret configured, allow request through
     } else {
       // Guard: Validate signature format before split
-      if (!signature.includes('=')) {
+      const signatureParts = signature.split('=');
+      if (signatureParts.length !== 2) {
         console.warn('Webhook validation failed: malformed signature header');
-        return res.status(400).json({ error: 'Malformed signature header format' });
+        return res.status(401).json({ error: 'Invalid signature format' });
       }
 
       // Verify signature using HMAC-SHA256
-      const [algorithm, hash] = signature.split('=');
+      const [algorithm, hash] = signatureParts;
       if (algorithm !== 'sha256') {
         console.warn('Webhook validation failed: unsupported algorithm');
         return res.status(400).json({ error: 'Unsupported signature algorithm' });
@@ -302,6 +303,11 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
         .createHmac('sha256', webhookSecret)
         .update(bodyBuffer)
         .digest('hex');
+
+      if (algorithm !== 'sha256') {
+        console.warn('Webhook validation failed: unsupported algorithm');
+        return res.status(401).json({ error: 'Unsupported signature algorithm' });
+      }
 
       if (hash !== expectedHash) {
         console.warn('Webhook validation failed: signature mismatch');
