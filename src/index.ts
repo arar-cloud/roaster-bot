@@ -330,6 +330,14 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    const handleMessageGeneration = async () => {
+      return await retryWithBackoff(
+        () => session.sendAndWait({ prompt }),
+        3,
+        100
+      );
+    };
+
     session.on((event: any) => {
       if (event.type === "assistant.message_delta") {
         const chunk = {
