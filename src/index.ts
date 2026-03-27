@@ -19,6 +19,29 @@ const port = process.env.PORT || 3000;
 const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+let cacheCleanupInProgress = false;
+
+// Atomic cache cleanup to prevent race conditions
+function cleanupCache() {
+  if (cacheCleanupInProgress) return;
+  cacheCleanupInProgress = true;
+  try {
+    const now = Date.now();
+    // Remove expired entries
+    for (const [key, value] of sessionCache.entries()) {
+      if (now - value.timestamp > CACHE_TTL) {
+        sessionCache.delete(key);
+      }
+    }
+    // Evict oldest if size exceeds limit
+    if (sessionCache.size > MAX_CACHE_SIZE) {
+      const firstKey = sessionCache.keys().next().value;
+      if (firstKey) sessionCache.delete(firstKey);
+    }
+  } finally {
+    cacheCleanupInProgress = false;
+  }
+}
 
 // Initialize rate limiter once at module scope (not per-request)
 const webhookRateLimiter = rateLimit({
