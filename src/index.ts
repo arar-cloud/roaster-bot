@@ -9,7 +9,24 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string | undefined;
+    }// Guard: Validate signature and body presence
+    if (!signature || !body) {
+      console.warn('Webhook validation failed: missing signature or body');
+      return res.status(401).json({ error: 'Missing signature or body' });
     }
+
+    // Guard: Validate signature format before split
+    if (!signature.includes('=')) {
+      console.warn('Webhook validation failed: malformed signature header');
+      return res.status(401).json({ error: 'Malformed signature header' });
+    }
+
+    const [algoName, hash] = signature.split('=');
+    if (!hash) {
+      console.warn('Webhook validation failed: invalid signature format');
+      return res.status(401).json({ error: 'Invalid signature format' });
+    }
+
   }
 }
 
@@ -254,12 +271,12 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     }
 
     const { messages } = body;
-    
+
     // Validate messages array is present and not empty
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return res.status(400).json({ error: 'Messages array is required and must not be empty' });
     }
-    
+
     const userMessages = messages;
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
@@ -280,7 +297,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       3,
       100
     );
-    
+
     if (!session) {
       return res.status(503).json({ error: 'Service unavailable' });
     }
