@@ -27,10 +27,13 @@ const webhookRateLimiter = rateLimit({
 });
 
 function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
+  if (!sessionKey) {
+    throw new Error('Session key is required');
+  }
   const now = Date.now();
   const cached = sessionCache.get(sessionKey);
 
-  if (cached && now - cached.timestamp < CACHE_TTL) {
+  if (cached && cached.session && now - cached.timestamp < CACHE_TTL) {
     return cached.session;
   }
 
@@ -57,12 +60,14 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
       let oldestKey = sessionKey;
       let oldestTime = now;
       for (const [key, value] of sessionCache.entries()) {
-        if (value.timestamp < oldestTime) {
+        if (value && value.timestamp < oldestTime) {
           oldestTime = value.timestamp;
           oldestKey = key;
         }
       }
-      sessionCache.delete(oldestKey);
+      if (oldestKey !== undefined) {
+        sessionCache.delete(oldestKey);
+      }
     }
   }
 
