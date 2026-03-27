@@ -11,6 +11,9 @@ declare global {
     interface Request {
       rawBody?: string | undefined;
     }
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 }
 
@@ -227,30 +230,19 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
 
 
-// Middleware to capture raw body BEFORE JSON parsing
-app.use((req: Request, res: Response, next) => {
-  if (req.path === '/agent') {
-    let data = '';
-    req.setEncoding('utf8');
-    req.on('data', chunk => {
-      data += chunk;
-    });
-    req.on('end', () => {
-      req.rawBody = data;
-      next();
-    });
-  } else {
-    next();
+// Capture raw body for webhook signature verification
+app.use(express.raw({ type: 'application/json' }), (req, res, next) => {
+  if (req.body && typeof req.body === 'object' && !(req.body instanceof Buffer)) {
+    req.rawBody = JSON.stringify(req.body);
+  } else if (Buffer.isBuffer(req.body)) {
+    req.rawBody = req.body.toString('utf-8');
   }
+  next();
 });
 
 app.use(express.raw({ type: 'application/octet-stream' }));
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf instanceof Buffer ? buf.toString('utf8') : buf;
-  }
-}));
+app.use(express.json({ limit: MAX_BODY_SIZE }));
 
 // Retry logic with exponential backoff
 async function retryWithBackoff<T>(
@@ -315,7 +307,7 @@ app.get('/', (req, res) => {
 app.post('/chat', (req: Request, res: Response) => {
   try {
     let { message, sessionId } = req.body;
-    
+
     // Security: Validate and sanitize inputs
     if (typeof message !== 'string' || message.length === 0 || message.length > 5000) {
       return res.status(400).json({ error: 'Invalid message: must be string 1-5000 chars' });
@@ -323,11 +315,11 @@ app.post('/chat', (req: Request, res: Response) => {
     if (typeof sessionId !== 'string' || sessionId.length === 0) {
       return res.status(400).json({ error: 'Invalid sessionId' });
     }
-    
+
     // Apply strict validation using whitelist patterns
     const validatedMessage = validateInput(message, 5000);
     const validatedSessionId = validateUserId(sessionId);
-    
+
     // TODO: Process chat request with validated inputs
     res.json({ success: true });
   } catch (error: any) {
@@ -460,7 +452,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     if (dangerousPatterns.test(payloadStr)) {
       return res.status(400).json({ error: 'Payload contains invalid characters' });
     }
-    
+
     const userMessages = messages;
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
