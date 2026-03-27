@@ -34,8 +34,8 @@ function sanitizeInput(input: string): string {
 // Security: Validate session token format
 function isValidSessionToken(token: string): boolean {
   if (typeof token !== 'string' || token.length === 0) return false;
-  // Accept only alphanumeric, hyphen, underscore (UUID/token format)
-  return /^[a-zA-Z0-9_-]{20,}$/.test(token);
+  // Accept only alphanumeric, hyphen (cryptographic token format)
+  return /^[a-zA-Z0-9-]{40,}$/.test(token);
 } // 30 minutes
 
 // Helper: evict expired or oldest cache entry
@@ -146,6 +146,11 @@ const webhookRateLimiter = rateLimit({
     res.status(429).json({ error: 'Too many requests, please try again later.' });
   },
 });
+
+// Generate session token using cryptographically secure randomization
+function generateSecureSessionToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
 
 function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
   if (!sessionKey) {
@@ -285,21 +290,26 @@ app.get('/', (req, res) => {
 });
 
 app.post('/chat', (req: Request, res: Response) => {
-  let { message, sessionId } = req.body;
-  
-  // Security: Validate and sanitize inputs
-  if (typeof message !== 'string' || message.length === 0 || message.length > 5000) {
-    return res.status(400).json({ error: 'Invalid message: must be string 1-5000 chars' });
+  try {
+    let { message, sessionId } = req.body;
+    
+    // Security: Validate and sanitize inputs
+    if (typeof message !== 'string' || message.length === 0 || message.length > 5000) {
+      return res.status(400).json({ error: 'Invalid message: must be string 1-5000 chars' });
+    }
+    if (typeof sessionId !== 'string' || sessionId.length === 0) {
+      return res.status(400).json({ error: 'Invalid sessionId' });
+    }
+    
+    // Apply strict validation using whitelist patterns
+    const validatedMessage = validateInput(message, 5000);
+    const validatedSessionId = validateUserId(sessionId);
+    
+    // TODO: Process chat request with validated inputs
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message || 'Invalid input' });
   }
-  if (typeof sessionId !== 'string' || sessionId.length === 0) {
-    return res.status(400).json({ error: 'Invalid sessionId' });
-  }
-  
-  message = sanitizeInput(message);
-  sessionId = sanitizeInput(sessionId);
-  
-  // TODO: Process chat request with validated inputs
-  res.json({ success: true });
 });
 
 app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
