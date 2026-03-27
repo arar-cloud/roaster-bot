@@ -152,16 +152,23 @@ function cleanupCache() {
 }
 
 // Initialize rate limiter once at module scope (not per-request)
-const webhookRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req: Request) => req.headers['x-webhook-bypass'] === process.env.BYPASS_TOKEN,
-  handler: (req: Request, res: Response) => {
-    res.status(429).json({ error: 'Too many requests, please try again later.' });
-  },
-});
+let webhookRateLimiter: any;
+try {
+  webhookRateLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per windowMs
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request) => req.headers['x-webhook-bypass'] === process.env.BYPASS_TOKEN,
+    handler: (req: Request, res: Response) => {
+      res.status(429).json({ error: 'Too many requests, please try again later.' });
+    },
+  });
+} catch (err) {
+  console.error('Rate limiter initialization failed:', err);
+  // Fallback: no-op middleware that passes through
+  webhookRateLimiter = (req: Request, res: Response, next: any) => next();
+}
 
 // Generate session token using cryptographically secure randomization
 function generateSecureSessionToken(): string {
@@ -369,7 +376,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
         return res.status(401).json({ error: 'Invalid signature format' });
       }
 
-      // Verify signature using HMAC-SHA256
+      // Verify signature using HMAC-SHA256 with timing-safe comparison
       const [algorithm, hash] = signatureParts;
       if (algorithm !== 'sha256') {
         console.warn('Webhook validation failed: unsupported algorithm');
