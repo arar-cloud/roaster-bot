@@ -72,6 +72,23 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
 
 
+// Middleware to capture raw body BEFORE JSON parsing
+app.use((req: Request, res: Response, next) => {
+  if (req.path === '/agent') {
+    let data = '';
+    req.setEncoding('utf8');
+    req.on('data', chunk => {
+      data += chunk;
+    });
+    req.on('end', () => {
+      req.rawBody = data;
+      next();
+    });
+  } else {
+    next();
+  }
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf instanceof Buffer ? buf.toString('utf8') : buf;
