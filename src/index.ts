@@ -338,11 +338,17 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     });
 
     cleanupAndEvictCache();
-    const session = await retryWithBackoff(
-      () => getCachedOrCreateSession(sessionKey, sessionCreator),
-      3,
-      100
-    );
+    let session;
+    try {
+      session = await retryWithBackoff(
+        () => getCachedOrCreateSession(sessionKey, sessionCreator),
+        3,
+        100
+      );
+    } catch (error) {
+      console.error('Failed to create Copilot session:', error);
+      return res.status(503).json({ error: 'Service unavailable', details: 'Session creation failed' });
+    }
 
     if (!session) {
       return res.status(503).json({ error: 'Service unavailable' });
@@ -376,9 +382,16 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
         100
       );
     } catch (sessionError) {
-      console.error('Copilot session error:', sessionError instanceof Error ? sessionError.message : 'Unknown');
+      console.error('Copilot API error:', sessionError instanceof Error ? sessionError.message : 'Unknown');
+      const statusCode = sessionError instanceof Error && 'status' in sessionError ? (sessionError as any).status : 500;
       if (!res.headersSent) {
-        res.status(500).json({ error: 'Service temporarily unavailable', message: sessionError instanceof Error ? sessionError.message : 'Unknown error' });
+        res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 503).json({ error: 'Copilot request failed', details: sessionError instanceof Error ? sessionError.message : 'Unknown error' });
+      }
+      return;
+    }
+
+    if (!res.headersSent) {
+      res.end();y unavailable', message: sessionError instanceof Error ? sessionError.message : 'Unknown error' });
       }
       return;
     } finally {
