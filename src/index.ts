@@ -20,6 +20,12 @@ const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+// Initialize rate limiter once at module scope (not per-request)
+const webhookRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+});
+
 function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
   const now = Date.now();
   const cached = sessionCache.get(sessionKey);
@@ -64,12 +70,7 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
   return session;
 }
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
@@ -101,7 +102,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
   // Early exit on client disconnect to free resources
   if (req.socket.destroyed) {
     return;
