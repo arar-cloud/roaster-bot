@@ -129,6 +129,23 @@ app.use(express.json({
   }
 }));
 
+// Retry logic with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  delayMs: number = 100
+): Promise<T> {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (i === maxRetries - 1) throw error;
+      await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, i)));
+    }
+  }
+  throw new Error('Retry exhausted');
+}
+
 // Periodic cache cleanup: remove expired sessions every 5 minutes
 setInterval(() => {
   const now = Date.now();
@@ -248,7 +265,11 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       }
     });
 
-    const session = await getCachedOrCreateSession(sessionKey, sessionCreator);
+    const session = await retryWithBackoff(
+      () => getCachedOrCreateSession(sessionKey, sessionCreator),
+      3,
+      100
+    );
     
     if (!session) {
       return res.status(503).json({ error: 'Service unavailable' });
@@ -268,7 +289,11 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     });
 
     try {
-      await session.sendAndWait({ prompt });
+      await retryWithBackoff(
+        () => session.sendAndWait({ prompt }),
+        3,
+        100
+      );
     } catch (sessionError) {
       console.error('Copilot session error:', sessionError instanceof Error ? sessionError.message : 'Unknown');
       if (!res.headersSent) {
