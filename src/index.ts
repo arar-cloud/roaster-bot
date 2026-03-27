@@ -57,7 +57,7 @@ const limiter = rateLimit({
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    req.rawBody = buf instanceof Buffer ? buf.toString('utf8') : buf;
   }
 }));
 
