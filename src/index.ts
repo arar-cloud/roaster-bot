@@ -372,7 +372,16 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
 
     // Use cache-aware session retrieval with unique key per request context
     const sessionKey = `copilot-session-${process.env.GITHUB_APP_ID || 'default'}`;
-    const sessionCreator = async () => await client.createSession({
+    const sessionCreator = async () => {
+      const now = Date.now();
+      const cached = sessionCache.get(sessionKey);
+      if (cached && now - cached.timestamp <= CACHE_TTL) {
+        return cached.session;
+      }
+      if (cached && now - cached.timestamp > CACHE_TTL) {
+        sessionCache.delete(sessionKey);
+      }
+      return await client.createSession({
       model: "gpt-4o",
       streaming: true,
       systemMessage: {
