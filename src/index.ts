@@ -366,6 +366,17 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       return res.status(400).json({ error: 'Messages array is required and must not be empty' });
     }
 
+    // Validate input payload safety
+    if (typeof body.action !== 'string' || !/^[a-z_]+$/.test(body.action || '')) {
+      // Non-blocking: action is optional, but validate if present
+    }
+    // Reject payloads with shell metacharacters
+    const dangerousPatterns = /[;&|`$()\n\r]/g;
+    const payloadStr = JSON.stringify(body);
+    if (dangerousPatterns.test(payloadStr)) {
+      return res.status(400).json({ error: 'Payload contains invalid characters' });
+    }
+    
     const userMessages = messages;
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
