@@ -22,7 +22,21 @@ app.use(express.json({ limit: MAX_BODY_SIZE }));
 // LRU cache for Copilot sessions: Map(key -> { session, timestamp })
 const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
-const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+const CACHE_TTL = 30 * 60 * 1000;
+
+// Security: Input sanitization function
+function sanitizeInput(input: string): string {
+  if (typeof input !== 'string') return '';
+  // Remove shell metacharacters and control sequences
+  return input.replace(/[;&|`$()\n\r]/g, '').slice(0, 1000);
+}
+
+// Security: Validate session token format
+function isValidSessionToken(token: string): boolean {
+  if (typeof token !== 'string' || token.length === 0) return false;
+  // Accept only alphanumeric, hyphen, underscore (UUID/token format)
+  return /^[a-zA-Z0-9_-]{20,}$/.test(token);
+} // 30 minutes
 
 // Helper: evict expired or oldest cache entry
 function evictCacheEntry() {
