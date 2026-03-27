@@ -30,14 +30,21 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
   
   // Create new session and cache it
   const session = creator();
-  sessionCache.set(sessionKey, { session, timestamp: now });
   
-  // Evict oldest entry if cache is full (simple FIFO, not LRU)
-  if (sessionCache.size > MAX_CACHE_SIZE) {
-    const firstKey = sessionCache.keys().next().value;
-    sessionCache.delete(firstKey);
+  // Evict oldest entry if cache is full (proper LRU eviction)
+  if (sessionCache.size >= MAX_CACHE_SIZE) {
+    let oldestKey = sessionKey;
+    let oldestTime = now;
+    for (const [key, value] of sessionCache.entries()) {
+      if (value.timestamp < oldestTime) {
+        oldestTime = value.timestamp;
+        oldestKey = key;
+      }
+    }
+    sessionCache.delete(oldestKey);
   }
   
+  sessionCache.set(sessionKey, { session, timestamp: now });
   return session;
 }
 
