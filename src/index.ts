@@ -12,7 +12,7 @@ declare global {
     }// Guard: Validate signature and body presence
     if (!signature || !body) {
       console.warn('Webhook validation failed: missing signature or body');
-      return res.status(401).json({ error: 'Missing signature or body' });
+      return res.status(401).json({ error: 'Missing signature or body: Invalid signature' });
     }
 
     // Guard: Validate signature format before split
@@ -41,7 +41,7 @@ const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 function cleanupAndEvictCache(): void {
   const now = Date.now();
   const entriesToDelete: string[] = [];
-  
+
   // Remove expired entries
   for (const [key, { timestamp }] of sessionCache.entries()) {
     if (now - timestamp > CACHE_TTL) {
@@ -49,7 +49,7 @@ function cleanupAndEvictCache(): void {
     }
   }
   entriesToDelete.forEach(key => sessionCache.delete(key));
-  
+
   // Enforce LRU size limit by removing oldest entry if needed
   if (sessionCache.size >= MAX_CACHE_SIZE) {
     const oldestKey = sessionCache.keys().next().value;
@@ -69,11 +69,11 @@ const retryWithBackoff = async <T>(
     } catch (error: any) {
       const isLastAttempt = attempt === maxAttempts - 1;
       const isTransientError = error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout');
-      
+
       if (isLastAttempt || !isTransientError) {
         throw error;
       }
-      
+
       const delayMs = initialDelayMs * Math.pow(2, attempt);
       console.warn(`Transient error on attempt ${attempt + 1}, retrying in ${delayMs}ms`, error?.message);
       await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -421,7 +421,7 @@ const server = app.listen(port, () => {
 // Graceful shutdown handlers to prevent resource leaks
 const gracefulShutdown = async (signal: string) => {
   console.log(`Received ${signal}, initiating graceful shutdown...`);
-  
+
   // Clear session cache and destroy all active sessions
   for (const [key, { session }] of sessionCache.entries()) {
     try {
@@ -433,13 +433,13 @@ const gracefulShutdown = async (signal: string) => {
     }
   }
   sessionCache.clear();
-  
+
   // Close HTTP server
   server.close(() => {
     console.log('HTTP server closed');
     process.exit(0);
   });
-  
+
   // Force exit after timeout if server doesn't close gracefully
   setTimeout(() => {
     console.error('Forced shutdown after 10s timeout');
