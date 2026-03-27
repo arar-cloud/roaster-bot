@@ -195,7 +195,15 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const { messages } = req.body;
+    let body;
+    try {
+      body = req.body;
+    } catch (parseError) {
+      res.status(400).json({ error: 'Invalid JSON payload' });
+      return;
+    }
+
+    const { messages } = body;
     
     // Validate messages array is present and not empty
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
