@@ -205,6 +205,10 @@ app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
     });
 
     const session = await getCachedOrCreateSession(sessionKey, sessionCreator);
+    
+    if (!session) {
+      return res.status(503).json({ error: 'Service unavailable' });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -221,6 +225,12 @@ app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
 
     try {
       await session.sendAndWait({ prompt });
+    } catch (sessionError) {
+      console.error('Copilot session error:', sessionError instanceof Error ? sessionError.message : 'Unknown');
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to generate completion' });
+      }
+      return;
     } finally {
       session.end();
     }
