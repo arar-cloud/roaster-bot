@@ -28,6 +28,11 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
     return cached.session;
   }
   
+  // Evict expired session if it exists
+  if (cached) {
+    sessionCache.delete(sessionKey);
+  }
+  
   // Create new session and cache it
   const session = creator();
   
