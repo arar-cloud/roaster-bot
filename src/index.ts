@@ -106,16 +106,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   try {
     const signature = req.get('X-Hub-Signature-256');
     const webhookSecret = process.env.WEBHOOK_SECRET;
+    const rawBody = req.rawBody;
 
-    if (webhookSecret && signature) {
-      const rawBody = req.rawBody;
-      if (!rawBody) return res.status(400).send('Missing raw body.');
-
+    // Defensive checks for missing/malformed signature components
+    if (!signature || !rawBody || !webhookSecret) {
+      if (webhookSecret) {
+        // Only reject if secret is configured but signature is missing
+        console.warn('Webhook validation: missing signature, body, or secret');
+        return res.status(400).send('Missing webhook signature or body.');
+      }
+      // If no secret configured, allow request through
+    } else {
       const hmac = crypto.createHmac('sha256', webhookSecret);
       const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
       if (signature !== digest && signature !== `sha256=${digest}`) {
-          return res.status(401).send('Unauthorized');
+        return res.status(401).send('Unauthorized');
       }
     }
   } catch (error) {
