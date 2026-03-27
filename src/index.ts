@@ -37,6 +37,36 @@ const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
 
+// Helper: evict expired or oldest cache entry
+function evictCacheEntry() {
+  let oldestKey: string | null = null;
+  let oldestTime = Date.now();
+  for (const [key, { timestamp }] of sessionCache) {
+    if (Date.now() - timestamp > CACHE_TTL) {
+      sessionCache.delete(key);
+      return;
+    }
+    if (timestamp < oldestTime) {
+      oldestTime = timestamp;
+      oldestKey = key;
+    }
+  }
+  if (oldestKey) sessionCache.delete(oldestKey);
+}
+
+// Helper: get or create cached session with eviction
+function getOrCreateSession(userId: string): any {
+  const cached = sessionCache.get(userId);
+  if (cached && Date.now() - cached.timestamp <= CACHE_TTL) {
+    return cached.session;
+  }
+  sessionCache.delete(userId);
+  if (sessionCache.size >= MAX_CACHE_SIZE) {
+    evictCacheEntry();
+  }
+  return null;
+}
+
 // Cleanup expired cache entries and enforce LRU eviction
 function cleanupAndEvictCache(): void {
   const now = Date.now();
