@@ -36,6 +36,30 @@ const port = process.env.PORT || 3000;
 const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
 const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+// Retry utility with exponential backoff for transient failures
+const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  initialDelayMs: number = 1000
+): Promise<T> => {
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const isLastAttempt = attempt === maxAttempts - 1;
+      const isTransientError = error?.code === 'ECONNRESET' || error?.code === 'ETIMEDOUT' || error?.message?.includes('timeout');
+      
+      if (isLastAttempt || !isTransientError) {
+        throw error;
+      }
+      
+      const delayMs = initialDelayMs * Math.pow(2, attempt);
+      console.warn(`Transient error on attempt ${attempt + 1}, retrying in ${delayMs}ms`, error?.message);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+};
 let cacheCleanupInProgress = false;
 
 // Atomic cache cleanup to prevent race conditions
