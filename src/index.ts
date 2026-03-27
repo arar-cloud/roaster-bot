@@ -129,8 +129,10 @@ app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
       }
       // If no secret configured, allow request through
     } else {
+      // Store rawBody reference once to avoid redundant string conversions
+      const bodyBuffer = typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody;
       const hmac = crypto.createHmac('sha256', webhookSecret);
-      const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+      const digest = 'sha256=' + hmac.update(bodyBuffer).digest('hex');
 
       if (signature !== digest && signature !== `sha256=${digest}`) {
         return res.status(401).send('Unauthorized');
