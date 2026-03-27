@@ -284,6 +284,24 @@ app.get('/', (req, res) => {
   `);
 });
 
+app.post('/chat', (req: Request, res: Response) => {
+  let { message, sessionId } = req.body;
+  
+  // Security: Validate and sanitize inputs
+  if (typeof message !== 'string' || message.length === 0 || message.length > 5000) {
+    return res.status(400).json({ error: 'Invalid message: must be string 1-5000 chars' });
+  }
+  if (typeof sessionId !== 'string' || sessionId.length === 0) {
+    return res.status(400).json({ error: 'Invalid sessionId' });
+  }
+  
+  message = sanitizeInput(message);
+  sessionId = sanitizeInput(sessionId);
+  
+  // TODO: Process chat request with validated inputs
+  res.json({ success: true });
+});
+
 app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
   // Validate Content-Length header to prevent memory exhaustion
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
