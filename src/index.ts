@@ -455,7 +455,19 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-const server = app.listen(port, () => {
+const server = // Error handler for payload size violations
+app.use((err: any, req: Request, res: Response, next: any) => {
+  if (err.status === 413 || err.code === 'PAYLOAD_TOO_LARGE') {
+    return res.status(413).json({ error: 'Payload too large. Max size: 100MB' });
+  }
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+app.listen(port, () => {
   console.log(`Server running at http://localhost:${port}`);
 });
 
