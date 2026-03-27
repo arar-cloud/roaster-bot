@@ -134,6 +134,7 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
   // Create new session and cache it
   const session = creator();
+  cleanupAndEvictCache();
 
   // Lazy cleanup: only prune expired sessions if cache exceeds max size
   if (sessionCache.size >= MAX_CACHE_SIZE) {
@@ -336,6 +337,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       }
     });
 
+    cleanupAndEvictCache();
     const session = await retryWithBackoff(
       () => getCachedOrCreateSession(sessionKey, sessionCreator),
       3,
