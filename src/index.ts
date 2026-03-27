@@ -267,6 +267,13 @@ app.get('/', (req, res) => {
 });
 
 app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
+  // Validate Content-Length header to prevent memory exhaustion
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  const MAX_WEBHOOK_SIZE = 100 * 1024 * 1024; // 100MB hard limit
+  if (contentLength > MAX_WEBHOOK_SIZE) {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+
   // Early exit on client disconnect to free resources
   if (req.socket.destroyed) {
     return;
