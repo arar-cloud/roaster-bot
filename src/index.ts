@@ -12,7 +12,7 @@ declare global {
     }// Guard: Validate signature and body presence
     if (!signature || !body) {
       console.warn('Webhook validation failed: missing signature or body');
-      return res.status(401).json({ error: 'Missing signature or body: Invalid signature' });
+        return res.status(401).json({ error: 'Missing signature or body: Invalid signature' });
     }
 
     // Guard: Validate signature format before split
@@ -25,7 +25,7 @@ declare global {
     if (!hash) {
       console.warn('Webhook validation failed: invalid signature format');
       return res.status(401).json({ error: 'Invalid signature format' });
-    }
+      }
 
   }
 }
@@ -274,7 +274,7 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
     }
   });
 
-  // Webhook signature verification
+  // Webhook signature verification with enhanced error handling
   try {
     const signature = req.get('X-Hub-Signature-256');
     const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -289,15 +289,20 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       }
       // If no secret configured, allow request through
     } else {
-      // Store rawBody reference once to avoid redundant string conversions
-      const bodyBuffer = typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody;
-      const hmac = crypto.createHmac('sha256', webhookSecret);
-      const digest = 'sha256=' + hmac.update(bodyBuffer).digest('hex');
-      const expectedSignature = `sha256=${digest}`;
+      try {
+        // Store rawBody reference once to avoid redundant string conversions
+        const bodyBuffer = typeof rawBody === 'string' ? Buffer.from(rawBody) : rawBody;
+        const hmac = crypto.createHmac('sha256', webhookSecret);
+        const digest = 'sha256=' + hmac.update(bodyBuffer).digest('hex');
+        const expectedSignature = `sha256=${digest}`;
 
-      // Use timing-safe comparison to prevent timing attacks
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
-        return res.status(401).send('Unauthorized');
+        // Use timing-safe comparison to prevent timing attacks
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+          return res.status(401).send('Unauthorized');
+        }
+      } catch (cryptoErr) {
+        console.error('Crypto operation error:', cryptoErr);
+        return res.status(500).send('Signature verification failed');
       }
     }
   } catch (error) {
@@ -367,15 +372,23 @@ app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => 
       }
     });
 
-    cleanupAndEvictCache();
+    try {
+      cleanupAndEvictCache();
+    } catch (cacheErr) {
+      console.warn('Cache cleanup error (non-fatal):', cacheErr);
+    }
     let session;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     try {
       session = await retryWithBackoff(
         () => getCachedOrCreateSession(sessionKey, sessionCreator),
         3,
         100
       );
+      clearTimeout(timeout);
     } catch (error) {
+      clearTimeout(timeout);
       console.error('Failed to create Copilot session:', error);
       return res.status(503).json({ error: 'Service unavailable', details: 'Session creation failed' });
     }
