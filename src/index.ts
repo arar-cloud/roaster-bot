@@ -32,6 +32,10 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Middleware configuration
+const MAX_BODY_SIZE = '100mb'; // Prevent memory exhaustion from oversized payloads
+app.use(express.json({ limit: MAX_BODY_SIZE }));
 // LRU cache for Copilot sessions: Map(key -> { session, timestamp })
 const sessionCache = new Map<string, { session: any; timestamp: number }>();
 const MAX_CACHE_SIZE = 10;
