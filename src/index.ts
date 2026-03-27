@@ -9,11 +9,8 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string | undefined;
+      rawBody?: string | Buffer | undefined;
     }
-  } catch (error) {
-    console.error('Webhook processing error:', error);
-    res.status(500).json({ error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' });
   }
 }
 
@@ -232,12 +229,14 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
 // Capture raw body for webhook signature verification
 app.use(express.raw({ type: 'application/json' }), (req, res, next) => {
-  if (req.body && typeof req.body === 'object' && !(req.body instanceof Buffer)) {
-    req.rawBody = JSON.stringify(req.body);
-  } else if (Buffer.isBuffer(req.body)) {
-    req.rawBody = req.body.toString('utf-8');
-  }
-  next();
+  const chunks: Buffer[] = [];
+  req.on('data', (chunk: Buffer) => {
+    chunks.push(chunk);
+  });
+  req.on('end', () => {
+    req.rawBody = Buffer.concat(chunks).toString('utf-8');
+    next();
+  });
 });
 
 app.use(express.raw({ type: 'application/octet-stream' }));
