@@ -204,6 +204,8 @@ app.post('/agent', webhookRateLimiter, async (req: Request, res: Response) => {
       }
     });
 
+    const session = await getCachedOrCreateSession(sessionKey, sessionCreator);
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
