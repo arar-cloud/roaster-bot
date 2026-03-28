@@ -9,8 +9,8 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
+    const signatureBuffer = Buffer.from(signature received);
+      const expectedBuffer = Buffer.from(expectedSignature);
     if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer  rawBody?: string | Buffer | undefined;
     }
   }
@@ -255,6 +255,40 @@ app.use(express.json({ limit: MAX_BODY_SIZE }));
 
 // Apply rate limiter only to webhook endpoint
 // Removed: app.use(webhookRateLimiter); - now applied directly to /webhook route
+
+app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
+  try {
+    const signature = req.headers['x-github-event-signature-256'] as string;
+    const payload = req.rawBody;
+    
+    if (!signature || !payload) {
+      console.warn('Webhook request missing signature or payload');
+      return res.status(400).json({ error: 'Invalid webhook request' });
+    }
+
+    const webhookSecret = process.env.WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.error('WEBHOOK_SECRET not configured');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    
+    const hash = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(payload)
+      .digest('hex');
+
+    if (`sha256=${hash}` !== signature) {
+      console.warn('Invalid webhook signature received');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Process valid webhook...
+    res.status(200).json({ message: 'Webhook received' });
+  } catch (error) {
+    console.error('Webhook verification error:', error instanceof Error ? error.message : String(error));
+    return res.status(400).json({ error: 'Webhook processing failed' });
+  }
+});
 
 // Retry logic with exponential backoff
 async function retryWithBackoff<T>(
