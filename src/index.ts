@@ -319,7 +319,7 @@ app.post('/ask', async (req: Request, res: Response) => {
       console.error('GITHUB_TOKEN environment variable not set');
       return res.status(500).json({ error: 'Server configuration error: missing GITHUB_TOKEN' });
     }
-    const copilotClient = new CopilotClient({ token });
+    const copilotClient = new CopilotClient({ token: process.env.COPILOT_TOKEN || '' });
     const completion = await copilotClient.getCompletions({ prompt: message });
     res.json({ response: completion });
   } catch (error: unknown) {
