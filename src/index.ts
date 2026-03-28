@@ -9,7 +9,7 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-    fer | undefined;
+      rawBody?: Buffer | string;
     }
   }
 }
@@ -244,20 +244,12 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
 
 // Capture raw body for webhook signature verification
-app.use(express.raw({ type: 'application/json' }), (req, res, next) => {
-  const chunks: Buffer[] = [];
-  req.on('data', (chunk: Buffer) => {
-    chunks.push(chunk);
-  });
-  req.on('end', () => {
-    req.rawBody = Buffer.concat(chunks).toString('utf-8');
-    next();
-  });
-});
-
-app.use(express.raw({ type: 'application/octet-stream' }));
-
-app.use(express.json({ limit: MAX_BODY_SIZE }));
+app.use(express.json({
+  limit: MAX_BODY_SIZE,
+  verify: (req: any, res: Response, buf: Buffer) => {
+    req.rawBody = buf.toString('utf-8');
+  },
+}));
 
 // Apply rate limiter only to webhook endpoint
 // Removed: app.use(webhookRateLimiter); - now applied directly to /webhook route
