@@ -282,6 +282,21 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Parse and validate webhook payload
+    const webhookPayload = typeof payload === 'string' ? JSON.parse(payload) : payload;
+    const { repository, issue, action } = webhookPayload;
+    if (!repository || !repository.full_name || !issue) {
+      res.status(400).json({ error: 'Invalid payload' });
+      return;
+    }
+    // Validate repository and issue format to prevent injection
+    const repoMatch = /^[a-zA-Z0-9-_.]+\/[a-zA-Z0-9-_.]+$/.test(repository.full_name);
+    const issueNum = /^\d+$/.test(String(issue.number));
+    if (!repoMatch || !issueNum) {
+      res.status(400).json({ error: 'Invalid repository or issue format' });
+      return;
+    }
+
     // Process valid webhook...
     res.status(200).json({ message: 'Webhook received' });
   } catch (error) {
