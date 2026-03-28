@@ -314,13 +314,18 @@ app.post('/ask', async (req: Request, res: Response) => {
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
-    const copilotClient = new CopilotClient();
+    const token = process.env.GITHUB_TOKEN;
+    if (!token) {
+      console.error('GITHUB_TOKEN environment variable not set');
+      return res.status(500).json({ error: 'Server configuration error: missing GITHUB_TOKEN' });
+    }
+    const copilotClient = new CopilotClient({ token });
     const completion = await copilotClient.getCompletions({ prompt: message });
     res.json({ response: completion });
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error in /ask endpoint:', errorMessage);
-    res.status(500).json({ error: 'Failed to process request', details: errorMessage });
+    res.status(500).json({ error: 'Failed to process request', details: process.env.NODE_ENV === 'development' ? errorMessage : undefined });
   }
 })
 
