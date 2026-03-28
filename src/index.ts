@@ -541,7 +541,7 @@ app.post('/webhook', (req: Request, res: Response, next) => webhookRateLimiter(r
       50
     );
   } catch (initError) {
-    console.error('Failed to initialize CopilotClient:', initError);
+    console.error('Failed to initialize CopilotClient:', initError instanceof Error ? initError.message : String(initError));
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 
