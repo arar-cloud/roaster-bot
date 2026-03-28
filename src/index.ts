@@ -358,6 +358,30 @@ const limiter = rateLimit({
   },
 });
 
+// API endpoint with error handling for Copilot integration
+app.post('/api/copilot', limiter, async (req: Request, res: Response) => {
+  try {
+    const payload = req.body as any;
+
+    try {
+      const completion = await copilot.getCompletions({
+        prompt: payload.comment.body,
+        language: 'javascript',
+      });
+
+      const reply = `## Copilot Response\n${completion.choices[0].text}`;
+
+      res.json({ success: true, reply });
+    } catch (error) {
+      console.error('Copilot API error:', error);
+      res.status(500).json({ error: 'Failed to process request', details: (error as Error).message });
+    }
+  } catch (error) {
+    console.error('Unexpected error in Copilot endpoint:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
