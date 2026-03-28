@@ -296,6 +296,16 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
   }
 });
 
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// Start server
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+
 // Retry logic with exponential backoff
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
