@@ -17,6 +17,10 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Token refresh lock to prevent concurrent refresh requests
+let tokenRefreshLock: Promise<void> = Promise.resolve();
+let tokenRefreshInProgress = false;
+
 // Validate required environment variables
 const requiredEnvVars = ['GITHUB_TOKEN', 'COPILOT_API_KEY', 'WEBHOOK_SECRET'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
@@ -197,7 +201,7 @@ const webhookRateLimiterMiddleware = (req: Request, res: Response, next: any) =>
 
 // Generate session token using cryptographically secure randomization
 function generateSecureSessionToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomUUID();
 }
 
 function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
