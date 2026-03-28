@@ -256,12 +256,14 @@ app.use(express.json({
 
 app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Response) => {
   try {
-    const signature = req.headers['x-github-event-signature-256'] as string;
     const payload = req.rawBody;
-
-    if (!signature || !payload) {
-      console.warn('Webhook request missing signature or payload');
-      return res.status(400).json({ error: 'Invalid webhook request' });
+    if (!payload || (typeof payload !== 'string' && !Buffer.isBuffer(payload))) {
+      return res.status(400).json({ error: 'Invalid request body' });
+    }
+    const signature = req.headers['x-github-event-signature-256'] as string;
+    if (!signature) {
+      console.warn('Webhook request missing signature');
+      return res.status(401).json({ error: 'Missing signature header' });
     }
 
     const webhookSecret = process.env.WEBHOOK_SECRET;
