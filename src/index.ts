@@ -40,6 +40,15 @@ app.use(helmet({
   noSniff: true,
 }));
 
+// Token validation middleware: reject requests with missing or invalid API tokens
+app.use((req, res, next) => {
+  const token = req.headers['x-api-token'];
+  if (!token || typeof token !== 'string') {
+    return res.status(401).json({ error: 'Unauthorized: missing or invalid API token' });
+  }
+  next();
+});
+
 // Middleware configuration
 const MAX_BODY_SIZE = '100mb'; // Prevent memory exhaustion from oversized payloads
 app.use(express.json({ limit: MAX_BODY_SIZE }));
