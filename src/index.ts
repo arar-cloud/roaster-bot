@@ -19,6 +19,14 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate required environment variables
+const requiredEnvVars = ['GITHUB_TOKEN', 'COPILOT_API_KEY', 'WEBHOOK_SECRET'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
