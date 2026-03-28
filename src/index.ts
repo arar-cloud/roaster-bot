@@ -288,8 +288,13 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
 
     const expected = Buffer.from(`sha256=${hash}`);
     const actual = Buffer.from(signature);
-    if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-      console.warn('Invalid webhook signature received');
+    try {
+      if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+        console.warn('Invalid webhook signature received');
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    } catch (e) {
+      console.warn('Webhook signature verification failed:', e instanceof Error ? e.message : String(e));
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
