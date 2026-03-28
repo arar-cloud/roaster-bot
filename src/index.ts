@@ -9,7 +9,7 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string | Buffer | undefined;
+    fer | undefined;
     }
   }
 }
@@ -266,7 +266,7 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
   try {
     const signature = req.headers['x-github-event-signature-256'] as string;
     const payload = req.rawBody;
-    
+
     if (!signature || !payload) {
       console.warn('Webhook request missing signature or payload');
       return res.status(400).json({ error: 'Invalid webhook request' });
@@ -277,7 +277,7 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       console.error('WEBHOOK_SECRET not configured');
       return res.status(500).json({ error: 'Server configuration error' });
     }
-    
+
     const hash = crypto
       .createHmac('sha256', webhookSecret)
       .update(payload)
@@ -289,7 +289,7 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       console.warn('Invalid webhook signature received');
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    
+
     // Process valid webhook...
     res.status(200).json({ message: 'Webhook received' });
   } catch (error) {
