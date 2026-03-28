@@ -1,3 +1,4 @@
 import app from '../src/index.js';
 
-export default app;
+module.exports = app;
+module.exports.default = app;
