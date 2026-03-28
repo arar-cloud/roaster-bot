@@ -9,7 +9,9 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string | Buffer | undefined;
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer  rawBody?: string | Buffer | undefined;
     }
   }
 }
