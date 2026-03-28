@@ -253,9 +253,15 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
 
 // Capture raw body for webhook signature verification
+const MAX_WEBHOOK_SIZE = 25 * 1024 * 1024; // 25MB limit
 app.use(express.json({
   limit: MAX_BODY_SIZE,
   verify: (req: any, res: Response, buf: Buffer) => {
+    if (Buffer.isBuffer(buf) && buf.length > MAX_WEBHOOK_SIZE) {
+      const error: any = new Error('Payload too large');
+      error.status = 413;
+      throw error;
+    }
     req.rawBody = Buffer.isBuffer(buf) ? buf.toString('utf-8') : buf;
   },
 }));
