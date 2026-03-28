@@ -332,7 +332,15 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-app.get('/', (req, res) => {
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
