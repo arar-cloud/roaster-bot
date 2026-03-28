@@ -296,8 +296,8 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
-    // Validate signature format
-    if (!signature || !signature.startsWith('sha256=')) {
+    // Validate signature format - null safety check already done above
+    if (!signature.startsWith('sha256=')) {
       console.warn('Invalid webhook signature format');
       return res.status(401).json({ error: 'Invalid signature format' });
     }
