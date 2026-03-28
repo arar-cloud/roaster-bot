@@ -329,7 +329,14 @@ app.post('/ask', async (req: Request, res: Response) => {
   }
 })
 
-app.post('/chat', (req: Request, res: Response) => {
+// Async handler wrapper to catch promise rejections
+const asyncHandler = (fn: (req: Request, res: Response) => Promise<void>) => {
+  return (req: Request, res: Response, next: Function) => {
+    Promise.resolve(fn(req, res)).catch(next);
+  };
+};
+
+app.post('/chat', asyncHandler(async (req: Request, res: Response) => {
   try {
     let { message, sessionId } = req.body;
 
@@ -350,7 +357,7 @@ app.post('/chat', (req: Request, res: Response) => {
   } catch (error: any) {
     res.status(400).json({ error: error.message || 'Invalid input' });
   }
-});
+}));
 
 app.post('/webhook', (req: Request, res: Response, next) => webhookRateLimiter(req, res, next), async (req: Request, res: Response) => {
   // Validate Content-Length header to prevent memory exhaustion
