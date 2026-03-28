@@ -308,22 +308,7 @@ app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
 
-// Retry logic with exponential backoff
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  delayMs: number = 100
-): Promise<T> {
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (i === maxRetries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, delayMs * Math.pow(2, i)));
-    }
-  }
-  throw new Error('Retry exhausted');
-}
+
 
 // Periodic cache cleanup: remove expired sessions every 5 minutes
 setInterval(() => {
