@@ -287,6 +287,12 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
+    // Validate signature format
+    if (!signature || !signature.startsWith('sha256=')) {
+      console.warn('Invalid webhook signature format');
+      return res.status(401).json({ error: 'Invalid signature format' });
+    }
+
     const hash = crypto
       .createHmac('sha256', webhookSecret)
       .update(payload)
@@ -295,10 +301,8 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
     const expected = Buffer.from(`sha256=${hash}`);
     const actual = Buffer.from(signature);
     try {
-      if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-        console.warn('Invalid webhook signature received');
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+      // Use timing-safe comparison to prevent timing attacks
+      crypto.timingSafeEqual(expected, actual);
     } catch (e) {
       console.warn('Webhook signature verification failed:', e instanceof Error ? e.message : String(e));
       return res.status(401).json({ error: 'Unauthorized' });
@@ -360,6 +364,11 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Start server
+// Global error handler for unhandled promise rejections
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
