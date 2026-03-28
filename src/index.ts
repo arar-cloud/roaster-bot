@@ -245,8 +245,8 @@ app.use(express.raw({ type: 'application/octet-stream' }));
 
 app.use(express.json({ limit: MAX_BODY_SIZE }));
 
-// Apply rate limiter to all routes
-app.use(webhookRateLimiter);
+// Apply rate limiter only to webhook endpoint
+// Removed: app.use(webhookRateLimiter); - now applied directly to /webhook route
 
 // Retry logic with exponential backoff
 async function retryWithBackoff<T>(
@@ -352,7 +352,7 @@ app.post('/chat', (req: Request, res: Response) => {
   }
 });
 
-app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
+app.post('/webhook', (req: Request, res: Response, next) => webhookRateLimiter(req, res, next), async (req: Request, res: Response) => {
   // Validate Content-Length header to prevent memory exhaustion
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
   const MAX_WEBHOOK_SIZE = 100 * 1024 * 1024; // 100MB hard limit
