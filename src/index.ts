@@ -247,7 +247,7 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 app.use(express.json({
   limit: MAX_BODY_SIZE,
   verify: (req: any, res: Response, buf: Buffer) => {
-    req.rawBody = buf.toString('utf-8');
+    req.rawBody = Buffer.isBuffer(buf) ? buf.toString('utf-8') : buf;
   },
 }));
 
