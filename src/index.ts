@@ -329,13 +329,20 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
 
     // Process valid webhook with async error handling
     try {
-      const copilotResponse = await copilotClient.getCompletion({
-        prompt: 'Analyze this GitHub event: ' + JSON.stringify(webhookPayload),
-      });
-      res.status(200).json({ message: 'Webhook received', copilotAnalysis: copilotResponse });
-    } catch (apiErr) {
-      console.error('Copilot API error:', apiErr instanceof Error ? apiErr.message : String(apiErr));
-      res.status(500).json({ error: 'Failed to process webhook' });
+      try {
+        const copilotResponse = await copilotClient.getCompletion({
+          prompt: 'Analyze this GitHub event: ' + JSON.stringify(webhookPayload),
+        });
+        res.status(200).json({ message: 'Webhook received', copilotAnalysis: copilotResponse });
+      } catch (apiErr) {
+        console.error('Copilot API error:', apiErr instanceof Error ? apiErr.message : String(apiErr));
+        res.status(500).json({ error: 'Failed to process webhook' });
+      }
+    } catch (error) {
+      console.error('Unhandled webhook processing error:', error instanceof Error ? error.message : String(error));
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to process webhook' });
+      }
     }
   } catch (error) {
     console.error('Webhook verification error:', error instanceof Error ? error.message : String(error));
