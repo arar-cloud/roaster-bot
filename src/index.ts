@@ -17,6 +17,15 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize Copilot client with API key
+const copilotClient = new CopilotClient({
+  token: process.env.COPILOT_API_KEY!,
+});
+
+// Token refresh lock to prevent concurrent refresh requests
+let tokenRefreshLock: Promise<void> = Promise.resolve();
+let tokenRefreshInProgress = false;
+
 // Validate required environment variables
 const requiredEnvVars = ['GITHUB_TOKEN', 'COPILOT_API_KEY', 'WEBHOOK_SECRET'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
@@ -39,6 +48,15 @@ app.use(helmet({
   frameguard: { action: 'deny' },
   noSniff: true,
 }));
+
+// Token validation middleware: reject requests with missing or invalid API tokens
+app.use((req, res, next) => {
+  const token = req.headers['x-api-token'];
+  if (!token || typeof token !== 'string') {
+    return res.status(401).json({ error: 'Unauthorized: missing or invalid API token' });
+  }
+  next();
+});
 
 // Middleware configuration
 const MAX_BODY_SIZE = '100mb'; // Prevent memory exhaustion from oversized payloads
@@ -188,7 +206,7 @@ const webhookRateLimiterMiddleware = (req: Request, res: Response, next: any) =>
 
 // Generate session token using cryptographically secure randomization
 function generateSecureSessionToken(): string {
-  return crypto.randomBytes(32).toString('hex');
+  return crypto.randomUUID();
 }
 
 function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
@@ -244,9 +262,15 @@ function getCachedOrCreateSession(sessionKey: string, creator: () => any): any {
 
 
 // Capture raw body for webhook signature verification
+const MAX_WEBHOOK_SIZE = 25 * 1024 * 1024; // 25MB limit
 app.use(express.json({
   limit: MAX_BODY_SIZE,
   verify: (req: any, res: Response, buf: Buffer) => {
+    if (Buffer.isBuffer(buf) && buf.length > MAX_WEBHOOK_SIZE) {
+      const error: any = new Error('Payload too large');
+      error.status = 413;
+      throw error;
+    }
     req.rawBody = Buffer.isBuffer(buf) ? buf.toString('utf-8') : buf;
   },
 }));
@@ -272,6 +296,12 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       return res.status(500).json({ error: 'Server configuration error' });
     }
 
+    // Validate signature format - null safety check already done above
+    if (!signature.startsWith('sha256=')) {
+      console.warn('Invalid webhook signature format');
+      return res.status(401).json({ error: 'Invalid signature format' });
+    }
+
     const hash = crypto
       .createHmac('sha256', webhookSecret)
       .update(payload)
@@ -279,8 +309,11 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
 
     const expected = Buffer.from(`sha256=${hash}`);
     const actual = Buffer.from(signature);
-    if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-      console.warn('Invalid webhook signature received');
+    try {
+      // Use timing-safe comparison to prevent timing attacks
+      crypto.timingSafeEqual(expected, actual);
+    } catch (e) {
+      console.warn('Webhook signature verification failed:', e instanceof Error ? e.message : String(e));
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
@@ -301,17 +334,43 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
 
     // Process valid webhook with async error handling
     try {
-      const copilotResponse = await copilotClient.getCompletion({
-        prompt: 'Analyze this GitHub event: ' + JSON.stringify(webhookPayload),
-      });
-      res.status(200).json({ message: 'Webhook received', copilotAnalysis: copilotResponse });
-    } catch (apiErr) {
-      console.error('Copilot API error:', apiErr instanceof Error ? apiErr.message : String(apiErr));
-      res.status(500).json({ error: 'Failed to process webhook' });
+      try {
+        const copilotResponse = await copilotClient.getCompletion({
+          prompt: 'Analyze this GitHub event: ' + JSON.stringify(webhookPayload),
+        });
+        res.status(200).json({ message: 'Webhook received', copilotAnalysis: copilotResponse });
+      } catch (apiErr) {
+        console.error('Copilot API error:', apiErr instanceof Error ? apiErr.message : String(apiErr));
+        res.status(500).json({ error: 'Failed to process webhook' });
+      }
+    } catch (error) {
+      console.error('Unhandled webhook processing error:', error instanceof Error ? error.message : String(error));
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to process webhook' });
+      }
     }
   } catch (error) {
     console.error('Webhook verification error:', error instanceof Error ? error.message : String(error));
     return res.status(400).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Completion endpoint with error handling
+app.post('/api/completion', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Invalid request: message is required' });
+    }
+    const copilotResponse = await copilotClient.getCompletion({
+      prompt: message,
+      temperature: 0.5,
+    });
+    res.json(copilotResponse);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Internal server error';
+    console.error('Completion error:', errorMsg);
+    res.status(500).json({ error: 'Failed to process completion request' });
   }
 });
 
@@ -321,6 +380,11 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // Start server
+// Global error handler for unhandled promise rejections
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
@@ -541,7 +605,7 @@ app.post('/webhook', (req: Request, res: Response, next) => webhookRateLimiter(r
       50
     );
   } catch (initError) {
-    console.error('Failed to initialize CopilotClient:', initError);
+    console.error('Failed to initialize CopilotClient:', initError instanceof Error ? initError.message : String(initError));
     return res.status(503).json({ error: 'Service temporarily unavailable' });
   }
 
