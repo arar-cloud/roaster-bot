@@ -338,6 +338,9 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  },
 });
 
 app.get('/', limiter, (req, res) => {
