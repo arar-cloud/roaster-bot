@@ -14,14 +14,23 @@ declare global {
   }
 }
 
-const app = express();
-const port = process.env.PORT || 3000;
-
-// Validate required environment variables
+// Validate required environment variables FIRST
 const requiredEnvVars = ['GITHUB_TOKEN', 'COPILOT_API_KEY', 'WEBHOOK_SECRET'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+// Initialize Copilot client
+let copilotClient: CopilotClient | null = null;
+try {
+  copilotClient = new CopilotClient({ token: process.env.COPILOT_API_KEY! });
+} catch (error) {
+  console.error('Failed to initialize CopilotClient:', error);
   process.exit(1);
 }
 
@@ -254,7 +263,10 @@ app.use(express.json({
 // Apply rate limiter only to webhook endpoint
 // Removed: app.use(webhookRateLimiter); - now applied directly to /webhook route
 
-app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Response) => {
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
+  if (!copilotClient) {
+    return res.status(500).json({ error: 'Copilot client not initialized' });
+  }
   try {
     const signature = req.headers['x-github-event-signature-256'] as string;
     const payload = req.rawBody;
@@ -275,9 +287,14 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
       .update(payload)
       .digest('hex');
 
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(`sha256=${hash}`);
-    if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    try {
+      const signatureBuffer = Buffer.from(signature);
+      const expectedBuffer = Buffer.from(`sha256=${hash}`);
+      if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+        console.warn('Invalid webhook signature received');
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    } catch (e) {
       console.warn('Invalid webhook signature received');
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -285,8 +302,8 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
     // Process valid webhook...
     res.status(200).json({ message: 'Webhook received' });
   } catch (error) {
-    console.error('Webhook verification error:', error instanceof Error ? error.message : String(error));
-    return res.status(400).json({ error: 'Webhook processing failed' });
+    console.error('Webhook processing error:', error instanceof Error ? error.message : String(error));
+    return res.status(500).json({ error: 'Failed to process webhook' });
   }
 });
 
@@ -338,6 +355,9 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  },
 });
 
 app.get('/', limiter, (req, res) => {
