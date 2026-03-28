@@ -161,24 +161,32 @@ function cleanupCache() {
   }
 }
 
-// Initialize rate limiter once at module scope (not per-request)
-let webhookRateLimiter: any;
-try {
-  webhookRateLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    standardHeaders: true,
-    legacyHeaders: false,
-    skip: (req: Request) => req.headers['x-webhook-bypass'] === process.env.BYPASS_TOKEN,
-    handler: (req: Request, res: Response) => {
-      res.status(429).json({ error: 'Too many requests, please try again later.' });
-    },
-  });
-} catch (err) {
-  console.error('Rate limiter initialization failed:', err);
-  // Fallback: no-op middleware that passes through
-  webhookRateLimiter = (req: Request, res: Response, next: any) => next();
-}
+// Initialize rate limiter factory
+const createWebhookRateLimiter = () => rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req: Request) => req.headers['x-webhook-bypass'] === process.env.BYPASS_TOKEN,
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  },
+});
+
+let webhookRateLimiter: any = null;
+
+// Lazy initialization middleware to prevent race condition
+const webhookRateLimiterMiddleware = (req: Request, res: Response, next: any) => {
+  if (!webhookRateLimiter) {
+    try {
+      webhookRateLimiter = createWebhookRateLimiter();
+    } catch (err) {
+      console.error('Rate limiter initialization failed:', err);
+      webhookRateLimiter = (req: Request, res: Response, next: any) => next();
+    }
+  }
+  webhookRateLimiter(req, res, next);
+};
 
 // Generate session token using cryptographically secure randomization
 function generateSecureSessionToken(): string {
@@ -256,7 +264,7 @@ app.use(express.json({ limit: MAX_BODY_SIZE }));
 // Apply rate limiter only to webhook endpoint
 // Removed: app.use(webhookRateLimiter); - now applied directly to /webhook route
 
-app.post('/webhook', webhookRateLimiter, async (req: Request, res: Response) => {
+app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Response) => {
   try {
     const signature = req.headers['x-github-event-signature-256'] as string;
     const payload = req.rawBody;
