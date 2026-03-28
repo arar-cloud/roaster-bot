@@ -17,6 +17,11 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize Copilot client with API key
+const copilotClient = new CopilotClient({
+  token: process.env.COPILOT_API_KEY!,
+});
+
 // Token refresh lock to prevent concurrent refresh requests
 let tokenRefreshLock: Promise<void> = Promise.resolve();
 let tokenRefreshInProgress = false;
