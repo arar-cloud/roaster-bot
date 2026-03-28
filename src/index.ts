@@ -324,6 +324,25 @@ app.post('/webhook', webhookRateLimiterMiddleware, async (req: Request, res: Res
   }
 });
 
+// Completion endpoint with error handling
+app.post('/api/completion', async (req: Request, res: Response) => {
+  try {
+    const { message } = req.body;
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({ error: 'Invalid request: message is required' });
+    }
+    const copilotResponse = await copilotClient.getCompletion({
+      prompt: message,
+      temperature: 0.5,
+    });
+    res.json(copilotResponse);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Internal server error';
+    console.error('Completion error:', errorMsg);
+    res.status(500).json({ error: 'Failed to process completion request' });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
