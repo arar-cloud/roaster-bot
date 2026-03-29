@@ -150,10 +150,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error:', error);
+    try {
+      if (!res.headersSent) {
+        res.status(500).send("The roaster overheated.");
+      } else {
+        res.write('data: [ERROR]\n\n');
+      }
+    } catch (writeError) {
+      console.error('Error writing response:', writeError);
+    }
     if (!res.headersSent) {
-      res.status(500).send("The roaster overheated.");
-    } else {
-      res.write('data: [ERROR]\n\n');
       res.end();
     }
   } finally {
