@@ -16,6 +16,10 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Middleware for body parsing with size limit
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -38,7 +42,6 @@ const limiter = rateLimit({
   }
 });
 
-app.use(express.json());
 app.use(limiter);
 app.use(express.json({
   verify: (req: Request, res, buf) => {
