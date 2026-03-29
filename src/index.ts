@@ -122,6 +122,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, closing server');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, closing server');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
