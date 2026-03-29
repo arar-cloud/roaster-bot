@@ -83,7 +83,15 @@ app.use(express.json({
 }));
 
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
-  res.status(200).json({ success: true });
+  try {
+    if (!copilotClient) {
+      return res.status(503).json({ error: 'Copilot client not initialized' });
+    }
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.get('/', (req, res) => {
