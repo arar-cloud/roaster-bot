@@ -9,6 +9,12 @@ process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
+// Validate required environment variables
+if (!process.env.GITHUB_WEBHOOK_SECRET) {
+  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable is required');
+  process.exit(1);
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
