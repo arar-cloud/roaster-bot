@@ -13,7 +13,21 @@ declare global {
   }
 }
 
-const app = express();
+const secret = process.env.GITHUB_WEBHOOK_SECRET;
+
+  if (!secret || !signature) {
+    res.status(401).json({ error: 'Unauthorized' });
+    return;
+  }
+
+  const hash = crypto
+    .createHmac('sha256', secret)
+    .update(rawBody)
+    .digest('hex');
+  const expected = `sha256=${hash}`;
+
+  // Use timing-safe comparison
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(app = express();
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
@@ -75,7 +89,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
-  
+
   // Security fix: Validate token format to prevent injection attacks
   if (!/^[a-zA-Z0-9_-]{20,}$/.test(token)) {
     return res.status(401).send('Invalid token format.');
@@ -88,12 +102,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
