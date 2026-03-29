@@ -28,7 +28,27 @@ const copilotClient = new CopilotClient({
 });
 
 // Middleware for body parsing with size limit
-app.use(express.json({ limit: '1mb' }));
+// Capture raw body for webhook signature verification
+app.use(express.raw({ type: 'application/octet-stream', limit: '1mb' }));
+app.use((req: Request, res: Response, next) => {
+  if (req.is('application/json')) {
+    let data = '';
+    req.on('data', chunk => {
+      data += chunk.toString();
+    });
+    req.on('end', () => {
+      req.rawBody = data;
+      try {
+        req.body = JSON.parse(data);
+      } catch {
+        return res.status(400).json({ error: 'Invalid JSON' });
+      }
+      next();
+    });
+  } else {
+    express.json({ limit: '1mb' })(req, res, next);
+  }
+});
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
 const limiter = rateLimit({
