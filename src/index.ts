@@ -21,6 +21,13 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    return req.ip || req.connection.remoteAddress || '';
+  },
+  skip: (req) => {
+    // Skip rate limiting for health check
+    return req.path === '/health';
+  }
 });
 
 app.use(express.json({
