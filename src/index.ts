@@ -139,7 +139,7 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) res.status(500).send("Internal server error");
   } finally {
     await client.stop();
   }
