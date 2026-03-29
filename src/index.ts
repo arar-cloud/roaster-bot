@@ -185,9 +185,22 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       return;
     }
 
+    // Validate input
+    if (!req.body.prompt || typeof req.body.prompt !== 'string') {
+      return res.status(400).json({ error: 'Invalid request: prompt required' });
+    }
+    
+    const message = req.body.prompt.trim();
+    if (message.length === 0 || message.length > 1000) {
+      return res.status(400).json({ error: 'Message must be 1-1000 characters' });
+    }
+    
+    // Sanitize message to prevent prompt injection
+    const sanitized = message.replace(/[\r\n]/g, ' ').slice(0, 500);
+    
     const event = req.body;
     const client = new CopilotClient();
-    const response = await client.getCompletion(event.prompt);
+    const response = await client.getCompletion(sanitized);
     res.json({ response: response.text });
   } catch (error) {
     console.error('Webhook processing error:', error);
