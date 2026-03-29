@@ -57,6 +57,10 @@ app.use(express.json({
   }
 }));
 
+app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
+  res.status(200).json({ success: true });
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
