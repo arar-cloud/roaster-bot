@@ -74,8 +74,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   }
 
-  const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  const authHeader = req.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).send('Missing or invalid Authorization header.');
+  }
+  const token = authHeader.substring(7);
+  if (!token) return res.status(401).send('Missing bearer token.');
 
   // Security fix: Validate token format to prevent injection attacks
   if (!/^[a-zA-Z0-9_-]{20,}$/.test(token)) {
