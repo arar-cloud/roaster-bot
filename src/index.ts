@@ -13,21 +13,8 @@ declare global {
   }
 }
 
-const secret = process.env.GITHUB_WEBHOOK_SECRET;
-
-  if (!secret || !signature) {
-    res.status(401).json({ error: 'Unauthorized' });
-    return;
-  }
-
-  const hash = crypto
-    .createHmac('sha256', secret)
-    .update(rawBody)
-    .digest('hex');
-  const expected = `sha256=${hash}`;
-
-  // Use timing-safe comparison
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(app = express();
+const app = express();
+const port = process.env.PORT || 3000;app = express();
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
