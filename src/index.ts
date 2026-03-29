@@ -4,6 +4,11 @@ import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 import { timingSafeEqual } from 'crypto';
 
+// Global unhandled rejection handler
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
