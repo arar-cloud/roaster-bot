@@ -23,7 +23,12 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
-    return req.ip || req.connection.remoteAddress || '';
+    const ip = req.ip || req.connection.remoteAddress || 'unknown';
+    if (ip === 'unknown') {
+      const hash = crypto.createHash('sha256').update(JSON.stringify({ua: req.get('user-agent'), host: req.get('host')})).digest('hex');
+      return hash;
+    }
+    return ip;
   },
   skip: (req) => {
     // Skip rate limiting for health check
