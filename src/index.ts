@@ -169,6 +169,15 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
   }
 });
 
+let copilotClient: CopilotClient | null = null;
+try {
+  copilotClient = new CopilotClient({
+    token: process.env.GITHUB_TOKEN || '',
+  });
+} catch (error) {
+  console.error('Failed to initialize GitHub Copilot client:', error);
+}
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
