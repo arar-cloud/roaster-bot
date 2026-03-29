@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import { timingSafeEqual } from 'crypto';
 
 // Extend Express Request type properly
 declare global {
