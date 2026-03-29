@@ -103,12 +103,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   // Initialize pooled client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  let client: CopilotClient;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (error) {
+    console.error('Copilot client initialization failed:', error);
+    return res.status(500).json({ error: 'Failed to initialize Copilot client' });
+  }
 
   try {
     const systemPrompt = `
@@ -241,7 +247,13 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     if (!sanitized) {
       return res.status(400).json({ error: 'Sanitized message is required' });
     }
-    const client = new CopilotClient();
+    let client: CopilotClient;
+    try {
+      client = new CopilotClient();
+    } catch (error) {
+      console.error('Copilot client initialization failed:', error);
+      return res.status(500).json({ error: 'Failed to initialize Copilot client' });
+    }
     const response = await client.getCompletion(sanitized);
     res.json({ response: response.text });
   } catch (error) {
