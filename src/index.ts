@@ -238,6 +238,9 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid event structure' });
     }
     
+    if (!sanitized) {
+      return res.status(400).json({ error: 'Sanitized message is required' });
+    }
     const client = new CopilotClient();
     const response = await client.getCompletion(sanitized);
     res.json({ response: response.text });
