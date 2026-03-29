@@ -48,7 +48,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
+    const rawBody = (req as any).rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
