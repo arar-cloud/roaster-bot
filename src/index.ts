@@ -49,6 +49,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
 app.use(express.json({
   verify: (req: any, res, buf, encoding) => {
     req.rawBody = buf.toString(encoding || 'utf8');
