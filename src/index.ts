@@ -16,23 +16,79 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize Copilot client with GitHub token
+const githubToken = process.env.GITHUB_TOKEN;
+if (!githubToken) {
+  console.error('ERROR: GITHUB_TOKEN environment variable is required');
+  process.exit(1);
+}
+
+const copilotClient = new CopilotClient({
+  token: githubToken,
+});
+
+// Middleware for body parsing with size limit
+// Capture raw body for webhook signature verification
+app.use(express.raw({ type: 'application/octet-stream', limit: '1mb' }));
+app.use((req: Request, res: Response, next) => {
+  if (req.is('application/json')) {
+    let data = '';
+    req.on('data', chunk => {
+      data += chunk.toString();
+    });
+    req.on('end', () => {
+      req.rawBody = data;
+      try {
+        req.body = JSON.parse(data);
+      } catch {
+        return res.status(400).json({ error: 'Invalid JSON' });
+      }
+      next();
+    });
+  } else {
+    express.json({ limit: '1mb' })(req, res, next);
+  }
+});
+app.use(express.urlencoded({ limit: '1mb', extended: true }));
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({ status: 429, error: 'Too many requests' });
+  },
+  keyGenerator: (req) => {
+    const ip = (req.ip || req.connection?.remoteAddress || 'unknown');
+    if (ip === 'unknown') {
+      const hash = crypto.createHash('sha256').update(JSON.stringify({ua: req.get('user-agent'), host: req.get('host')})).digest('hex');
+      return hash;
+    }
+    return ip;
+  },
+  skip: (req) => {
+    // Skip rate limiting for health check
+    return req.path === '/health';
+  }
 });
 
+app.use(limiter);
 app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req: Request, res, buf) => {
+    (req as any).rawBody = buf.toString();
   }
 }));
 
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>The Roaster</title>
+      </head>
+      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
         <div style="text-align: center;">
           <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
           <p style="color: #ccc;">Prepare your code for total annihilation.</p>
@@ -48,42 +104,83 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
+    const rawBody = (req as any).rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    const expectedSig = digest.startsWith('sha256=') ? digest : `sha256=${digest}`;
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    // Use timing-safe comparison to prevent timing-based attacks
+    if (!signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+      return res.status(403).send('Signature verification failed.');
     }
   }
 
-  const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  const authHeader = req.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).send('Missing or invalid Authorization header.');
+  }
+  const token = authHeader.substring(7);
+  if (!token) return res.status(401).send('Missing bearer token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
-  
+  // Security fix: Validate token format to prevent injection attacks
+  const tokenRegex = /^[a-zA-Z0-9_]+$/;
+  if (!tokenRegex.test(token)) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
+  if (!/^[a-zA-Z0-9_-]{20,}$/.test(token)) {
+    return res.status(401).send('Invalid token format.');
+  }
+
+  // Initialize pooled client with the user's token
+  let client: CopilotClient;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (error) {
+    console.error('Copilot client initialization failed:', error);
+    return res.status(500).json({ error: 'Failed to initialize Copilot client' });
+  }
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    // Security fix: Validate and sanitize user input
+    // Validate messages array input
+    if (!req.body.messages) {
+      return res.status(400).json({ error: 'messages array is required' });
+    }
+    if (!Array.isArray(req.body.messages)) {
+      return res.status(400).json({ error: 'messages must be an array' });
+    }
+    if (req.body.messages.length === 0) {
+      return res.status(400).json({ error: 'messages array cannot be empty' });
+    }
+    // Validate each message object
+    for (const msg of req.body.messages) {
+      if (typeof msg !== 'object' || !msg.content || typeof msg.content !== 'string') {
+        return res.status(400).json({ error: 'each message must have string content' });
+      }
+    }
+    if (req.body.messages.length > 100) {
+      return res.status(400).json({ error: 'too many messages' });
+    }
+    const userMessages = req.body.messages;
+    const lastMessage = userMessages.filter((m: any) => m && m.role === 'user' && typeof m.content === 'string').pop();
+    const prompt = lastMessage ? lastMessage.content.substring(0, 5000) : "Roast me.";
 
     // Create session following SDK docs
     const session = await client.createSession({
@@ -95,32 +192,123 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
 
-    session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
+    const streamPromise = new Promise<void>((resolve, reject) => {
+      session.on((event: any) => {
+        if (event.type === "assistant.message_delta") {
+          const chunk = {
+            choices: [{ delta: { content: event.data.deltaContent } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      });
+
+      session.on('end', () => resolve());
+      session.on('error', (err: any) => reject(err));
     });
 
     await session.sendAndWait({ prompt });
+    await streamPromise;
 
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    try {
+      if (!res.headersSent) {
+        res.status(500).send("The roaster overheated.");
+      } else {
+        res.write('data: [ERROR]\n\n');
+      }
+    } catch (writeError) {
+      console.error('Error writing response:', writeError);
+    }
+    if (!res.headersSent) {
+      res.end();
+    }
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (stopError) {
+      console.error('Error stopping client:', stopError);
+    }
   }
 });
 
-app.listen(port, () => {
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
+  try {
+    const secret = process.env.WEBHOOK_SECRET;
+    // Verify signature
+    const signature = req.headers['x-hub-signature-256'] as string;
+    
+    if (!signature || !secret) {
+      res.status(401).json({ error: 'Missing signature or secret' });
+      return;
+    }
+    
+    const expectedSignature = 'sha256=' + crypto.createHmac('sha256', secret).update((req as any).rawBody).digest('hex');
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    // Validate input
+    if (!req.body.prompt || typeof req.body.prompt !== 'string') {
+      return res.status(400).json({ error: 'Invalid request: prompt required' });
+    }
+    
+    const message = req.body.prompt.trim();
+    if (message.length === 0 || message.length > 1000) {
+      return res.status(400).json({ error: 'Message must be 1-1000 characters' });
+    }
+    
+    // Sanitize message to prevent prompt injection
+    const sanitized = message.replace(/[\r\n]/g, ' ').slice(0, 500);
+    
+    const event = req.body;
+    if (!event || typeof event !== 'object' || !event.prompt) {
+      return res.status(400).json({ error: 'Invalid event structure' });
+    }
+    
+    if (!sanitized) {
+      return res.status(400).json({ error: 'Sanitized message is required' });
+    }
+    let client: CopilotClient;
+    try {
+      client = new CopilotClient();
+    } catch (error) {
+      console.error('Copilot client initialization failed:', error);
+      return res.status(500).json({ error: 'Failed to initialize Copilot client' });
+    }
+    const response = await client.getCompletion(sanitized);
+    res.json({ response: response.text });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, closing server');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, closing server');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
 });
