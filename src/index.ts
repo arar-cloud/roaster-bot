@@ -39,6 +39,11 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
     return res.status(500).json({ error: 'Webhook secret not configured' });
   }
   
+  if (!signature.startsWith('sha256=')) {
+    console.warn('Invalid signature format: missing sha256= prefix');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
   const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   const expected = `sha256=${hash}`;
   
@@ -50,6 +55,7 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
     }
     timingSafeEqual(signatureBuffer, expectedBuffer);
   } catch (err) {
+    console.warn('Signature verification failed');
     return res.status(401).json({ error: 'Invalid signature' });
   }
   
