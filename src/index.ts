@@ -119,11 +119,26 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     // Security fix: Validate and sanitize user input
-    const sanitizedInput = userInput.replace(/[^a-zA-Z0-9_\-.\/]/g, '');
-    const userMessages = Array.isArray(req.body.messages) ? req.body.messages : [];
-    if (!Array.isArray(userMessages) || userMessages.length > 100) {
-      return res.status(400).send('Invalid messages format or too many messages.');
+    // Validate messages array input
+    if (!req.body.messages) {
+      return res.status(400).json({ error: 'messages array is required' });
     }
+    if (!Array.isArray(req.body.messages)) {
+      return res.status(400).json({ error: 'messages must be an array' });
+    }
+    if (req.body.messages.length === 0) {
+      return res.status(400).json({ error: 'messages array cannot be empty' });
+    }
+    // Validate each message object
+    for (const msg of req.body.messages) {
+      if (typeof msg !== 'object' || !msg.content || typeof msg.content !== 'string') {
+        return res.status(400).json({ error: 'each message must have string content' });
+      }
+    }
+    if (req.body.messages.length > 100) {
+      return res.status(400).json({ error: 'too many messages' });
+    }
+    const userMessages = req.body.messages;
     const lastMessage = userMessages.filter((m: any) => m && m.role === 'user' && typeof m.content === 'string').pop();
     const prompt = lastMessage ? lastMessage.content.substring(0, 5000) : "Roast me.";
 
