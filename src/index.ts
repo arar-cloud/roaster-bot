@@ -35,7 +35,7 @@ const limiter = rateLimit({
   }
 });
 
-app.use(express.json();
+app.use(express.json());
 app.use(limiter);
 app.use(express.json({
   verify: (req: Request, res, buf) => {
