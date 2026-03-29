@@ -32,7 +32,12 @@ app.use(express.json({
 app.get('/', (req, res) => {
   res.send(`
     <html>
-      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>The Roaster</title>
+      </head>
+      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0;">
         <div style="text-align: center;">
           <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
           <p style="color: #ccc;">Prepare your code for total annihilation.</p>
@@ -105,9 +110,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
 
     const streamPromise = new Promise<void>((resolve, reject) => {
       session.on((event: any) => {
