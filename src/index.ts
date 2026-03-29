@@ -1,8 +1,13 @@
-import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import { timingSafeEqual } from 'crypto';
+
+// Global unhandled rejection handler
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 // Extend Express Request type properly
 declare global {
@@ -11,6 +16,34 @@ declare global {
       rawBody?: string;
     }
   }
+}
+
+// GitHub webhook signature verification middleware
+const verifyGitHubSignature = (req: any, res: Response, next: any) => {
+  const signature = req.get('X-Hub-Signature-256');
+  const payload = req.rawBody;
+  
+  if (!signature || !payload) {
+    return res.status(401).json({ error: 'Missing signature or payload' });
+  }
+  
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!secret) {
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+  
+  const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const expected = `sha256=${hash}`;
+  
+  try {
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+  
+  next();
 }
 
 const app = express();
@@ -23,11 +56,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
 app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req: any, res, buf, encoding) => {
+    req.rawBody = buf.toString(encoding || 'utf8');
   }
 }));
+
+app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
+  res.status(200).json({ success: true });
+});
 
 app.get('/', (req, res) => {
   res.send(`
@@ -42,22 +80,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
-  }
+app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
@@ -69,19 +92,25 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
+    const body = req.body;
+    if (!body || typeof body !== 'object' || !body.messages) {
+      res.status(400).json({ error: 'Invalid webhook payload' });
+      return;
+    }
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+    const userMessages = body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
@@ -115,7 +144,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) res.status(500).send("Internal server error");
   } finally {
     await client.stop();
   }
