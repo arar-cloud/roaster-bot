@@ -62,6 +62,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  
+  // Security fix: Validate token format to prevent injection attacks
+  if (!/^[a-zA-Z0-9_-]{20,}$/.test(token)) {
+    return res.status(401).send('Invalid token format.');
+  }
 
   // Initialize pooled client with the user's token
   const client = new CopilotClient({
@@ -82,9 +87,13 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    // Security fix: Validate and sanitize user input
+    const userMessages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    if (!Array.isArray(userMessages) || userMessages.length > 100) {
+      return res.status(400).send('Invalid messages format or too many messages.');
+    }
+    const lastMessage = userMessages.filter((m: any) => m && m.role === 'user' && typeof m.content === 'string').pop();
+    const prompt = lastMessage ? lastMessage.content.substring(0, 5000) : "Roast me.";
 
     // Create session following SDK docs
     const session = await client.createSession({
