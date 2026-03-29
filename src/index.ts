@@ -208,8 +208,14 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const secret = process.env.WEBHOOK_SECRET;
     // Verify signature
     const signature = req.headers['x-hub-signature-256'] as string;
+    
+    if (!signature || !secret) {
+      res.status(401).json({ error: 'Missing signature or secret' });
+      return;
+    }
+    
     const expectedSignature = 'sha256=' + crypto.createHmac('sha256', secret).update((req as any).rawBody).digest('hex');
-    if (!signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
@@ -228,6 +234,10 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const sanitized = message.replace(/[\r\n]/g, ' ').slice(0, 500);
     
     const event = req.body;
+    if (!event || typeof event !== 'object' || !event.prompt) {
+      return res.status(400).json({ error: 'Invalid event structure' });
+    }
+    
     const client = new CopilotClient();
     const response = await client.getCompletion(sanitized);
     res.json({ response: response.text });
