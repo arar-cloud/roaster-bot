@@ -60,7 +60,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
     const expectedSig = digest.startsWith('sha256=') ? digest : `sha256=${digest}`;
 
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
+    // Use timing-safe comparison to prevent timing-based attacks
+    if (!signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
       return res.status(403).send('Signature verification failed.');
     }
   }
