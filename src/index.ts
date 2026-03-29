@@ -21,10 +21,13 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({ status: 429, error: 'Too many requests, please try again later.' });
+  },
   keyGenerator: (req) => {
     const ip = req.ip || req.connection.remoteAddress || 'unknown';
     if (ip === 'unknown') {
-      const hash = crypto.createHash('sha256').update(JSON.stringifyy(req.headers))y({ua: req.get('user-agent'), host: req.get('host')})).digest('hex');
+      const hash = crypto.createHash('sha256').update(JSON.stringify({ua: req.get('user-agent'), host: req.get('host')})).digest('hex');
       return hash;
     }
     return ip;
