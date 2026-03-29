@@ -8,23 +8,37 @@ import { timingSafeEqual } from 'crypto';
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string;or invalid signature' });
-      return;
-    }
-
-    if (!payload || typeof payload !== 'string' || payload.length === 0) {
-      res.status(400).json({ error: 'Missing or invalid payload' });
-      return;
-    }
-
-    const secret = process.env.GITHUB_WEBHOOK_SECRET;
-    if (!secret || secret.length === 0) {
-      res.status(500).json({ error: 'Server configuration error' });
-      return;
-    }
-
+      rawBody?: string;
     }
   }
+}
+
+// GitHub webhook signature verification middleware
+const verifyGitHubSignature = (req: any, res: Response, next: any) => {
+  const signature = req.get('X-Hub-Signature-256');
+  const payload = req.rawBody;
+  
+  if (!signature || !payload) {
+    return res.status(401).json({ error: 'Missing signature or payload' });
+  }
+  
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!secret) {
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+  
+  const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const expected = `sha256=${hash}`;
+  
+  try {
+    if (!timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  } catch (err) {
+    return res.status(401).json({ error: 'Signature verification failed' });
+  }
+  
+  next();
 }
 
 const app = express();
@@ -56,22 +70,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        return res.status(401).send('Signature verification failed.');
-    }
-  }
+app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
