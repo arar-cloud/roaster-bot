@@ -56,7 +56,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const expectedSig = digest.startsWith('sha256=') ? digest : `sha256=${digest}`;
 
     if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
-      return res.status(401).send('Unauthorized');
+      return res.status(403).send('Signature verification failed.');
     }
   }
 
