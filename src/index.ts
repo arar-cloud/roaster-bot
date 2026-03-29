@@ -53,7 +53,10 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
     if (signatureBuffer.length !== expectedBuffer.length) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
-    timingSafeEqual(signatureBuffer, expectedBuffer);
+    const isValid = timingSafeEqual(signatureBuffer, expectedBuffer);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
   } catch (err) {
     console.warn('Signature verification failed');
     return res.status(401).json({ error: 'Invalid signature' });
