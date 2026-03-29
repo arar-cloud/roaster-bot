@@ -160,6 +160,27 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
+  try {
+    const secret = process.env.WEBHOOK_SECRET;
+    // Verify signature
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const expectedSignature = 'sha256=' + crypto.createHmac('sha256', secret).update((req as any).rawBody).digest('hex');
+    if (!signature || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const event = req.body;
+    const client = new CopilotClient();
+    const response = await client.getCompletion(event.prompt);
+    res.json({ response: response.text });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
