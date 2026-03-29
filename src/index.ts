@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -24,8 +23,8 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req: any, res, buf, encoding) => {
+    req.rawBody = buf.toString(encoding || 'utf8');
   }
 }));
 
@@ -55,7 +54,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+        return res.status(401).send('Signature verification failed.');
     }
   }
 
