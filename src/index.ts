@@ -82,6 +82,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing bearer token.');
 
   // Security fix: Validate token format to prevent injection attacks
+  const tokenRegex = /^[a-zA-Z0-9_]+$/;
+  if (!tokenRegex.test(token)) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
   if (!/^[a-zA-Z0-9_-]{20,}$/.test(token)) {
     return res.status(401).send('Invalid token format.');
   }
