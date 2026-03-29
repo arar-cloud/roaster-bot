@@ -29,7 +29,8 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
   const signature = req.get('X-Hub-Signature-256');
   const payload = req.rawBody;
   
-  if (!signature || !payload) {
+  if (!signature || !payload || typeof signature !== 'string' || typeof payload !== 'string') {
+    console.warn('Missing or invalid GitHub signature/payload');
     return res.status(401).json({ error: 'Missing signature or payload' });
   }
   
