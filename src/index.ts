@@ -110,6 +110,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     // Security fix: Validate and sanitize user input
+    const sanitizedInput = userInput.replace(/[^a-zA-Z0-9_\-.\/]/g, '');
     const userMessages = Array.isArray(req.body.messages) ? req.body.messages : [];
     if (!Array.isArray(userMessages) || userMessages.length > 100) {
       return res.status(400).send('Invalid messages format or too many messages.');
