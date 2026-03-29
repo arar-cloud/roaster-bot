@@ -109,25 +109,40 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
+    const streamPromise = new Promise<void>((resolve, reject) => {
+      session.on((event: any) => {
+        if (event.type === "assistant.message_delta") {
+          const chunk = {
+            choices: [{ delta: { content: event.data.deltaContent } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      });
+
+      session.on('end', () => resolve());
+      session.on('error', (err: any) => reject(err));
     });
 
     await session.sendAndWait({ prompt });
+    await streamPromise;
 
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) {
+      res.status(500).send("The roaster overheated.");
+    } else {
+      res.write('data: [ERROR]\n\n');
+      res.end();
+    }
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (stopError) {
+      console.error('Error stopping client:', stopError);
+    }
   }
 });
 
