@@ -16,6 +16,17 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize Copilot client with GitHub token
+const githubToken = process.env.GITHUB_TOKEN;
+if (!githubToken) {
+  console.error('ERROR: GITHUB_TOKEN environment variable is required');
+  process.exit(1);
+}
+
+const copilotClient = new CopilotClient({
+  token: githubToken,
+});
+
 // Middleware for body parsing with size limit
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ limit: '1mb', extended: true }));
