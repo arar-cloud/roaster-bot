@@ -14,7 +14,6 @@ declare global {
 }
 
 const app = express();
-const port = process.env.PORT || 3000;app = express();
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
