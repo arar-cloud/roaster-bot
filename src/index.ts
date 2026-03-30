@@ -80,24 +80,27 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
 
+  if (!webhookSecret) {
+    console.error('WEBHOOK_SECRET not configured');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
   if (!signature) {
     console.warn('Webhook rejected: missing signature header');
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (webhookSecret) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-    const expected = Buffer.from(digest);
-    const actual = Buffer.from(signature || '');
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  const expected = Buffer.from(digest);
+  const actual = Buffer.from(signature || '');
 
-    if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-      console.warn('Webhook rejected: invalid signature');
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+    console.warn('Webhook rejected: invalid signature');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const token = req.get('X-GitHub-Token');
