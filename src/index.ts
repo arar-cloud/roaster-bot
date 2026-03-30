@@ -17,17 +17,30 @@ const app = express();
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 let eventCount = 0;
-const countLock = { locked: false };
+const incrementQueue: Array<() => void> = [];
+let queueRunning = false;
 
-const atomicIncrement = async (lock: { locked: boolean }) => {
-  while (lock.locked) {
-    await new Promise(resolve => setTimeout(resolve, 1));
+const atomicIncrement = async () => {
+  return new Promise<number>(resolve => {
+    incrementQueue.push(() => {
+      eventCount++;
+      resolve(eventCount);
+    });
+    if (!queueRunning) {
+      queueRunning = true;
+      processQueue();
+    }
+  });
+};
+
+const processQueue = () => {
+  if (incrementQueue.length === 0) {
+    queueRunning = false;
+    return;
   }
-  lock.locked = true;
-  eventCount++;
-  const result = eventCount;
-  lock.locked = false;
-  return result;
+  const fn = incrementQueue.shift();
+  if (fn) fn();
+  setImmediate(processQueue);
 };
 
 if (isNaN(port) || port < 1 || port > 65535) {
