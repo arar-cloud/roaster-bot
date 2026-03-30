@@ -8,9 +8,17 @@ import { timingSafeEqual } from 'crypto';
 process.on('unhandledRejection', (reason, promise) => {
   try {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    // Exit gracefully after logging critical error
+    process.exit(1);
   } catch (err) {
     console.error('Failed to log unhandled rejection:', err);
   }
+});
+
+// Global uncaught exception handler
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
 });
 
 // Validate required environment variables
