@@ -9,11 +9,11 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    }
+    (req.body as any)[key] = JSON.parse(JSON.stringify((req.body as any)[key])
   }
 }
 
-  
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -155,19 +155,19 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody || JSON.stringify(req.body);
     const timestamp = req.headers['x-timestamp'] as string;
     const cacheKey = getCacheKey(rawBody, timestamp);
-    
+
     // Issue-46163b3f16: Prevent race conditions by tracking concurrent processing
     if (processingWebhooks.has(cacheKey)) {
       console.warn('Webhook already processing, rejecting concurrent request');
       return res.status(202).json({ message: 'Webhook already processing' });
     }
-    
+
     const cached = getCachedResult(cacheKey);
     if (cached) {
       res.json({ suggestion: cached, fromCache: true });
       return;
     }
-    
+
     processingWebhooks.add(cacheKey);
 
     const systemPrompt = `
