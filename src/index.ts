@@ -105,11 +105,10 @@ function verifyWebhookSignature(payload: string, signature: string, secret: stri
   const expectedDigest = 'sha256=' + hmac.update(payload).digest('hex');
   // Use constant-time comparison to prevent timing attacks
   try {
-    crypto.timingSafeEqual(
+    return crypto.timingSafeEqual(
       Buffer.from(expectedDigest),
       Buffer.from(signature)
     );
-    return true;
   } catch {
     return false;
   }
@@ -238,7 +237,6 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
 });
 
   processingWebhooks.delete(cacheKey);
-}
 });
 
 app.listen(port, () => {
