@@ -111,7 +111,12 @@ app.post('/webhook', limiter, (req: Request, res: Response) => {
     }
 
     const hash = crypto.createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET || '').update(payload).digest('hex');
-    if (`sha256=${hash}` !== signature) {
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(`sha256=${hash}`), Buffer.from(signature))) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+    } catch (err) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
