@@ -131,6 +131,15 @@ const validateAndSanitizeInput = (req: Request, res: Response, next: any) => {
 
 app.use(validateAndSanitizeInput);
 
+// Security headers: prevent XSS, MIME-type sniffing, and clickjacking
+app.use((req: Request, res: Response, next: any) => {
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https:; font-src 'self'");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
     const payload = req.body;
