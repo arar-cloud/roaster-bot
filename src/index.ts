@@ -224,7 +224,7 @@ app.post('/api/send-sms', limiter, (req: Request, res: Response) => {
     const { phone, message } = req.body;
     
     // Validate input
-    if (!phone || typeof phone !== 'string' || !/^\+?[0-9]{10,}$/.test(phone.replace(/[\s-]/g, ''))) {
+    if (!phone || typeof phone !== 'string' || phone === '' || !/^\+?[0-9]{10,}$/.test(phone.replace(/[\s-]/g, ''))) {
       return res.status(400).json({ error: 'Invalid phone number' });
     }
     
