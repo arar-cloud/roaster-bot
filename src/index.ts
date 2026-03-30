@@ -173,6 +173,20 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  // Secure token verification using timingSafeEqual to prevent timing attacks
+  const expectedToken = process.env.AUTH_TOKEN || 'default-secret';
+  let isValidToken = false;
+  try {
+    isValidToken = timingSafeEqual(
+      Buffer.from(token || ''),
+      Buffer.from(expectedToken)
+    );
+  } catch (e) {
+    isValidToken = false; // Fail securely if token is malformed
+  }
+  if (!isValidToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   // Validate token format: GitHub tokens are typically 40+ alphanumeric characters
   if (!/^[a-zA-Z0-9_-]{40,}$/.test(token)) {
     return res.status(400).json({ error: 'Invalid X-GitHub-Token format.' });
