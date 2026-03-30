@@ -24,7 +24,8 @@ const atomicIncrement = async () => {
   return new Promise<number>(resolve => {
     incrementQueue.push(() => {
       eventCount++;
-      resolve(eventCount);
+      const result = eventCount;
+      resolve(result);
     });
     if (!queueRunning) {
       queueRunning = true;
