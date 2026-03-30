@@ -109,6 +109,7 @@ app.use(express.json({
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
     const payload = req.body;
+    const signature = req.headers['x-webhook-signature'] as string;
     // Input validation: ensure payload is object with expected structure
     if (!payload || typeof payload !== 'object') {
       res.status(400).json({ error: 'Invalid payload format' });
@@ -116,6 +117,16 @@ app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: R
     }
     if (!payload.action || typeof payload.action !== 'string') {
       res.status(400).json({ error: 'Missing or invalid action field' });
+      return;
+    }
+    // HMAC signature validation to prevent tampering
+    const webhookSecret = process.env.WEBHOOK_SECRET || 'webhook-secret';
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(JSON.stringify(payload))
+      .digest('hex');
+    if (!signature || !timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+      res.status(401).json({ error: 'Invalid webhook signature' });
       return;
     }
     console.log('Webhook received:', payload?.action);
