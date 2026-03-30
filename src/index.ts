@@ -21,15 +21,30 @@ const incrementQueue: Array<() => void> = [];
 let queueRunning = false;
 
 const atomicIncrement = async () => {
-  return new Promise<number>(resolve => {
+  return new Promise<number>((resolve, reject) => {
+    let resolved = false;
     incrementQueue.push(() => {
-      eventCount++;
-      const result = eventCount;
-      resolve(result);
+      if (!resolved) {
+        try {
+          eventCount++;
+          const result = eventCount;
+          resolved = true;
+          resolve(result);
+        } catch (err) {
+          resolved = true;
+          reject(err);
+        }
+      }
     });
     if (!queueRunning) {
       queueRunning = true;
-      processQueue().catch(err => console.error('Queue processing failed:', err));
+      processQueue().catch(err => {
+        if (!resolved) {
+          resolved = true;
+          reject(err);
+        }
+        console.error('Queue processing failed:', err);
+      });
     }
   });
 };
