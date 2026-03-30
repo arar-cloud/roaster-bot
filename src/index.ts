@@ -35,13 +35,18 @@ const atomicIncrement = async () => {
 };
 
 const processQueue = () => {
-  if (incrementQueue.length === 0) {
+  try {
+    if (incrementQueue.length === 0) {
+      queueRunning = false;
+      return;
+    }
+    const fn = incrementQueue.shift();
+    if (fn) fn();
+    setImmediate(processQueue);
+  } catch (error) {
+    console.error('Error processing queue:', error);
     queueRunning = false;
-    return;
   }
-  const fn = incrementQueue.shift();
-  if (fn) fn();
-  setImmediate(processQueue);
 };
 
 if (isNaN(port) || port < 1 || port > 65535) {
@@ -139,7 +144,7 @@ app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: R
     const event = req.body;
     const count = await atomicIncrement();
     console.log(`Webhook received: ${event.action}, Event ${count} processed`);
-    eventQueue.push(async () => {
+    incrementQueue.push(async () => {
       try {
         console.log(`Processing event ${count}`);
       } catch (queueError) {
