@@ -133,29 +133,10 @@ app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Requ
   }
 });
 
-app.post('/webhook', limiter, async (req: Request, res: Response) => {
+app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
-    const signature = req.headers['x-hub-signature-256'] as string;
-    const payload = req.rawBody || '';
-
-    if (!signature || !payload) {
-      res.status(400).json({ error: 'Missing signature or payload' });
-      return;
-    }
-
-    const hash = crypto.createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET || '').update(payload).digest('hex');
-    try {
-      if (!crypto.timingSafeEqual(Buffer.from(`sha256=${hash}`), Buffer.from(signature))) {
-        res.status(401).json({ error: 'Unauthorized' });
-        return;
-      }
-    } catch (err) {
-      res.status(401).json({ error: 'Unauthorized' });
-      return;
-    }
-
     const event = req.body;
-    const count = await atomicIncrement(countLock);
+    const count = await atomicIncrement();
     console.log(`Webhook received: ${event.action}, Event ${count} processed`);
     res.status(200).json({ message: 'Event processed' });
   } catch (error) {
