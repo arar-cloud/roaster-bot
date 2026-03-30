@@ -8,10 +8,15 @@ import { timingSafeEqual } from 'crypto';
 process.on('unhandledRejection', (reason, promise) => {
   try {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    // Exit gracefully after logging critical error
-    process.exit(1);
+    // Defer exit to allow pending operations to complete
+    setImmediate(() => {
+      process.exit(1);
+    });
   } catch (err) {
     console.error('Failed to log unhandled rejection:', err);
+    setImmediate(() => {
+      process.exit(1);
+    });
   }
 });
 
