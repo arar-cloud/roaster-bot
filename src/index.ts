@@ -67,7 +67,7 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
   console.error('ERROR: GITHUB_WEBHOOK_SECRET not set. Webhook verification required.');
   process.exit(1);
 } else {
-  console.info('GitHub webhook secret loaded. Signature verification enabled.');
+  console.log('GitHub webhook secret configured successfully.');
 }
 
 // Middleware to verify GitHub webhook signature
