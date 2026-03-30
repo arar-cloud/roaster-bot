@@ -12,7 +12,8 @@ declare global {
     }
   }
 }
-
+  try {
+  
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -110,7 +111,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const client = new CopilotClient({
     token: githubToken
   });
-  
+
   try {
     // Check deduplication cache for identical webhook payloads within 5-minute window
     const rawBody = req.rawBody || JSON.stringify(req.body);
@@ -125,7 +126,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
