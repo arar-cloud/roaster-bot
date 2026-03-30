@@ -90,7 +90,7 @@ app.get('/', (req, res) => {
 
 // Issue-416a5af43c: Verify webhook signature using SHA256 with timing-safe comparison
 function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
-  if (!signature || signature.length === 0) {
+  if (!signature || signature.length === 0 || !secret) {
     return false;
   }
   const hmac = crypto.createHmac('sha256', secret);
