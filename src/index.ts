@@ -49,8 +49,8 @@ if (isNaN(port) || port < 1 || port > 65535) {
 }
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  windowMs: 60 * 1000, // 1 minute
+  limit: 5,
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req: Request, res: Response) => false,
