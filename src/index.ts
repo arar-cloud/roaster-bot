@@ -29,7 +29,7 @@ app.use((req: Request, res: Response, next) => {
   if (req.method === 'POST' && req.body) {
     // Validate payload structure
     if (typeof req.body !== 'object' || req.body === null) {
-      return res.status(400).json({ error: 'Invalid payload' });
+      return res.status(400).json({ error: 'Invalid request body' });
     }
   }
   next();
