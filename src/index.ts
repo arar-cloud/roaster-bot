@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { CopilotClient } from '@github/copilot-sdk';
+// GitHub Copilot integration removed - use environment-based auth if needed
 
 // Extend Express Request type properly
 declare global {
@@ -22,6 +22,11 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Validate GitHub webhook secret on startup
+if (!process.env.GITHUB_WEBHOOK_SECRET) {
+  console.warn('WARNING: GITHUB_WEBHOOK_SECRET not set. Webhook verification disabled.');
+}
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
