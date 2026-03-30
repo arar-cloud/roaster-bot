@@ -10,8 +10,13 @@ console.log('Node version:', process.version);
 console.log('Current directory:', process.cwd());
 console.log('Script directory:', __dirname);
 
+// Validate path safety: ensure no path traversal
 const targetPath = resolve(__dirname, '../src/index.js');
-console.log('Resolved path:', targetPath);
+const allowedBase = resolve(__dirname, '..');
+if (!targetPath.startsWith(allowedBase)) {
+  console.error('Path traversal detected, refusing to access');
+  process.exit(1);
+}
 console.log('Target exists:', fs.existsSync(targetPath));
 
 const sourceDir = resolve(__dirname, '../src');
