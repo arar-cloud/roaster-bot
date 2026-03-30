@@ -27,8 +27,9 @@ const limiter = rateLimit({
 const requestCache = new Map<string, { result: string; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-function getCacheKey(payload: string): string {
-  return crypto.createHash('sha256').update(payload).digest('hex');
+function getCacheKey(payload: string, timestamp?: string): string {
+  const combined = `${payload}:${timestamp || Date.now()}`;
+  return crypto.createHash('sha256').update(combined).digest('hex');
 }
 
 function getCachedResult(key: string): string | null {
@@ -47,6 +48,17 @@ app.use(express.json({
   }
 }));
 
+// Security headers middleware
+app.use((req: Request, res: Response, next: any) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+app.use(limiter);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
@@ -60,12 +72,17 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET || process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
+  if (!signature) {
+    console.warn('Webhook rejected: missing signature header');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (webhookSecret) {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
@@ -75,7 +92,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const actual = Buffer.from(signature || '');
 
     if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
-      return res.status(401).send('Invalid signature.');
+      console.warn('Webhook rejected: invalid signature');
+      return res.status(401).json({ error: 'Unauthorized' });
     }
   }
 
@@ -90,7 +108,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   try {
     // Check deduplication cache for identical webhook payloads within 5-minute window
     const rawBody = req.rawBody || JSON.stringify(req.body);
-    const cacheKey = getCacheKey(rawBody);
+    const timestamp = req.headers['x-timestamp'] as string;
+    const cacheKey = getCacheKey(rawBody, timestamp);
     const cached = getCachedResult(cacheKey);
     if (cached) {
       res.json({ suggestion: cached, fromCache: true });
@@ -139,6 +158,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     // Cache the response for deduplication
     if (res.statusCode === 200) {
       requestCache.set(cacheKey, { result: prompt, timestamp: Date.now() });
+      // Cleanup old cache entries to prevent memory leaks
+      for (const [key, value] of requestCache.entries()) {
+        if (Date.now() - value.timestamp > CACHE_TTL) {
+          requestCache.delete(key);
+        }
+      }
     }
 
     if (!prompt) {
