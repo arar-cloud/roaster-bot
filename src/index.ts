@@ -23,6 +23,22 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+const requestCache = new Map<string, { result: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function getCacheKey(payload: string): string {
+  return crypto.createHash('sha256').update(payload).digest('hex');
+}
+
+function getCachedResult(key: string): string | null {
+  const cached = requestCache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.result;
+  }
+  requestCache.delete(key);
+  return null;
+}
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
