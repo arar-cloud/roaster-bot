@@ -60,10 +60,14 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
   const expected = `sha256=${hash}`;
 
   try {
-    // Fixed: Extract expected hash and use timing-safe comparison
+    // Fixed: Extract expected hash and use timing-safe comparison with fixed-length buffers
     const receivedHash = signature.slice(7); // Remove 'sha256=' prefix
     const expectedHash = hash;
-    if (!timingSafeEqual(Buffer.from(receivedHash), Buffer.from(expectedHash))) {
+    // Ensure both buffers are exactly 64 bytes (sha256 hex digest length)
+    if (receivedHash.length !== 64 || expectedHash.length !== 64) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    if (!timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(expectedHash, 'hex'))) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
   } catch (err) {
