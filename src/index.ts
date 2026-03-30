@@ -49,9 +49,10 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
   const expected = `sha256=${hash}`;
 
   try {
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expected);
-    if (signatureBuffer.length !== expectedBuffer.length || !timingSafeEqual(signatureBuffer, expectedBuffer)) {
+    // Fixed: Extract expected hash and use timing-safe comparison
+    const receivedHash = signature.slice(7); // Remove 'sha256=' prefix
+    const expectedHash = hash;
+    if (!timingSafeEqual(Buffer.from(receivedHash), Buffer.from(expectedHash))) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
   } catch (err) {
