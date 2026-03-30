@@ -71,7 +71,9 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
     if (receivedHash.length !== 64 || expectedHash.length !== 64) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
-    if (!timingSafeEqual(Buffer.from(receivedHash, 'hex'), Buffer.from(expectedHash, 'hex'))) {
+    const receivedBuf = Buffer.from(receivedHash, 'hex');
+    const expectedBuf = Buffer.from(expectedHash, 'hex');
+    if (receivedBuf.length !== expectedBuf.length || !timingSafeEqual(receivedBuf, expectedBuf)) {
       return res.status(401).json({ error: 'Invalid signature' });
     }
   } catch (err) {
