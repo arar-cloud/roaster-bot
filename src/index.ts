@@ -187,7 +187,15 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
 
     const userMessages = body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    let prompt = lastMessage ? lastMessage.content : "Roast me.";
+
+    // Validate and sanitize prompt: max 5000 chars, reject null bytes and suspicious patterns
+    if (typeof prompt !== 'string' || prompt.length === 0 || prompt.length > 5000) {
+      return res.status(400).json({ error: 'Prompt must be a string between 1 and 5000 characters.' });
+    }
+    if (prompt.includes('\x00') || /[<>{}|&;$()\[\]{}]/g.test(prompt.substring(0, 50))) {
+      return res.status(400).json({ error: 'Prompt contains invalid characters.' });
+    }
 
     // Create session following SDK docs
     const session = await client.createSession({
