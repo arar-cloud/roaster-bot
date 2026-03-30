@@ -102,11 +102,34 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
+
+// Strict request size limits to prevent DoS attacks
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf, encoding) => {
     req.rawBody = buf.toString(encoding || 'utf8');
   }
 }));
+app.use(express.text({ limit: '1mb' }));
+
+// Input validation and sanitization middleware
+const validateAndSanitizeInput = (req: Request, res: Response, next: any) => {
+  if (req.body && typeof req.body === 'object') {
+    Object.keys(req.body).forEach((key) => {
+      if (typeof req.body[key] === 'string') {
+        // Remove null bytes and control characters
+        req.body[key] = req.body[key].replace(/\0|[\x00-\x1F\x7F]/g, '');
+        // Limit length to 10KB per field
+        if (req.body[key].length > 10240) {
+          return res.status(400).json({ error: 'Field too large' });
+        }
+      }
+    });
+  }
+  next();
+};
+
+app.use(validateAndSanitizeInput);
 
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
