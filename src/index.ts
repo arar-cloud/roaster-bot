@@ -23,7 +23,11 @@ process.on('uncaughtException', (error) => {
 
 // Validate required environment variables
 if (!process.env.GITHUB_WEBHOOK_SECRET) {
-  console.error('FATAL: GITHUB_WEBHOOK_SECRET environment variable is required');
+  console.error('ERROR: GITHUB_WEBHOOK_SECRET environment variable is not set');
+  process.exit(1);
+}
+if (!process.env.COPILOT_TOKEN) {
+  console.error('ERROR: COPILOT_TOKEN environment variable is not set');
   process.exit(1);
 }
 
