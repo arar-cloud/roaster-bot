@@ -82,6 +82,7 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   
   const payload = req.rawBody || '';
   const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  // Signature verification is now using req.rawBody for HMAC calculation
   
   if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
     console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
