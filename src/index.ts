@@ -157,9 +157,17 @@ app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Requ
   }
 });
 
+const isValidWebhookEvent = (event: any): event is Record<string, any> => {
+  return event && typeof event === 'object' && Object.keys(event).length > 0;
+};
+
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
     const event = req.body;
+    if (!isValidWebhookEvent(event)) {
+      console.warn('Invalid webhook payload received');
+      return res.status(400).json({ error: 'Bad Request' });
+    }
     const count = await atomicIncrement();
     console.log(`Webhook received: ${event.action}, Event ${count} processed`);
     incrementQueue.push(async () => {
