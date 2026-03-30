@@ -140,6 +140,22 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   }
 };
 
+app.get('/debug', (req: Request, res: Response) => {
+  const sensitiveKeys = ['WEBHOOK_SECRET', 'DATABASE_URL', 'API_KEY', 'TOKEN', 'PASSWORD', 'AUTH'];
+  const sanitizedEnv = Object.entries(process.env).reduce((acc, [key, value]) => {
+    if (sensitiveKeys.some(sensitive => key.toUpperCase().includes(sensitive))) {
+      acc[key] = '***REDACTED***';
+    } else {
+      acc[key] = value;
+    }
+    return acc;
+  }, {} as Record<string, any>);
+  res.json({
+    eventCount,
+    env: sanitizedEnv,
+  });
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
