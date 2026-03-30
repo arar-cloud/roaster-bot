@@ -16,31 +16,34 @@ declare global {
 const app = express();
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
+// Capture raw body for webhook signature verification
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  }
+}));
+
 let eventCount = 0;
-const incrementQueue: Array<() => void> = [];
-let queueRunning = false;
+const eventQueue: (() => void)[] = [];
+let lockAcquired = false;
 
 const atomicIncrement = async () => {
   return new Promise<number>(resolve => {
-    incrementQueue.push(() => {
-      eventCount++;
-      resolve(eventCount);
-    });
-    if (!queueRunning) {
-      queueRunning = true;
-      processQueue();
-    }
+    const tryAcquire = () => {
+      if (!lockAcquired) {
+        lockAcquired = true;
+        eventCount++;
+        const result = eventCount;
+        lockAcquired = false;
+        resolve(result);
+        const next = eventQueue.shift();
+        if (next) next();
+      } else {
+        eventQueue.push(tryAcquire);
+      }
+    };
+    tryAcquire();
   });
-};
-
-const processQueue = () => {
-  if (incrementQueue.length === 0) {
-    queueRunning = false;
-    return;
-  }
-  const fn = incrementQueue.shift();
-  if (fn) fn();
-  setImmediate(processQueue);
 };
 
 if (isNaN(port) || port < 1 || port > 65535) {
@@ -59,12 +62,6 @@ const limiter = rateLimit({
   },
 });
 
-// Initialize rawBody for all requests before middleware chain
-app.use((req: Request, res: Response, next) => {
-  req.rawBody = '';
-  next();
-});
-
 // Validate GitHub webhook secret on startup
 if (!process.env.GITHUB_WEBHOOK_SECRET) {
   console.error('ERROR: GITHUB_WEBHOOK_SECRET not set. Webhook verification required.');
@@ -72,14 +69,6 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
 } else {
   console.info('GitHub webhook secret loaded. Signature verification enabled.');
 }
-
-app.use(express.json({
-  verify: (req: any, res: any, buf: Buffer, encoding: string) => {
-    req.rawBody = buf.toString(encoding || 'utf8');
-  }
-}));
-
-app.use(express.raw({ type: 'application/json' }));
 
 // Middleware to verify GitHub webhook signature
 const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
