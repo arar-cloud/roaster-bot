@@ -17,8 +17,12 @@ console.log('Target exists:', fs.existsSync(targetPath));
 const sourceDir = resolve(__dirname, '../src');
 console.log('Source directory exists:', fs.existsSync(sourceDir));
 
-if (fs.existsSync(sourceDir)) {
-  console.log('Files in src/:', fs.readdirSync(sourceDir));
-} else {
-  console.log('⚠️  src/ directory not found. Check repository structure.');
+try {
+  if (fs.existsSync(sourceDir)) {
+    console.log('Files in src/:', fs.readdirSync(sourceDir));
+  } else {
+    console.log('⚠️  src/ directory not found. Check repository structure.');
+  }
+} catch (err) {
+  console.error('❌ Error reading source directory:', err.message);
 }

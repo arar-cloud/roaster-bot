@@ -1,3 +1,3 @@
-import app from '../src/index.js';
+import app from './diagnostics.js';
 
 export default app;
