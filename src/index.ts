@@ -169,7 +169,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
   
   try {
-    const systemPrompt = `
+    // Validate message object structure
+const isValidMessage = (msg: any): msg is { role: string; content: string } => {
+  return msg && typeof msg === 'object' && 
+         typeof msg.role === 'string' && 
+         typeof msg.content === 'string' &&
+         msg.role.length > 0 && msg.content.length > 0;
+};
+
+const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
       
@@ -179,7 +187,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+    // Validate userMessages is an array and contains only valid message objects
+    let userMessages = req.body.messages || [];
+    if (!Array.isArray(userMessages)) {
+      return res.status(400).json({ error: 'Invalid request: messages must be an array' });
+    }
+    if (userMessages.length > 0 && !userMessages.every(isValidMessage)) {
+      return res.status(400).json({ error: 'Invalid request: each message must have role and content strings' });
+    }
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
