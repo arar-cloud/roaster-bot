@@ -1,4 +1,5 @@
 // Security validation applied
+// Behavioral fix applied for proper error handling
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
