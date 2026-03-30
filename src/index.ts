@@ -47,23 +47,29 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+app.post('/api/github-webhook', limiter, async (req: Request, res: Response) => {
+  const signature = req.headers['x-hub-signature-256'] as string;
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  
+  if (!secret || !signature) {
+    return res.status(401).json({ error: 'Missing signature or secret' });
+  }
+  
+  const payload = req.rawBody || '';
+  const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  
+  if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+  
+  if (!req.body || typeof req.body !== 'object') {
+    return res.status(400).json({ error: 'Invalid payload format' });
   }
 
+  res.status(200).json({ message: 'Webhook verified and processed' });
+});
+
+app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
