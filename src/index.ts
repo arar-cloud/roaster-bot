@@ -23,6 +23,17 @@ app.use(express.json({
     req.rawBody = buf.toString('utf-8');
   }
 }));
+
+// Input validation middleware
+app.use((req: Request, res: Response, next) => {
+  if (req.method === 'POST' && req.body) {
+    // Validate payload structure
+    if (typeof req.body !== 'object' || req.body === null) {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+  }
+  next();
+});
 if (!process.env.GITHUB_TOKEN) {
   throw new Error('GITHUB_TOKEN environment variable is required. Aborting startup.');
 }
