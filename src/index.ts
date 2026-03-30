@@ -28,7 +28,9 @@ app.use(express.json({
 app.use((req: Request, res: Response, next) => {
   if (req.method === 'POST' && req.body) {
     // Validate payload structure
-    if (typeof req.body !== 'object' || req.body === null) {
+    if (typeof req.body === 'object' && req.body !== null) {
+      // Payload is valid
+    } else {
       return res.status(400).json({ error: 'Invalid request body' });
     }
   }
@@ -228,10 +230,8 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   }
 });
 
+  processingWebhooks.delete(cacheKey);
 }
-
-app.listen(port, () => {
-  console.log(`Server running on ${port}`);
 });
 
 app.listen(port, () => {
