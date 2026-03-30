@@ -15,6 +15,13 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Middleware to capture raw body for webhook signature verification
+app.use(express.json({
+  verify: (req: any, res: any, buf: Buffer) => {
+    req.rawBody = buf.toString('utf-8');
+  }
+}));
 if (!process.env.GITHUB_TOKEN) {
   throw new Error('GITHUB_TOKEN environment variable is required. Aborting startup.');
 }
