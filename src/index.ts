@@ -39,8 +39,9 @@ const requestCache = new Map<string, { result: string; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function getCacheKey(payload: string, timestamp?: string): string {
-  const combined = `${payload}:${timestamp || Date.now()}`;
-  return crypto.createHash('sha256').update(combined).digest('hex');
+  // Sanitize cache key: use hash of payload to prevent cache poisoning via unsanitized keys
+  const hash = crypto.createHash('sha256').update(payload).digest('hex');
+  return `webhook:${hash}:${timestamp || Date.now()}`;
 }
 
 function getCachedResult(key: string): string | null {
@@ -76,6 +77,26 @@ app.get('/', (req, res) => {
   `);
 });
 
+// Issue-416a5af43c: Verify webhook signature using SHA256 with timing-safe comparison
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  if (!signature || signature.length === 0) {
+    return false;
+  }
+  const hmac = crypto.createHmac('sha256', secret);
+  const expectedDigest = 'sha256=' + hmac.update(payload).digest('hex');
+  try {
+    return crypto.timingSafeEqual(
+      Buffer.from(expectedDigest),
+      Buffer.from(signature)
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Issue-46163b3f16: Track processing to prevent race conditions in concurrent webhook handling
+const processingWebhooks = new Set<string>();
+
 app.post('/webhook', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
@@ -94,12 +115,8 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const rawBody = req.rawBody;
   if (!rawBody) return res.status(400).send('Missing raw body.');
 
-  const hmac = crypto.createHmac('sha1', webhookSecret);
-  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-  const expected = Buffer.from(digest);
-  const actual = Buffer.from(signature || '');
-
-  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
+  // Issue-416a5af43c: Use proper signature verification with SHA256
+  if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
     console.warn('Webhook rejected: invalid signature');
     return res.status(401).json({ error: 'Unauthorized' });
   }
@@ -117,11 +134,20 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody || JSON.stringify(req.body);
     const timestamp = req.headers['x-timestamp'] as string;
     const cacheKey = getCacheKey(rawBody, timestamp);
+    
+    // Issue-46163b3f16: Prevent race conditions by tracking concurrent processing
+    if (processingWebhooks.has(cacheKey)) {
+      console.warn('Webhook already processing, rejecting concurrent request');
+      return res.status(202).json({ message: 'Webhook already processing' });
+    }
+    
     const cached = getCachedResult(cacheKey);
     if (cached) {
       res.json({ suggestion: cached, fromCache: true });
       return;
     }
+    
+    processingWebhooks.add(cacheKey);
 
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
