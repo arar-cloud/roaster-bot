@@ -8,6 +8,9 @@ import { timingSafeEqual } from 'crypto';
 process.on('unhandledRejection', (reason, promise) => {
   try {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  } catch (err) {
+    console.error('Failed to log unhandled rejection:', err);
+  }
 });
 
 // Validate required environment variables
@@ -82,6 +85,8 @@ app.use(express.json({
 
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
+    const payload = req.body;
+    console.log('Webhook received:', payload?.action);
     if (!copilotClient) {
       return res.status(503).json({ error: 'Copilot client not initialized' });
     }
