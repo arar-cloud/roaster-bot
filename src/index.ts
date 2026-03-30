@@ -100,22 +100,35 @@ app.use(express.json({
 
 app.use(express.raw({ type: 'application/json' }));
 
+// Apply rate limiter globally to all endpoints
+app.use(limiter);
+
 // Middleware to verify GitHub webhook signature
 const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   try {
     const signature = req.headers['x-hub-signature-256'] as string;
     const secret = process.env.GITHUB_WEBHOOK_SECRET;
     
-    if (!secret || !signature) {
-      console.warn('[Webhook Security] Verification failed: Missing signature or secret');
-      return res.status(401).json({ error: 'Missing signature or secret' });
+    if (!secret) {
+      console.error('[Webhook Security] WEBHOOK_SECRET environment variable is required');
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
+    
+    if (!signature) {
+      console.warn('[Webhook Security] Verification failed: Missing signature');
+      return res.status(401).json({ error: 'Missing signature' });
     }
     
     const payload = req.rawBody || JSON.stringify({});
     const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
     
-    if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
-      console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
+        console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
+        return res.status(403).json({ error: 'Invalid signature' });
+      }
+    } catch (e) {
+      console.warn('[Webhook Security] Signature comparison error, rejecting request');
       return res.status(403).json({ error: 'Invalid signature' });
     }
     
