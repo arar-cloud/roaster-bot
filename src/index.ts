@@ -81,7 +81,7 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
 
 app.use(express.json({
   verify: (req: any, res: any, buf: Buffer, encoding: string) => {
-    req.rawBody = buf.toString(encoding || 'utf8');
+    req.rawBody = buf ? buf.toString(encoding || 'utf8') : '';
   }
 }));
 
@@ -97,7 +97,7 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
     return res.status(401).json({ error: 'Missing signature or secret' });
   }
   
-  const payload = req.rawBody || '';
+  const payload = req.rawBody || JSON.stringify({});
   const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
   
   if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
