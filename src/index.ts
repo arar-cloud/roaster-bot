@@ -68,11 +68,20 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
-  if (!req.body || typeof req.body !== 'object') {
-    return res.status(400).json({ error: 'Invalid payload format' });
-  }
+  try {
+    if (!req.body || typeof req.body !== 'object') {
+      return res.status(400).json({ error: 'Invalid payload format' });
+    }
 
-  res.status(200).json({ message: 'Webhook verified and processed' });
+    const event = req.headers['x-github-event'] as string;
+    const action = (req.body as any)?.action || 'unknown';
+    console.log(`Processing GitHub event: ${event}, action: ${action}`);
+    
+    res.status(200).json({ message: 'Webhook verified and processed' });
+  } catch (error) {
+    console.error('Webhook processing error:', error instanceof Error ? error.message : 'Unknown error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
