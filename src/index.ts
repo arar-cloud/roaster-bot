@@ -90,6 +90,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
   
   try {
+    // Check deduplication cache for identical webhook payloads within 5-minute window
+    const rawBody = req.rawBody || JSON.stringify(req.body);
+    const cacheKey = getCacheKey(rawBody);
+    const cached = getCachedResult(cacheKey);
+    if (cached) {
+      res.json({ suggestion: cached, fromCache: true });
+      return;
+    }
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -128,6 +137,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     });
 
     await session.sendAndWait({ prompt });
+
+    // Cache the response for deduplication
+    if (res.statusCode === 200) {
+      requestCache.set(cacheKey, { result: prompt, timestamp: Date.now() });
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
