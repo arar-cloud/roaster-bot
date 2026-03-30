@@ -24,10 +24,16 @@ app.use(express.json({
   }
 }));
 
-// Initialize GitHub Copilot Client
-const copilotClient = new CopilotClient({
-  token: process.env.GITHUB_TOKEN || '',
-});
+// Initialize GitHub Copilot Client with error handling
+let copilotClient: CopilotClient | null = null;
+try {
+  copilotClient = new CopilotClient({
+    token: process.env.GITHUB_TOKEN || '',
+  });
+} catch (error) {
+  console.error('Failed to initialize CopilotClient:', error instanceof Error ? error.message : 'Unknown error');
+  // Continue without Copilot if initialization fails
+}
 
 // Input validation middleware
 app.use((req: Request, res: Response, next) => {
@@ -144,10 +150,16 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    token: githubToken
-  });
+  // Initialize client with the user's token with error handling
+  let client: CopilotClient | null = null;
+  try {
+    client = new CopilotClient({
+      token: githubToken
+    });
+  } catch (error) {
+    console.error('Failed to initialize CopilotClient for webhook:', error instanceof Error ? error.message : 'Unknown error');
+    return res.status(500).json({ error: 'Failed to initialize Copilot client' });
+  }
 
   try {
     // Check deduplication cache for identical webhook payloads within 5-minute window
