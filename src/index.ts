@@ -102,24 +102,29 @@ app.use(express.raw({ type: 'application/json' }));
 
 // Middleware to verify GitHub webhook signature
 const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
-  const signature = req.headers['x-hub-signature-256'] as string;
-  const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  
-  if (!secret || !signature) {
-    console.warn('[Webhook Security] Verification failed: Missing signature or secret');
-    return res.status(401).json({ error: 'Missing signature or secret' });
+  try {
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    
+    if (!secret || !signature) {
+      console.warn('[Webhook Security] Verification failed: Missing signature or secret');
+      return res.status(401).json({ error: 'Missing signature or secret' });
+    }
+    
+    const payload = req.rawBody || JSON.stringify({});
+    const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+    
+    if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
+      console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
+      return res.status(403).json({ error: 'Invalid signature' });
+    }
+    
+    console.debug('[Webhook Security] Signature verified successfully for payload.');
+    next();
+  } catch (err) {
+    console.error('[Webhook Security] Signature verification error:', err instanceof Error ? err.message : 'Unknown error');
+    return res.status(400).json({ error: 'Malformed webhook signature' });
   }
-  
-  const payload = req.rawBody || JSON.stringify({});
-  const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  
-  if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
-    console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
-    return res.status(403).json({ error: 'Invalid signature' });
-  }
-  
-  console.debug('[Webhook Security] Signature verified successfully for payload.');
-  next();
 };
 
 app.get('/', (req, res) => {
