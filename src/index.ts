@@ -103,11 +103,13 @@ function verifyWebhookSignature(payload: string, signature: string, secret: stri
   }
   const hmac = crypto.createHmac('sha256', secret);
   const expectedDigest = 'sha256=' + hmac.update(payload).digest('hex');
+  // Use constant-time comparison to prevent timing attacks
   try {
-    return crypto.timingSafeEqual(
+    crypto.timingSafeEqual(
       Buffer.from(expectedDigest),
       Buffer.from(signature)
     );
+    return true;
   } catch {
     return false;
   }
