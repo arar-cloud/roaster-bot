@@ -44,6 +44,7 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method !== 'POST'
 });
 
 const requestCache = new Map<string, { result: string; timestamp: number }>();
