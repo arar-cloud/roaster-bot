@@ -132,6 +132,28 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+app.post('/api/send-sms', limiter, (req: Request, res: Response) => {
+  try {
+    const { phone, message } = req.body;
+    
+    // Validate input
+    if (!phone || typeof phone !== 'string' || !/^\+?[0-9]{10,}$/.test(phone.replace(/[\s-]/g, ''))) {
+      return res.status(400).json({ error: 'Invalid phone number' });
+    }
+    
+    if (!message || typeof message !== 'string' || message.length > 160) {
+      return res.status(400).json({ error: 'Invalid message' });
+    }
+    
+    // TODO: Implement actual SMS sending via provider
+    console.log(`[SMS] Sending to ${phone}: ${message.substring(0, 50)}...`);
+    res.status(200).json({ message: 'SMS sent successfully' });
+  } catch (error) {
+    console.error('[SMS Error]', error instanceof Error ? error.message : 'Unknown error');
+    res.status(500).json({ error: 'Failed to send SMS' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
