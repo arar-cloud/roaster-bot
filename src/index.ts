@@ -37,7 +37,7 @@ const atomicIncrement = async () => {
         lockAcquired = false;
         resolve(result);
         const next = eventQueue.shift();
-        if (next) next();
+        if (next) queueMicrotask(next);
       } else {
         eventQueue.push(tryAcquire);
       }
