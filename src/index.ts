@@ -35,20 +35,8 @@ app.use(express.json({
   }
 }));
 
-app.get('/', (req, res) => {
-  res.send(`
-    <html>
-      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
-        <div style="text-align: center;">
-          <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
-          <p style="color: #ccc;">Prepare your code for total annihilation.</p>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
-app.post('/api/github-webhook', limiter, async (req: Request, res: Response) => {
+// Middleware to verify GitHub webhook signature
+const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   const signature = req.headers['x-hub-signature-256'] as string;
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   
@@ -63,6 +51,23 @@ app.post('/api/github-webhook', limiter, async (req: Request, res: Response) => 
     return res.status(403).json({ error: 'Invalid signature' });
   }
   
+  next();
+};
+
+app.get('/', (req, res) => {
+  res.send(`
+    <html>
+      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
+        <div style="text-align: center;">
+          <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
+          <p style="color: #ccc;">Prepare your code for total annihilation.</p>
+        </div>
+      </body>
+    </html>
+  `);
+});
+
+app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   if (!req.body || typeof req.body !== 'object') {
     return res.status(400).json({ error: 'Invalid payload format' });
   }
