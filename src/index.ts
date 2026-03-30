@@ -143,6 +143,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       requestCache.set(cacheKey, { result: prompt, timestamp: Date.now() });
     }
 
+    if (!prompt) {
+      res.status(500).json({ error: 'No result available' });
+      return;
+    }
+
     res.write('data: [DONE]\n\n');
     res.end();
 
