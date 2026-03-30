@@ -29,22 +29,20 @@ const atomicIncrement = async () => {
     });
     if (!queueRunning) {
       queueRunning = true;
-      processQueue();
+      processQueue().catch(err => console.error('Queue processing failed:', err));
     }
   });
 };
 
-const processQueue = () => {
+const processQueue = async () => {
   try {
-    if (incrementQueue.length === 0) {
-      queueRunning = false;
-      return;
+    while (incrementQueue.length > 0) {
+      const fn = incrementQueue.shift();
+      if (fn) await Promise.resolve().then(() => fn());
     }
-    const fn = incrementQueue.shift();
-    if (fn) fn();
-    setImmediate(processQueue);
   } catch (error) {
     console.error('Error processing queue:', error);
+  } finally {
     queueRunning = false;
   }
 };
