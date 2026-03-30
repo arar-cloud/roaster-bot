@@ -109,6 +109,24 @@ app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: R
   }
 });
 
+app.post('/github-webhook', verifyGitHubSignature, async (req: Request, res: Response) => {
+  try {
+    const payload = req.body;
+    console.log('Webhook received:', payload.action);
+    const prNumber = payload.pull_request?.number;
+    if (!prNumber) {
+      res.status(400).json({ error: 'PR number not found' });
+      return;
+    }
+    const client = new CopilotClient({ token: process.env.GITHUB_TOKEN! });
+    const review = await client.getReview(payload.repository.full_name, prNumber);
+    res.json({ review });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
