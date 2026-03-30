@@ -35,10 +35,12 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
 }
 
 app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req: any, res: any, buf: Buffer, encoding: string) => {
+    req.rawBody = buf.toString(encoding || 'utf8');
   }
 }));
+
+app.use(express.raw({ type: 'application/json' }));
 
 // Middleware to verify GitHub webhook signature
 const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
