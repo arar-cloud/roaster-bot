@@ -15,7 +15,10 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
-const githubToken = process.env.GITHUB_TOKEN || 'placeholder_token';
+if (!process.env.GITHUB_TOKEN) {
+  throw new Error('GITHUB_TOKEN environment variable is required. Aborting startup.');
+}
+const githubToken = process.env.GITHUB_TOKEN;
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
