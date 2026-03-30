@@ -139,6 +139,13 @@ app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: R
     const event = req.body;
     const count = await atomicIncrement();
     console.log(`Webhook received: ${event.action}, Event ${count} processed`);
+    eventQueue.push(async () => {
+      try {
+        console.log(`Processing event ${count}`);
+      } catch (queueError) {
+        console.error('Event queue processing error:', queueError);
+      }
+    });
     res.status(200).json({ message: 'Event processed' });
   } catch (error) {
     console.error('Webhook processing error:', error);
