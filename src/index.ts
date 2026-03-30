@@ -6,7 +6,8 @@ import { timingSafeEqual } from 'crypto';
 
 // Global unhandled rejection handler
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  try {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
 // Validate required environment variables
@@ -28,25 +29,25 @@ declare global {
 const verifyGitHubSignature = (req: any, res: Response, next: any) => {
   const signature = req.get('X-Hub-Signature-256');
   const payload = req.rawBody;
-  
+
   if (!signature || !payload || typeof signature !== 'string' || typeof payload !== 'string') {
     console.warn('Missing or invalid GitHub signature/payload');
     return res.status(401).json({ error: 'Missing signature or payload' });
   }
-  
+
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) {
     return res.status(500).json({ error: 'Webhook secret not configured' });
   }
-  
+
   if (!signature.startsWith('sha256=')) {
     console.warn('Invalid signature format: missing sha256= prefix');
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   const expected = `sha256=${hash}`;
-  
+
   try {
     const signatureBuffer = Buffer.from(signature);
     const expectedBuffer = Buffer.from(expected);
@@ -57,7 +58,7 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
     console.warn('Signature verification failed');
     return res.status(401).json({ error: 'Invalid signature' });
   }
-  
+
   next();
 }
 
