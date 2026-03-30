@@ -93,7 +93,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const rawBody = req.rawBody;
   if (!rawBody) return res.status(400).send('Missing raw body.');
 
-  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const hmac = crypto.createHmac('sha1', webhookSecret);
   const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
   const expected = Buffer.from(digest);
   const actual = Buffer.from(signature || '');
