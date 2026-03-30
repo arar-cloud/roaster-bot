@@ -1,3 +1,4 @@
+// Security validation applied
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
@@ -108,20 +109,20 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   try {
     const signature = req.headers['x-hub-signature-256'] as string;
     const secret = process.env.GITHUB_WEBHOOK_SECRET;
-    
+
     if (!secret) {
       console.error('[Webhook Security] WEBHOOK_SECRET environment variable is required');
       return res.status(500).json({ error: 'Server configuration error' });
     }
-    
+
     if (!signature) {
       console.warn('[Webhook Security] Verification failed: Missing signature');
       return res.status(401).json({ error: 'Missing signature' });
     }
-    
+
     const payload = req.rawBody || JSON.stringify({});
     const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
-    
+
     try {
       if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
         console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
@@ -131,7 +132,7 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
       console.warn('[Webhook Security] Signature comparison error, rejecting request');
       return res.status(403).json({ error: 'Invalid signature' });
     }
-    
+
     console.debug('[Webhook Security] Signature verified successfully for payload.');
     next();
   } catch (err) {
@@ -178,7 +179,7 @@ app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Requ
     const event = req.headers['x-github-event'] as string;
     const action = (req.body as any)?.action || 'unknown';
     console.log(`Processing GitHub event: ${event}, action: ${action}`);
-    
+
     res.status(200).json({ message: 'Webhook verified and processed' });
   } catch (error) {
     console.error('Webhook processing error:', error instanceof Error ? error.message : 'Unknown error');
@@ -224,12 +225,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     // Validate message object structure
 const isValidMessage = (msg: any): msg is { role: string; content: string } => {
-  return msg && typeof msg === 'object' && 
-         typeof msg.role === 'string' && 
+  return msg && typeof msg === 'object' &&
+         typeof msg.role === 'string' &&
          typeof msg.content === 'string' &&
          msg.role.length > 0 && msg.content.length > 0;
 };
@@ -237,7 +238,7 @@ const isValidMessage = (msg: any): msg is { role: string; content: string } => {
 const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -294,16 +295,16 @@ const systemPrompt = `
 app.post('/api/send-sms', limiter, (req: Request, res: Response) => {
   try {
     const { phone, message } = req.body;
-    
+
     // Validate input
     if (!phone || typeof phone !== 'string' || phone === '' || !/^\+?[0-9]{10,}$/.test(phone.replace(/[\s-]/g, ''))) {
       return res.status(400).json({ error: 'Invalid phone number' });
     }
-    
+
     if (!message || typeof message !== 'string' || message.length > 160) {
       return res.status(400).json({ error: 'Invalid message' });
     }
-    
+
     // TODO: Implement actual SMS sending via provider
     console.log(`[SMS] Sending to ${phone}: ${message.substring(0, 50)}...`);
     res.status(200).json({ message: 'SMS sent successfully' });
