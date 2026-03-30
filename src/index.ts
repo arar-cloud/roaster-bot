@@ -144,6 +144,10 @@ app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: R
   try {
     const payload = req.body;
     const signature = req.headers['x-webhook-signature'] as string;
+    // Validate webhook signature before processing
+    if (!signature) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
     // Input validation: ensure payload is object with expected structure
     if (!payload || typeof payload !== 'object') {
       res.status(400).json({ error: 'Invalid payload format' });
