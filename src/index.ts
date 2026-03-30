@@ -12,7 +12,7 @@ declare global {
     }
   }
 }
-  try {
+
   
 const app = express();
 const port = process.env.PORT || 3000;
@@ -188,6 +188,12 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   } finally {
     await client.stop();
   }
+});
+
+}
+
+app.listen(port, () => {
+  console.log(`Server running on ${port}`);
 });
 
 app.listen(port, () => {
