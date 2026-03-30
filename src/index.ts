@@ -26,6 +26,10 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req: Request, res: Response) => false,
+  handler: (req: Request, res: Response) => {
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  },
 });
 
 // Validate GitHub webhook secret on startup
