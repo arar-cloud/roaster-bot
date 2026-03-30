@@ -79,7 +79,9 @@ const verifyGitHubSignature = (req: any, res: Response, next: any) => {
     }
     const receivedBuf = Buffer.from(receivedHash, 'hex');
     const expectedBuf = Buffer.from(expectedHash, 'hex');
-    timingSafeEqual(receivedBuf, expectedBuf);
+    if (!timingSafeEqual(receivedBuf, expectedBuf)) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
   } catch (err) {
     console.warn('Signature verification failed');
     return res.status(401).json({ error: 'Invalid signature' });
