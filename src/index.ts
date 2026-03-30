@@ -24,6 +24,11 @@ app.use(express.json({
   }
 }));
 
+// Initialize GitHub Copilot Client
+const copilotClient = new CopilotClient({
+  token: process.env.GITHUB_TOKEN || '',
+});
+
 // Input validation middleware
 app.use((req: Request, res: Response, next) => {
   if (req.method === 'POST' && req.body) {
