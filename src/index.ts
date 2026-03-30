@@ -84,6 +84,31 @@ app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Requ
   }
 });
 
+app.post('/webhook', limiter, (req: Request, res: Response) => {
+  try {
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const payload = req.rawBody || '';
+
+    if (!signature || !payload) {
+      res.status(400).json({ error: 'Missing signature or payload' });
+      return;
+    }
+
+    const hash = crypto.createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET || '').update(payload).digest('hex');
+    if (`sha256=${hash}` !== signature) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const event = req.body;
+    console.log(`Webhook received: ${event.action}`);
+    res.status(200).json({ message: 'Event processed' });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
