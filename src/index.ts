@@ -214,6 +214,13 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
 
     await session.sendAndWait({ prompt });
 
+    // Explicit cleanup: destroy session after use to prevent token leaks
+    res.on('finish', () => {
+      if (session) {
+        session.dispose?.();
+      }
+    });
+
     res.write('data: [DONE]\n\n');
     res.end();
 
