@@ -274,6 +274,9 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
       return res.status(400).json({ error: 'Prompt contains invalid characters.' });
     }
 
+    // Sanitize input to prevent prompt injection
+    const sanitizedPrompt = prompt.replace(/[\r\n]/g, '\n').slice(0, 5000);
+
     // Create session following SDK docs
     const session = await client.createSession({
       model: "gpt-4o",
@@ -297,7 +300,7 @@ app.post('/agent', limiter, verifyGitHubSignature, async (req: Request, res: Res
       }
     });
 
-    await session.sendAndWait({ prompt });
+    await session.sendAndWait({ prompt: sanitizedPrompt });
 
     // Explicit cleanup: destroy session after use to prevent token leaks
     res.on('finish', () => {
