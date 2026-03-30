@@ -109,6 +109,15 @@ app.use(express.json({
 app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
     const payload = req.body;
+    // Input validation: ensure payload is object with expected structure
+    if (!payload || typeof payload !== 'object') {
+      res.status(400).json({ error: 'Invalid payload format' });
+      return;
+    }
+    if (!payload.action || typeof payload.action !== 'string') {
+      res.status(400).json({ error: 'Missing or invalid action field' });
+      return;
+    }
     console.log('Webhook received:', payload?.action);
     if (!copilotClient) {
       return res.status(503).json({ error: 'Copilot client not initialized' });
@@ -123,6 +132,15 @@ app.post('/webhook', limiter, verifyGitHubSignature, async (req: Request, res: R
 app.post('/github-webhook', verifyGitHubSignature, async (req: Request, res: Response) => {
   try {
     const payload = req.body;
+    // Input validation: ensure payload contains required fields
+    if (!payload || typeof payload !== 'object') {
+      res.status(400).json({ error: 'Invalid payload format' });
+      return;
+    }
+    if (!payload.action || typeof payload.action !== 'string') {
+      res.status(400).json({ error: 'Missing or invalid action field' });
+      return;
+    }
     console.log('Webhook received:', payload.action);
     const prNumber = payload.pull_request?.number;
     if (!prNumber) {
