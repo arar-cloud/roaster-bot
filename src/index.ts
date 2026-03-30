@@ -25,7 +25,8 @@ const limiter = rateLimit({
 
 // Validate GitHub webhook secret on startup
 if (!process.env.GITHUB_WEBHOOK_SECRET) {
-  console.warn('WARNING: GITHUB_WEBHOOK_SECRET not set. Webhook verification disabled.');
+  console.error('ERROR: GITHUB_WEBHOOK_SECRET is required for security. Exiting.');
+  process.exit(1);
 }
 
 app.use(express.json({
