@@ -182,6 +182,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error:', error);
+    console.error('Roast error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
