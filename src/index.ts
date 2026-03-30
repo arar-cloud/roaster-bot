@@ -32,6 +32,8 @@ const limiter = rateLimit({
 if (!process.env.GITHUB_WEBHOOK_SECRET) {
   console.error('ERROR: GITHUB_WEBHOOK_SECRET not set. Webhook verification required.');
   process.exit(1);
+} else {
+  console.info('GitHub webhook secret loaded. Signature verification enabled.');
 }
 
 app.use(express.json({
@@ -48,6 +50,7 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   
   if (!secret || !signature) {
+    console.warn('[Webhook Security] Verification failed: Missing signature or secret');
     return res.status(401).json({ error: 'Missing signature or secret' });
   }
   
@@ -55,9 +58,11 @@ const verifyGitHubSignature = (req: Request, res: Response, next: Function) => {
   const hash = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
   
   if (!crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature))) {
+    console.warn('[Webhook Security] Signature verification failed. Potential bypass attempt detected.');
     return res.status(403).json({ error: 'Invalid signature' });
   }
   
+  console.debug('[Webhook Security] Signature verified successfully for payload.');
   next();
 };
 
