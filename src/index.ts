@@ -16,6 +16,20 @@ declare global {
 const app = express();
 const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
+let eventCount = 0;
+const countLock = { locked: false };
+
+const atomicIncrement = async (lock: { locked: boolean }) => {
+  while (lock.locked) {
+    await new Promise(resolve => setTimeout(resolve, 1));
+  }
+  lock.locked = true;
+  eventCount++;
+  const result = eventCount;
+  lock.locked = false;
+  return result;
+};
+
 if (isNaN(port) || port < 1 || port > 65535) {
   console.error(`ERROR: Invalid PORT value: ${process.env.PORT}`);
   process.exit(1);
@@ -106,7 +120,7 @@ app.post('/api/github-webhook', limiter, verifyGitHubSignature, async (req: Requ
   }
 });
 
-app.post('/webhook', limiter, (req: Request, res: Response) => {
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
   try {
     const signature = req.headers['x-hub-signature-256'] as string;
     const payload = req.rawBody || '';
@@ -128,7 +142,8 @@ app.post('/webhook', limiter, (req: Request, res: Response) => {
     }
 
     const event = req.body;
-    console.log(`Webhook received: ${event.action}`);
+    const count = await atomicIncrement(countLock);
+    console.log(`Webhook received: ${event.action}, Event ${count} processed`);
     res.status(200).json({ message: 'Event processed' });
   } catch (error) {
     console.error('Webhook processing error:', error);
