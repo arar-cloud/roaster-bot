@@ -51,13 +51,6 @@ function getCachedResult(key: string): string | null {
   return null;
 }
 
-app.use(express.json({
-  limit: '1mb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
-
 // Security headers middleware
 app.use((req: Request, res: Response, next: any) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
