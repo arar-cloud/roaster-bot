@@ -40,13 +40,16 @@ async function retryWithBackoff<T>(
       return await fn();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      console.error(`Retry attempt ${attempt + 1}/${maxAttempts} failed:`, lastError.message);
       if (attempt < maxAttempts - 1) {
         const delay = baseDelayMs * Math.pow(2, attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
-  throw lastError || new Error('Max retries exceeded');
+  const finalError = lastError || new Error('Max retries exceeded');
+  console.error('All retries failed:', finalError.message);
+  throw finalError;
 }
 
 // Middleware to capture raw body for webhook signature verification
@@ -316,11 +319,18 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     res.setHeader('Connection', 'keep-alive');
 
     session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      try {
+        if (event.type === "assistant.message_delta") {
+          const chunk = {
+            choices: [{ delta: { content: event.data.deltaContent } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      } catch (writeErr) {
+        console.error('Error writing to response stream:', writeErr);
+        if (!res.headersSent) {
+          res.status(500).send('Stream write error');
+        }
       }
     });
 
@@ -350,8 +360,12 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       }
     }
 
-    res.write('data: [DONE]\n\n');
-    res.end();
+    try {
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } catch (err) {
+      console.error('Error finalizing response:', err);
+    }
 });
 
 // Health check for client connectivity with improved error handling
