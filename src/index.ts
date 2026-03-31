@@ -16,6 +16,29 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Middleware to capture raw body for webhook signature verification
+app.use(express.raw({ type: 'application/octet-stream' }));
+app.use((req: Request, res: Response, next) => {
+  if (req.is('application/json')) {
+    let data = '';
+    req.on('data', chunk => { data += chunk; });
+    req.on('end', () => {
+      req.rawBody = data;
+      next();
+    });
+  } else {
+    next();
+  }
+});
+
+// Security headers middleware
+app.use((req: Request, res: Response, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('X-Frame-Options', 'DENY');
+  res.set('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
 // Singleton CopilotClient instance to avoid per-request instantiation overhead
 let copilotClientInstance: CopilotClient | null = null;
 let initInProgress = false;
