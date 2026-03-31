@@ -9,6 +9,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import { body, query, validationResult } from 'express-validator';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -56,7 +57,7 @@ const limiter = rateLimit({
     return true;
   },
   skip: function (req) {
-    return false;
+    return req.path === '/health' || req.path === '/';
   },
   keyGenerator: function (req) {
     return req.ip || req.connection.remoteAddress || 'unknown';
@@ -65,10 +66,14 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '10kb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+app.use(express.urlencoded({ limit: '10kb', extended: false }));
+
+app.use(limiter);
 
 app.get('/', (req, res) => {
   res.send(`
@@ -97,7 +102,11 @@ app.post('/webhook', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', body('messages').optional().isArray(), async (req: Request, res: Response) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
