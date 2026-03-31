@@ -16,38 +16,32 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Reuse shared CopilotClient instance to avoid repeated connection setup
-let cachedClient: CopilotClient | null = null;
+// Singleton CopilotClient instance to avoid per-request instantiation overhead
+let copilotClientInstance: CopilotClient | null = null;
 let initInProgress = false;
-async function getClient() {
-  if (!cachedClient && !initInProgress) {
+
+async function getClient(): Promise<CopilotClient> {
+  if (!copilotClientInstance && !initInProgress) {
     initInProgress = true;
     try {
-      cachedClient = new CopilotClient();
+      copilotClientInstance = new CopilotClient({
+        token: process.env.GITHUB_TOKEN || '',
+      });
+    } catch (error) {
+      console.error('Failed to initialize CopilotClient:', error);
+      throw new Error('CopilotClient initialization failed');
     } finally {
       initInProgress = false;
     }
   }
   // Exponential backoff retry if init in progress (max 5 retries, 100ms base)
-  if (!cachedClient && initInProgress) {
+  if (!copilotClientInstance && initInProgress) {
     for (let i = 0; i < 5; i++) {
       await new Promise(r => setTimeout(r, Math.pow(2, i) * 100));
-      if (cachedClient) break;
+      if (copilotClientInstance) break;
     }
   }
-  if (!cachedClient) throw new Error('Failed to initialize CopilotClient');
-  return cachedClient;
-}
-
-// Singleton CopilotClient instance to avoid per-request instantiation overhead
-let copilotClientInstance: CopilotClient | null = null;
-
-function getCopilotClient(): CopilotClient {
-  if (!copilotClientInstance) {
-    copilotClientInstance = new CopilotClient({
-      token: process.env.GITHUB_TOKEN || '',
-    });
-  }
+  if (!copilotClientInstance) throw new Error('Failed to initialize CopilotClient');
   return copilotClientInstance;
 }
 
@@ -121,7 +115,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Reuse pooled client instance instead of creating new per-request
-  const client = getCopilotClient();
+  const client = await getClient();
   
   try {
     const systemPrompt = `
