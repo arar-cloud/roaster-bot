@@ -81,7 +81,8 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   });
   
   try {
-    const systemPrompt = `
+    try {
+      const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
       
@@ -120,14 +121,19 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
 
     await session.sendAndWait({ prompt });
 
-    res.write('data: [DONE]\n\n');
-    res.end();
-
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } catch (webhookError) {
+      console.error('Webhook processing error:', webhookError);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to process webhook' });
+      }
+    } finally {
+      await client.stop();
+    }
   } catch (error) {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
-  } finally {
-    await client.stop();
   }
 });
 
