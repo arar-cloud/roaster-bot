@@ -16,6 +16,27 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Retry helper with exponential backoff for transient failures
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  baseDelayMs: number = 100
+): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (attempt < maxAttempts - 1) {
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError || new Error('Max retries exceeded');
+}
+
 // Middleware to capture raw body for webhook signature verification
 app.use(express.raw({ type: 'application/octet-stream' }));
 app.use((req: Request, res: Response, next) => {
