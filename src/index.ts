@@ -261,6 +261,11 @@ app.get('/', (req, res) => {
 
 app.post('/webhook', limiter, async (req: Request, res: Response) => {
   try {
+    // Validate webhook payload early to prevent crashes
+    if (!req.body) {
+      return res.status(400).json({ error: 'Missing request body' });
+    }
+
     // Webhook signature verification
     const signature = req.get('X-Hub-Signature-256');
     const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -270,6 +275,9 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     }
 
     if (webhookSecret && signature) {
+      if (typeof signature !== 'string') {
+        return res.status(400).json({ error: 'Missing or invalid signature' });
+      }
       const rawBody = req.rawBody;
 
     const digest = 'sha256=' + getHmacSHA256(rawBody, webhookSecret);
