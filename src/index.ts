@@ -76,7 +76,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     .update(rawBody)
     .digest('hex');
 
-  // SECURE: Using timingSafeEqual prevents timing attacks
+  // SECURE: Using timingSafeEqual prevents timing attacks on webhook signature validation
   try {
     if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
       return res.status(403).send('Forbidden');
