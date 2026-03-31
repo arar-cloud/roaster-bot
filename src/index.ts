@@ -53,11 +53,6 @@ class LRUCache<K, V> {
     this.cache.clear();
     this.accessOrder = [];
   }
-
-  clear(): void {
-    this.cache.clear();
-    this.accessOrder = [];
-  }
 }
 
 const app = express();
