@@ -179,6 +179,11 @@ app.post('/roast', express.json(), async (req: Request, res: Response) => {
     if (!code || typeof code !== 'string') {
       return res.status(400).json({ error: 'code field is required and must be a string' });
     }
+    // Validate client health before processing
+    const healthOk = await validateClientHealth();
+    if (!healthOk) {
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
     const client = await getClient();
     const roast = await callCopilotWithRetry(client, code);
     res.json({ roast });
@@ -294,6 +299,29 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     res.end();
 });
 
-app.listen(port, () => {
+// Health check for client connectivity
+async function validateClientHealth(): Promise<boolean> {
+  try {
+    const client = await getClient();
+    return !!client;
+  } catch (error) {
+    return false;
+  }
+}
+
+// Graceful shutdown with cleanup
+function setupGracefulShutdown() {
+  const shutdownHandler = async () => {
+    console.log('Shutting down gracefully...');
+    copilotClientInstance = null;
+    clientInitPromise = null;
+    process.exit(0);
+  };
+  process.on('SIGINT', shutdownHandler);
+  process.on('SIGTERM', shutdownHandler);
+}
+
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+  setupGracefulShutdown();
 });
