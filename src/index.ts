@@ -126,7 +126,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       res.write('data: [DONE]\n\n');
       res.end();
     } catch (webhookError) {
-      console.error('Webhook processing error:', webhookError);
+      console.error('Webhook processing error:', webhookError instanceof Error ? webhookError.message : String(webhookError));
       if (!res.headersSent) {
         res.status(500).json({ error: 'Failed to process webhook' });
       }
@@ -134,7 +134,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       await client.stop();
     }
   } catch (error) {
-    console.error('Error:', error);
+    console.error('Error:', error instanceof Error ? error.message : String(error));
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   }
 });
