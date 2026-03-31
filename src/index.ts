@@ -18,6 +18,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Validate required environment variables
+if (!process.env.OPENAI_API_KEY) {
+  console.error('ERROR: OPENAI_API_KEY environment variable is not set');
+  process.exit(1);
+}
 if (!process.env.WEBHOOK_SECRET) {
   console.error('ERROR: WEBHOOK_SECRET environment variable is not set');
   process.exit(1);
