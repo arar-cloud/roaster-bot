@@ -41,7 +41,7 @@ class LRUCache<K, V> {
       this.accessOrder.push(key);
       return;
     }
-    if (this.cache.size >= this.maxSize) {
+    while (this.cache.size >= this.maxSize && this.accessOrder.length > 0) {
       const lruKey = this.accessOrder.shift();
       if (lruKey) this.cache.delete(lruKey);
     }
