@@ -17,6 +17,18 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Middleware to capture raw body for webhook signature verification
+app.use((req, res, next) => {
+  let rawBody = '';
+  req.on('data', chunk => {
+    rawBody += chunk.toString('utf-8');
+  });
+  req.on('end', () => {
+    req.rawBody = rawBody;
+    next();
+  });
+});
+
 // Enable security headers via Helmet
 app.use(require('helmet')());
 
