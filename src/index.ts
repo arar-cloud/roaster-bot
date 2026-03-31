@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import { OpenAI } from 'openai';
 
 // Extend Express Request type properly
 declare global {
@@ -65,6 +66,11 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).send('OpenAI API key not configured');
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
