@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { CopilotClient } from '@github/copilot-sdk';
+import { Promise<CopilotClient> } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
 declare global {
@@ -88,10 +88,10 @@ async function callCopilotWithRetry(
 async function getClient(): Promise<CopilotClient> {
   // Return cached instance if available
   if (copilotClientInstance) return copilotClientInstance;
-  
+
   // Return existing initialization promise if in progress
   if (clientInitPromise) return clientInitPromise;
-  
+
   // Start new initialization with retry logic
   clientInitPromise = retryWithBackoff(
     async () => {
@@ -109,7 +109,7 @@ async function getClient(): Promise<CopilotClient> {
     console.error('Failed to initialize CopilotClient after retries:', error);
     throw new Error('CopilotClient initialization failed');
   });
-  
+
   return clientInitPromise;
 }
 
@@ -125,11 +125,11 @@ class LRUCache<K, V> {
   private cache = new Map<K, V>();
   private accessOrder: K[] = [];
   private maxSize: number;
-  
+
   constructor(maxSize: number) {
     this.maxSize = maxSize;
   }
-  
+
   get(key: K): V | undefined {
     if (!this.cache.has(key)) return undefined;
     const value = this.cache.get(key)!;
@@ -138,7 +138,7 @@ class LRUCache<K, V> {
     this.accessOrder.push(key);
     return value;
   }
-  
+
   set(key: K, value: V): void {
     if (this.cache.has(key)) {
       this.cache.set(key, value);
@@ -225,12 +225,12 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
 
   // Reuse pooled client instance instead of creating new per-request
   const client = await getClient();
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -265,10 +265,10 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     });
 
     // Timeout session operations after 30s to prevent hanging
-    const sessionTimeout = new Promise<never>((_, reject) => 
+    const sessionTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error('Session timeout after 30s')), 30000)
     );
-    
+
     try {
       await Promise.race([
         callCopilotWithRetry(client, prompt),
