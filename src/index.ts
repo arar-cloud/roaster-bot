@@ -83,6 +83,12 @@ async function callCopilotWithRetry(
   maxRetries = 3,
   timeoutMs: number = 30000
 ): Promise<string> {
+  if (!client) {
+    throw new Error('CopilotClient is null or undefined');
+  }
+  if (!prompt || typeof prompt !== 'string') {
+    throw new Error('Prompt must be a non-empty string');
+  }
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(new Error(`Copilot request timeout after ${timeoutMs}ms for prompt: ${prompt.substring(0, 50)}...`));
@@ -288,6 +294,10 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
+    // Validate client is initialized before session creation
+    if (!client) {
+      throw new Error('Copilot client not initialized');
+    }
     // Create session following SDK docs
     const session = await client.createSession({
       model: "gpt-4o",
@@ -297,6 +307,9 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
         content: systemPrompt
       }
     });
+    if (!session) {
+      throw new Error('Invalid session from Copilot API');
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
