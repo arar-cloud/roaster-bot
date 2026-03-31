@@ -32,12 +32,19 @@ const port = process.env.PORT || 3000;
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxAttempts: number = 3,
-  baseDelayMs: number = 100
+  baseDelayMs: number = 100,
+  timeoutMs: number = 5000
 ): Promise<T> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await fn();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await Promise.race([fn(), new Promise<T>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('Operation timeout'))))]);
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       console.error(`[Retry ${attempt + 1}/${maxAttempts}] Error:`, lastError.message);
