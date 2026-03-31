@@ -16,6 +16,15 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Reuse shared CopilotClient instance to avoid repeated connection setup
+let cachedClient: CopilotClient | null = null;
+async function getClient() {
+  if (!cachedClient) {
+    cachedClient = new CopilotClient();
+  }
+  return cachedClient;
+}
+
 // Singleton CopilotClient instance to avoid per-request instantiation overhead
 let copilotClientInstance: CopilotClient | null = null;
 
@@ -93,13 +102,8 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Reuse pooled client instance instead of creating new per-request
+  const client = getCopilotClient();
   
   try {
     const systemPrompt = `
@@ -146,32 +150,14 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     
     try {
       await Promise.race([session.sendAndWait({ prompt }), sessionTimeout]);
-    } finally {
-      // Ensure cleanup happens even on timeout
-      try {
-        await Promise.race([client.stop(), new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Stop timeout')), 5000)
-        )]);
-      } catch (stopError) {
-        console.warn('Client stop failed or timed out:', stopError);
-      }
+    } catch (error) {
+      console.error('Error:', error);
+      if (!res.headersSent) res.status(500).send("The roaster overheated.");
+      return;
     }
 
     res.write('data: [DONE]\n\n');
     res.end();
-
-  } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
-  } finally {
-    try {
-      await Promise.race([client.stop(), new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Stop timeout')), 5000)
-      )]);
-    } catch (finalStopError) {
-      console.warn('Final client stop failed:', finalStopError);
-    }
-  }
 });
 
 app.listen(port, () => {
