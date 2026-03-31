@@ -9,7 +9,19 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+    evict least recently used
+      const lruKey = this.accessOrder.shift();
+      if (lruKey !== undefined) {
+        this.cache.delete(lruKey);
+      }
     }
+    this.cache.set(key, value);
+    this.accessOrder.push(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+    this.accessOrder = []}
   }
 }
 
