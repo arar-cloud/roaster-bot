@@ -197,9 +197,13 @@ class LRUCache<K, V> {
   get(key: K): V | undefined {
     if (!this.cache.has(key)) return undefined;
     const value = this.cache.get(key)!;
-    // Move to end (most recently used)
-    this.accessOrder = this.accessOrder.filter(k => k !== key);
-    this.accessOrder.push(key);
+    // Move to end (most recently used) - O(1) removal by swapping and pop
+    const idx = this.accessOrder.indexOf(key);
+    if (idx !== -1 && idx < this.accessOrder.length - 1) {
+      [this.accessOrder[idx], this.accessOrder[this.accessOrder.length - 1]] = [this.accessOrder[this.accessOrder.length - 1], this.accessOrder[idx]];
+      this.accessOrder.pop();
+      this.accessOrder.push(key);
+    }
     return value;
   }
 
