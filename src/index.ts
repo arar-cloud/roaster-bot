@@ -277,6 +277,14 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/health'
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 // HMAC cache: stores computed signatures with LRU eviction to prevent memory leaks
