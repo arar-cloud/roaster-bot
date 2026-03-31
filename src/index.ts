@@ -55,6 +55,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Configure model (with fallback)
+const aiModel = process.env.OPENAI_MODEL || 'gpt-3.5-turbo';
+
 // Initialize Copilot client
 let copilotClient: CopilotClient | null = null;
 try {
@@ -158,7 +161,7 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
 
     // Create session following SDK docs
     const session = await client.createSession({
-      model: "gpt-4o",
+      model: aiModel,
       streaming: true,
       systemMessage: {
         mode: "replace",
