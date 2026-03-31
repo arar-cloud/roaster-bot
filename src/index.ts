@@ -52,19 +52,18 @@ async function retryWithBackoff<T>(
   throw finalError;
 }
 
-// Middleware to capture raw body for webhook signature verification
-app.use(express.raw({ type: 'application/octet-stream' }));
+// Middleware to capture raw body for webhook signature verification (must be before other body parsers)
 app.use((req: Request, res: Response, next) => {
-  if (req.is('application/json')) {
-    let data = '';
-    req.on('data', chunk => { data += chunk; });
-    req.on('end', () => {
-      req.rawBody = data;
-      next();
-    });
-  } else {
+  let data = '';
+  req.on('data', chunk => { data += chunk.toString('utf-8'); });
+  req.on('end', () => {
+    req.rawBody = data;
     next();
-  }
+  });
+  req.on('error', (error) => {
+    console.error('Raw body parse error:', error);
+    res.status(400).json({ error: 'Invalid request body' });
+  });
 });
 
 // Security headers middleware
@@ -260,13 +259,17 @@ app.get('/', (req, res) => {
 });
 
 app.post('/webhook', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  try {
+    // Webhook signature verification
+    const signature = req.get('X-Hub-Signature-256');
+    const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+    if (!req.rawBody) {
+      return res.status(400).json({ error: 'Request body not properly parsed' });
+    }
+
+    if (webhookSecret && signature) {
+      const rawBody = req.rawBody;
 
     const digest = 'sha256=' + getHmacSHA256(rawBody, webhookSecret);
 
