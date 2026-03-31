@@ -2,11 +2,20 @@ import express from 'express';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import { randomUUID } from 'crypto';
 
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Request ID middleware for tracing
+app.use((req: any, res: express.Response, next: express.NextFunction) => {
+  req.id = randomUUID();
+  res.setHeader('X-Request-ID', req.id);
+  console.log(`[${req.id}] ${req.method} ${req.path}`);
+  next();
+});
 
 // Security middleware
 app.use(helmet());
@@ -25,9 +34,11 @@ app.get('/health', (req, res) => {
 });
 
 // Error handling middleware
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Internal server error' });
+app.use((err: any, req: any, res: express.Response, next: express.NextFunction) => {
+  const status = err.status || 500;
+  const requestId = req.id || 'unknown';
+  console.error(`[${requestId}] [Error] Status: ${status}, Message: ${err.message}`);
+  res.status(status).json({ error: err.message || 'Internal server error', requestId });
 });
 
 if (import.meta.url === `file://${process.argv[1]}`) {
