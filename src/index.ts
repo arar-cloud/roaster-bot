@@ -80,22 +80,34 @@ let initInProgress: boolean = false;
 async function callCopilotWithRetry(
   client: CopilotClient,
   prompt: string,
-  maxRetries = 3
+  maxRetries = 3,
+  timeoutMs: number = 30000
 ): Promise<string> {
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      const response = await client.complete(prompt);
-      return response;
-    } catch (error) {
-      if (attempt < maxRetries - 1) {
-        const delayMs = Math.pow(2, attempt) * 1000;
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      } else {
-        throw error;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`Copilot request timeout after ${timeoutMs}ms for prompt: ${prompt.substring(0, 50)}...`));
+    }, timeoutMs);
+
+    (async () => {
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        try {
+          const response = await client.complete(prompt);
+          clearTimeout(timer);
+          return resolve(response);
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (attempt < maxRetries - 1) {
+            const delayMs = Math.pow(2, attempt) * 1000;
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } else {
+            clearTimeout(timer);
+            reject(new Error(`Copilot API error after ${maxRetries} attempts: ${errorMsg}`));
+            return;
+          }
+        }
       }
-    }
-  }
-  throw new Error('All retry attempts failed');
+    })();
+  });
 }
 
 async function getClient(): Promise<CopilotClient> {
