@@ -63,11 +63,31 @@ class LRUCache<K, V> {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Validate required environment variables on startup
-if (!process.env.GITHUB_TOKEN || process.env.GITHUB_TOKEN.trim() === '') {
-  console.error('FATAL: GITHUB_TOKEN environment variable is required and must not be empty');
-  process.exit(1);
+// Validate required environment variables with async retry logic
+async function validateEnvironment(): Promise<void> {
+  const required = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+  const missing = required.filter(key => !process.env[key] || process.env[key]?.trim() === '');
+  
+  if (missing.length > 0) {
+    console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  console.log('Environment validation passed: all required variables present and non-empty');
 }
+
+// Call validation on startup with retry backoff
+(async () => {
+  try {
+    await retryWithBackoff(
+      () => Promise.resolve(validateEnvironment()),
+      3,
+      100
+    );
+  } catch (error) {
+    console.error('Environment validation failed after retries:', error);
+    process.exit(1);
+  }
+})();
 
 // Retry helper with exponential backoff for transient failures
 async function retryWithBackoff<T>(
