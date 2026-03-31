@@ -274,22 +274,23 @@ const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
 
-// Graceful shutdown handler
-const shutdown = () => {
-  console.log('Shutting down gracefully...');
+// Graceful shutdown handler with resource cleanup
+const shutdown = async (signal: string) => {
+  console.log(`Received ${signal}, shutting down gracefully...`);
+  hmacCache.clear();
+  copilotClientInstance = null;
   server.close(() => {
     console.log('Server closed');
     process.exit(0);
   });
-  // Force exit after 10 seconds
   setTimeout(() => {
-    console.error('Forced shutdown after timeout');
+    console.error('Forced exit after 10s timeout');
     process.exit(1);
   }, 10000);
 };
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 app.get('/', (req, res) => {
   res.send(`
