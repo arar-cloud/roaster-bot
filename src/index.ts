@@ -1,14 +1,10 @@
-import 'dotenv.config();
+import dotenv from 'dotenv';
+dotenv.config();
 
 const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  process.exit(1);
-}
-// Validate required environment variables early
-if (!process.env.OPENAI_API_KEY) {
-  console.error('FATAL: Missing required environment variable: OPENAI_API_KEY');
   process.exit(1);
 }
 import express, { Request, Response } from 'express';
