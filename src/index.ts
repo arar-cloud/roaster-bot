@@ -14,11 +14,12 @@ import helmet from 'helmet';
 import { body, query, validationResult } from 'express-validator';
 import { CopilotClient } from '@github/copilot-sdk';
 
-// Extend Express Request type properly
+// Extend Express Request type for security validation
 declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      isGithubVerified?: boolean;
     }
   }
 }
