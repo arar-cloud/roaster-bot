@@ -317,6 +317,9 @@ app.post('/roast', express.json(), async (req: Request, res: Response) => {
       return res.status(503).json({ error: 'Service temporarily unavailable' });
     }
     const client = await getClient();
+    if (!client) {
+      return res.status(500).json({ error: 'Copilot client not initialized' });
+    }
     const roast = await callCopilotWithRetry(client, code);
     res.json({ roast });
   } catch (error) {
