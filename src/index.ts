@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+dotenv from 'dotenv';
 dotenv.config();
 
 const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN'];
