@@ -41,6 +41,9 @@ app.use((req, res, next) => {
 // Enable security headers via Helmet
 app.use(require('helmet')());
 
+// Parse JSON request bodies
+app.use(express.json());
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
