@@ -338,6 +338,18 @@ app.use(express.json({
   }
 }));
 
+app.post('/webhook', express.text({ type: 'application/json' }), (req: Request, res: Response) => {
+  const signature = req.headers['x-github-signature'] as string;
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!signature || !secret) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  if (!this.verifyWebhookSignature(req.rawBody || '', signature, secret)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  res.status(200).json({ message: 'Webhook received' });
+});
+
 app.post('/roast', express.json(), async (req: Request, res: Response) => {
   try {
     if (!copilotClient) {
