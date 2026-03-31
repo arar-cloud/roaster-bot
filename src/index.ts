@@ -17,6 +17,15 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate required environment variables
+if (!process.env.WEBHOOK_SECRET) {
+  console.error('ERROR: WEBHOOK_SECRET environment variable is not set');
+  process.exit(1);
+}
+if (!process.env.GITHUB_TOKEN) {
+  console.warn('WARNING: GITHUB_TOKEN environment variable is not set. Copilot integration will be disabled.');
+}
+
 // Middleware to capture raw body for webhook signature verification
 app.use((req, res, next) => {
   let rawBody = '';
