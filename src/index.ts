@@ -60,6 +60,7 @@ const limiter = rateLimit({
 
 // HMAC cache: stores computed signatures to avoid recomputation
 const hmacCache = new Map<string, string>();
+const cacheKeyQueue: string[] = [];
 const MAX_CACHE_SIZE = 1000;
 
 function getHmacSHA256(payload: string, secret: string): string {
@@ -68,11 +69,14 @@ function getHmacSHA256(payload: string, secret: string): string {
     return hmacCache.get(cacheKey)!;
   }
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-  if (hmacCache.size >= MAX_CACHE_SIZE) {
-    const firstKey = hmacCache.keys().next().value;
-    hmacCache.delete(firstKey);
-  }
   hmacCache.set(cacheKey, sig);
+  cacheKeyQueue.push(cacheKey);
+  
+  // LRU eviction: remove oldest entry when cache exceeds MAX_CACHE_SIZE
+  if (hmacCache.size > MAX_CACHE_SIZE) {
+    const oldestKey = cacheKeyQueue.shift();
+    if (oldestKey) hmacCache.delete(oldestKey);
+  }
   return sig;
 }
 
