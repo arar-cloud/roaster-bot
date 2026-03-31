@@ -39,9 +39,9 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Singleton CopilotClient instance to avoid per-request instantiation overhead
+// Singleton CopilotClient instance with Promise-based initialization lock to prevent race conditions
 let copilotClientInstance: CopilotClient | null = null;
-let initInProgress = false;
+let clientInitPromise: Promise<CopilotClient> | null = null;
 
 async function callCopilotWithRetry(
   client: CopilotClient,
@@ -65,28 +65,29 @@ async function callCopilotWithRetry(
 }
 
 async function getClient(): Promise<CopilotClient> {
-  if (!copilotClientInstance && !initInProgress) {
-    initInProgress = true;
+  // Return cached instance if available
+  if (copilotClientInstance) return copilotClientInstance;
+  
+  // Return existing initialization promise if in progress
+  if (clientInitPromise) return clientInitPromise;
+  
+  // Start new initialization
+  clientInitPromise = (async () => {
     try {
-      copilotClientInstance = new CopilotClient({
-        token: process.env.GITHUB_TOKEN || '',
-      });
+      if (!copilotClientInstance) {
+        copilotClientInstance = new CopilotClient({
+          token: process.env.GITHUB_TOKEN || '',
+        });
+      }
+      return copilotClientInstance;
     } catch (error) {
+      clientInitPromise = null; // Reset on failure
       console.error('Failed to initialize CopilotClient:', error);
       throw new Error('CopilotClient initialization failed');
-    } finally {
-      initInProgress = false;
     }
-  }
-  // Exponential backoff retry if init in progress (max 5 retries, 100ms base)
-  if (!copilotClientInstance && initInProgress) {
-    for (let i = 0; i < 5; i++) {
-      await new Promise(r => setTimeout(r, Math.pow(2, i) * 100));
-      if (copilotClientInstance) break;
-    }
-  }
-  if (!copilotClientInstance) throw new Error('Failed to initialize CopilotClient');
-  return copilotClientInstance;
+  })();
+  
+  return clientInitPromise;
 }
 
 const limiter = rateLimit({
