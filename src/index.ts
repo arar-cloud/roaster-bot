@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { Promise<CopilotClient> } from '@github/copilot-sdk';
+import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
 declare global {
@@ -92,6 +92,7 @@ app.use((req: Request, res: Response, next) => {
 let copilotClientInstance: CopilotClient | null = null;
 let clientInitPromise: Promise<CopilotClient> | null = null;
 let initInProgress: boolean = false;
+let copilotInitError: Error | null = null;
 
 async function callCopilotWithRetry(
   client: CopilotClient,
