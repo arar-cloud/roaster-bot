@@ -111,7 +111,7 @@ app.post('/webhook', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok' });
 });
 
-app.post('/agent', body('messages').optional().isArray(), async (req: Request, res: Response) => {
+app.post('/agent', body('messages').optional().isArray(), asyncHandler(async (req: Request, res: Response) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
@@ -192,7 +192,7 @@ app.post('/agent', body('messages').optional().isArray(), async (req: Request, r
   } finally {
     await sessionClient.stop();
   }
-});
+}));
 
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
