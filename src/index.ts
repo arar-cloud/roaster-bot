@@ -41,9 +41,11 @@ class LRUCache<K, V> {
       this.accessOrder.push(key);
       return;
     }
-    while (this.cache.size >= this.maxSize && this.accessOrder.length > 0) {
-      const lruKey = this.accessOrder.shift();
-      if (lruKey) this.cache.delete(lruKey);
+    if (this.cache.size >= this.maxSize) {
+      const toEvict = this.accessOrder.shift();
+      if (toEvict !== undefined) {
+        this.cache.delete(toEvict);
+      }
     }
     this.cache.set(key, value);
     this.accessOrder.push(key);
