@@ -58,7 +58,13 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
-  if (!webhookSecret || !signature) {
+  // SECURITY: Reject if secret is not configured
+  if (!webhookSecret) {
+    console.error('Error: GITHUB_WEBHOOK_SECRET not configured');
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+
+  if (!signature) {
     return res.status(401).send('Unauthorized');
   }
 
