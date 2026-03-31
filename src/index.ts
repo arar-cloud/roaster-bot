@@ -320,6 +320,17 @@ function getHmacSHA256(payload: string, secret: string): string {
   return sig;
 }
 
+private verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(payload);
+  const digest = hmac.digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}
+
 // Use async body parser with lazy verification for better event loop throughput
 app.use(express.json({
   verify: (req: any, res, buf) => {
