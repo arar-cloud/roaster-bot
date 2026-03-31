@@ -140,6 +140,12 @@ app.use((req: Request, res: Response, next) => {
   });
 });
 
+// Capture raw body before JSON parsing for webhook signature verification
+app.use(express.text({ type: 'application/json' }), (req, res, next) => {
+  req.rawBody = req.body;
+  next();
+});
+
 // Security headers middleware
 app.use((req: Request, res: Response, next) => {
   res.set('X-Content-Type-Options', 'nosniff');
@@ -333,12 +339,8 @@ private verifyWebhookSignature(payload: string, signature: string, secret: strin
   }
 }
 
-// Use async body parser with lazy verification for better event loop throughput
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString('utf8', 0, Math.min(buf.length, 10000));
-  }
-}));
+// Use async body parser for standard JSON requests
+app.use(express.json());
 
 app.post('/webhook', express.text({ type: 'application/json' }), (req: Request, res: Response) => {
   const signature = req.headers['x-github-signature'] as string;
