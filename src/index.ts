@@ -85,8 +85,10 @@ async function retryWithBackoff<T>(
       lastError = error instanceof Error ? error : new Error(String(error));
       console.error(`[Retry ${attempt + 1}/${maxAttempts}] Error:`, lastError.message);
       if (attempt < maxAttempts - 1) {
-        const jitter = Math.random() * 0.1 * baseDelayMs;
-        const delayMs = baseDelayMs * Math.pow(2, attempt) + jitter;
+        const baseDelay = Math.pow(2, attempt) * baseDelayMs;
+        const jitterRange = 0.25 * baseDelay;
+        const jitter = (Math.random() - 0.5) * 2 * jitterRange;
+        const delayMs = Math.max(0, baseDelay + jitter);
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
