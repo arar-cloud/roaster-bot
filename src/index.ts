@@ -37,11 +37,16 @@ try {
   console.warn('Warning: CopilotClient initialization failed', err);
 }
 
+// Enforce request size limit (5MB max to prevent memory exhaustion)
 app.use(express.json({
+  limit: '5mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+// Capture raw body for signature verification with size limit
+app.use(express.raw({ type: 'application/json', limit: '5mb' }));
 
 app.get('/', (req, res) => {
   res.send(`
