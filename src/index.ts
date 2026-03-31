@@ -343,12 +343,13 @@ private verifyWebhookSignature(payload: string, signature: string, secret: strin
 app.use(express.json());
 
 app.post('/webhook', express.text({ type: 'application/json' }), (req: Request, res: Response) => {
-  const signature = req.headers['x-github-signature'] as string;
+  const signature = req.headers['x-hub-signature-256'] as string;
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!signature || !secret) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  if (!this.verifyWebhookSignature(req.rawBody || '', signature, secret)) {
+  const expectedSig = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
+  if (signature !== expectedSig) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   res.status(200).json({ message: 'Webhook received' });
