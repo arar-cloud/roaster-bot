@@ -24,6 +24,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Initialize Copilot client
+let copilotClient: CopilotClient | null = null;
+try {
+  if (process.env.GITHUB_TOKEN) {
+    copilotClient = new CopilotClient({ token: process.env.GITHUB_TOKEN });
+  }
+} catch (err) {
+  console.warn('Warning: CopilotClient initialization failed', err);
+}
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
