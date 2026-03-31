@@ -246,6 +246,27 @@ app.post('/roast', express.json(), async (req: Request, res: Response) => {
   }
 });
 
+const server = app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
+
+// Graceful shutdown handler
+const shutdown = () => {
+  console.log('Shutting down gracefully...');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+  // Force exit after 10 seconds
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
