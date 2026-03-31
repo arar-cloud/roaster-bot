@@ -1,13 +1,5 @@
 import dotenv from 'dotenv';
-dotenv from 'dotenv';
 dotenv.config();
-
-const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-if (missingVars.length > 0) {
-  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  process.exit(1);
-}
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
