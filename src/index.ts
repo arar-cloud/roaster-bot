@@ -77,7 +77,10 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
   }
 
   const rawBody = req.rawBody;
-  if (!rawBody) return res.status(400).send('Missing raw body.');
+  // Validate payload with size constraints
+  if (!rawBody || typeof rawBody !== 'string' || rawBody.length === 0) {
+    return res.status(400).send('Missing raw body.');
+  }
 
   const expectedSignature = 'sha256=' + crypto
     .createHmac('sha256', webhookSecret)
