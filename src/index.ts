@@ -7,6 +7,8 @@ import helmet from 'helmet';
 import { body, query, validationResult } from 'express-validator';
 import { CopilotClient } from '@github/copilot-sdk';
 
+const asyncHandler = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: Function) => Promise.resolve(fn(req, res)).catch(next);
+
 // Extend Express Request type for security validation
 declare global {
   namespace Express {
