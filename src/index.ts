@@ -42,6 +42,20 @@ app.get('/', (req, res) => {
   `);
 });
 
+app.post('/webhook', (req: Request, res: Response) => {
+  const signature = req.headers['x-hub-signature-256'] as string;
+  if (!signature) {
+    return res.status(403).json({ error: 'Missing signature' });
+  }
+  const hmac = crypto.createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET || '');
+  const digest = 'sha256=' + hmac.update(req.rawBody || '').digest('hex');
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+    return res.status(403).json({ error: 'Invalid signature' });
+  }
+  console.log('Received webhook');
+  res.status(200).json({ status: 'ok' });
+});
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
