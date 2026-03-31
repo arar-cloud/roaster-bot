@@ -1,5 +1,11 @@
-import 'dotenv/config';
+import 'dotenv.config();
 
+const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
 // Validate required environment variables early
 if (!process.env.OPENAI_API_KEY) {
   console.error('FATAL: Missing required environment variable: OPENAI_API_KEY');
@@ -133,12 +139,12 @@ app.post('/agent', body('messages').optional().isArray(), async (req: Request, r
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
