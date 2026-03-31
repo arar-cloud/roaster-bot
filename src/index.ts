@@ -28,6 +28,12 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate required environment variables on startup
+if (!process.env.GITHUB_TOKEN || process.env.GITHUB_TOKEN.trim() === '') {
+  console.error('FATAL: GITHUB_TOKEN environment variable is required and must not be empty');
+  process.exit(1);
+}
+
 // Retry helper with exponential backoff for transient failures
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
