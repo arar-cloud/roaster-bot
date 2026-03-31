@@ -88,6 +88,12 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Error recovery middleware for rate limiter and request handling
+app.use((err: any, req: Request, res: Response, next: any) => {
+  console.error('Middleware error:', err);
+  res.status(500).json({ error: 'Internal server error', message: err?.message || 'Unknown error' });
+});
+
 // Singleton CopilotClient instance with Promise-based initialization lock to prevent race conditions
 let copilotClientInstance: CopilotClient | null = null;
 let clientInitPromise: Promise<CopilotClient> | null = null;
