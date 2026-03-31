@@ -300,6 +300,13 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Missing or invalid signature' });
       }
       const rawBody = req.rawBody;
+      let payload;
+      try {
+        payload = JSON.parse(rawBody);
+      } catch (err) {
+        console.error('Invalid JSON in webhook payload:', err instanceof Error ? err.message : String(err));
+        return res.status(400).json({ error: 'Invalid JSON payload' });
+      }
 
     const digest = 'sha256=' + getHmacSHA256(rawBody, webhookSecret);
 
