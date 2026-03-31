@@ -85,7 +85,8 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + getHmacSHA256(rawBody, webhookSecret);
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
     }
   }
 
