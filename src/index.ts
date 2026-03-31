@@ -96,25 +96,49 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-// HMAC cache: stores computed signatures to avoid recomputation
-const hmacCache = new Map<string, string>();
-const cacheKeyQueue: string[] = [];
-const MAX_CACHE_SIZE = 1000;
+// HMAC cache: stores computed signatures with LRU eviction to prevent memory leaks
+class LRUCache<K, V> {
+  private cache = new Map<K, V>();
+  private accessOrder: K[] = [];
+  private maxSize: number;
+  
+  constructor(maxSize: number) {
+    this.maxSize = maxSize;
+  }
+  
+  get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    const value = this.cache.get(key)!;
+    // Move to end (most recently used)
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.accessOrder.push(key);
+    return value;
+  }
+  
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.set(key, value);
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      this.accessOrder.push(key);
+      return;
+    }
+    if (this.cache.size >= this.maxSize) {
+      const lruKey = this.accessOrder.shift();
+      if (lruKey) this.cache.delete(lruKey);
+    }
+    this.cache.set(key, value);
+    this.accessOrder.push(key);
+  }
+}
+
+const hmacCache = new LRUCache<string, string>(1000);
 
 function getHmacSHA256(payload: string, secret: string): string {
   const cacheKey = `${payload.length}:${secret.length}`;
-  if (hmacCache.has(cacheKey)) {
-    return hmacCache.get(cacheKey)!;
-  }
+  const cached = hmacCache.get(cacheKey);
+  if (cached) return cached;
   const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
   hmacCache.set(cacheKey, sig);
-  cacheKeyQueue.push(cacheKey);
-  
-  // LRU eviction: remove oldest entry when cache exceeds MAX_CACHE_SIZE
-  if (hmacCache.size > MAX_CACHE_SIZE) {
-    const oldestKey = cacheKeyQueue.shift();
-    if (oldestKey) hmacCache.delete(oldestKey);
-  }
   return sig;
 }
 
