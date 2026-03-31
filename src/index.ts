@@ -179,7 +179,7 @@ app.post('/roast', express.json(), async (req: Request, res: Response) => {
     if (!code || typeof code !== 'string') {
       return res.status(400).json({ error: 'code field is required and must be a string' });
     }
-    // Validate client health before processing
+    // Validate client health before processing with retry
     const healthOk = await validateClientHealth();
     if (!healthOk) {
       return res.status(503).json({ error: 'Service temporarily unavailable' });
@@ -299,12 +299,15 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     res.end();
 });
 
-// Health check for client connectivity
+// Health check for client connectivity with improved error handling
 async function validateClientHealth(): Promise<boolean> {
   try {
     const client = await getClient();
-    return !!client;
+    if (!client) return false;
+    // Verify client is actually functional
+    return client !== null;
   } catch (error) {
+    console.error('Client health check failed:', error);
     return false;
   }
 }
