@@ -18,10 +18,24 @@ const port = process.env.PORT || 3000;
 
 // Reuse shared CopilotClient instance to avoid repeated connection setup
 let cachedClient: CopilotClient | null = null;
+let initInProgress = false;
 async function getClient() {
-  if (!cachedClient) {
-    cachedClient = new CopilotClient();
+  if (!cachedClient && !initInProgress) {
+    initInProgress = true;
+    try {
+      cachedClient = new CopilotClient();
+    } finally {
+      initInProgress = false;
+    }
   }
+  // Exponential backoff retry if init in progress (max 5 retries, 100ms base)
+  if (!cachedClient && initInProgress) {
+    for (let i = 0; i < 5; i++) {
+      await new Promise(r => setTimeout(r, Math.pow(2, i) * 100));
+      if (cachedClient) break;
+    }
+  }
+  if (!cachedClient) throw new Error('Failed to initialize CopilotClient');
   return cachedClient;
 }
 
