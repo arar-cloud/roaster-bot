@@ -360,9 +360,20 @@ function sanitizeError(error: unknown): string {
 app.post('/webhook', express.text({ type: 'application/json' }), (req: Request, res: Response) => {
   const signature = req.headers['x-hub-signature-256'] as string;
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
-  if (!signature || !secret) {
-    return res.status(401).json({ error: 'Unauthorized' });
+  
+  if (!signature) {
+    return res.status(401).json({ error: 'Missing signature' });
   }
+  
+  if (!secret) {
+    console.error('WEBHOOK_SECRET not configured');
+    return res.status(500).json({ error: 'Server misconfiguration' });
+  }
+  
+  try {
+    if (!verifyWebhookSignature(req.body as string, signature, secret)) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
   const expectedSig = 'sha256=' + crypto.createHmac('sha256', secret).update(req.rawBody || '').digest('hex');
   if (signature !== expectedSig) {
     return res.status(401).json({ error: 'Unauthorized' });
