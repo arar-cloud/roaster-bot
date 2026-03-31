@@ -9,11 +9,41 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    evict least recently used
+    }
+  }
+}
+
+class LRUCache<K, V> {
+  private cache = new Map<K, V>();
+  private accessOrder: K[] = [];
+  private maxSize: number;
+
+  constructor(maxSize: number) {
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    if (!this.cache.has(key)) return undefined;
+    const value = this.cache.get(key)!;
+    const idx = this.accessOrder.indexOf(key);
+    if (idx !== -1 && idx < this.accessOrder.length - 1) {
+      [this.accessOrder[idx], this.accessOrder[this.accessOrder.length - 1]] = [this.accessOrder[this.accessOrder.length - 1], this.accessOrder[idx]];
+      this.accessOrder.pop();
+      this.accessOrder.push(key);
+    }
+    return value;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.set(key, value);
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      this.accessOrder.push(key);
+      return;
+    }
+    if (this.cache.size >= this.maxSize) {
       const lruKey = this.accessOrder.shift();
-      if (lruKey !== undefined) {
-        this.cache.delete(lruKey);
-      }
+      if (lruKey) this.cache.delete(lruKey);
     }
     this.cache.set(key, value);
     this.accessOrder.push(key);
@@ -21,7 +51,7 @@ declare global {
 
   clear(): void {
     this.cache.clear();
-    this.accessOrder = []}
+    this.accessOrder = [];
   }
 }
 
