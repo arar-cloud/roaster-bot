@@ -92,21 +92,23 @@ async function getClient(): Promise<CopilotClient> {
   // Return existing initialization promise if in progress
   if (clientInitPromise) return clientInitPromise;
   
-  // Start new initialization
-  clientInitPromise = (async () => {
-    try {
+  // Start new initialization with retry logic
+  clientInitPromise = retryWithBackoff(
+    async () => {
       if (!copilotClientInstance) {
         copilotClientInstance = new CopilotClient({
           token: process.env.GITHUB_TOKEN || '',
         });
       }
       return copilotClientInstance;
-    } catch (error) {
-      clientInitPromise = null; // Reset on failure
-      console.error('Failed to initialize CopilotClient:', error);
-      throw new Error('CopilotClient initialization failed');
-    }
-  })();
+    },
+    3,
+    100
+  ).catch(error => {
+    clientInitPromise = null; // Reset on failure
+    console.error('Failed to initialize CopilotClient after retries:', error);
+    throw new Error('CopilotClient initialization failed');
+  });
   
   return clientInitPromise;
 }
