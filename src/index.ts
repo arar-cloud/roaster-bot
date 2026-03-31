@@ -170,7 +170,9 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       await Promise.race([session.sendAndWait({ prompt }), sessionTimeout]);
     } catch (error) {
       console.error('Error:', error);
-      cachedClient = null; // Force reconnect on error
+      // Reset both client state and initialization flag for clean recovery
+      cachedClient = null;
+      initInProgress = false;
       if (!res.headersSent) res.status(500).send("The roaster overheated.");
       return;
     } finally {
