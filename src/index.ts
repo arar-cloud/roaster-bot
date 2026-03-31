@@ -1,4 +1,10 @@
 import 'dotenv/config';
+
+// Validate required environment variables early
+if (!process.env.OPENAI_API_KEY) {
+  console.error('FATAL: Missing required environment variable: OPENAI_API_KEY');
+  process.exit(1);
+}
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -17,7 +23,20 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: true,
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: true,
+  dnsPrefetchControl: true,
+  frameguard: true,
+  hidePoweredBy: true,
+  hsts: true,
+  ieNoOpen: true,
+  noSniff: true,
+  referrerPolicy: true,
+  xssFilter: true
+}));
 
 // Validate required environment variables
 const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'OPENAI_API_KEY'];
@@ -33,6 +52,16 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  trust: function (req) {
+    return true;
+  },
+  skip: function (req) {
+    return false;
+  },
+  keyGenerator: function (req) {
+    return req.ip || req.connection.remoteAddress || 'unknown';
+  },
+  message: 'Too many requests from this IP, please try again later.'
 });
 
 app.use(express.json({
