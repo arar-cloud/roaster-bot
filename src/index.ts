@@ -19,6 +19,15 @@ const port = process.env.PORT || 3000;
 
 app.use(helmet());
 
+// Validate required environment variables
+const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'OPENAI_API_KEY'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`FATAL: Missing required environment variable: ${envVar}`);
+    process.exit(1);
+  }
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
