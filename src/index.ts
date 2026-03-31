@@ -20,6 +20,27 @@ const port = process.env.PORT || 3000;
 let copilotClientInstance: CopilotClient | null = null;
 let initInProgress = false;
 
+async function callCopilotWithRetry(
+  client: CopilotClient,
+  prompt: string,
+  maxRetries = 3
+): Promise<string> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const response = await client.complete(prompt);
+      return response;
+    } catch (error) {
+      if (attempt < maxRetries - 1) {
+        const delayMs = Math.pow(2, attempt) * 1000;
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw error;
+      }
+    }
+  }
+  throw new Error('All retry attempts failed');
+}
+
 async function getClient(): Promise<CopilotClient> {
   if (!copilotClientInstance && !initInProgress) {
     initInProgress = true;
@@ -161,11 +182,14 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     );
     
     try {
-      await Promise.race([session.sendAndWait({ prompt }), sessionTimeout]);
+      await Promise.race([
+        callCopilotWithRetry(client, prompt),
+        sessionTimeout
+      ]);
     } catch (error) {
       console.error('Error:', error);
       // Reset both client state and initialization flag for clean recovery
-      cachedClient = null;
+      copilotClientInstance = null;
       initInProgress = false;
       if (!res.headersSent) res.status(500).send("The roaster overheated.");
       return;
