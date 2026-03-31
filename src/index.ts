@@ -365,7 +365,7 @@ function sanitizeError(error: unknown): string {
   return message;
 }
 
-app.post('/webhook', express.text({ type: 'application/json' }), (req: Request, res: Response) => {
+app.post('/webhook', express.text({ type: 'application/json' }), strictLimiter, (req: Request, res: Response) => {
   const signature = req.headers['x-hub-signature-256'] as string;
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   
