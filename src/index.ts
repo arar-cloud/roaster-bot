@@ -146,9 +146,30 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   res.status(500).json({ error: 'Internal server error', message: err?.message || 'Unknown error' });
 });
 
+// Initialize Copilot SDK with retry logic and exponential backoff
+const initCopilotClient = async (maxRetries: number = 3): Promise<CopilotClient | null> => {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const client = new CopilotClient({
+        token: process.env.GITHUB_TOKEN || '',
+      });
+      console.log('Copilot SDK initialized successfully');
+      return client;
+    } catch (error) {
+      console.warn(`Copilot SDK init attempt ${attempt}/${maxRetries} failed:`, error);
+      if (attempt < maxRetries) {
+        const backoffMs = Math.pow(2, attempt - 1) * 1000;
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      }
+    }
+  }
+  console.error('Copilot SDK initialization failed after all retries. Running in degraded mode.');
+  return null;
+};
+
 // Singleton CopilotClient instance with Promise-based initialization lock to prevent race conditions
 let copilotClientInstance: CopilotClient | null = null;
-let clientInitPromise: Promise<CopilotClient> | null = null;
+let clientInitPromise: Promise<CopilotClient | null> | null = null;
 let initInProgress: boolean = false;
 let copilotInitError: Error | null = null;
 
