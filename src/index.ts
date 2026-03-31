@@ -60,7 +60,9 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     .update(rawBody)
     .digest('hex');
 
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+  try {
+    crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+  } catch {
     return res.status(403).send('Forbidden');
   }
 
