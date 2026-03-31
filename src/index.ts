@@ -306,15 +306,17 @@ const server = app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });
 
-// Graceful shutdown handler with resource cleanup
+// Graceful shutdown handler with resource cleanup and connection draining
 const shutdown = async (signal: string) => {
   console.log(`Received ${signal}, shutting down gracefully...`);
   hmacCache.clear();
   copilotClientInstance = null;
+  // Stop accepting new connections and drain in-flight requests
   server.close(() => {
-    console.log('Server closed');
+    console.log('Server closed, all connections drained');
     process.exit(0);
   });
+  // Force shutdown if graceful close takes too long
   setTimeout(() => {
     console.error('Forced exit after 10s timeout');
     process.exit(1);
