@@ -152,8 +152,16 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       await Promise.race([session.sendAndWait({ prompt }), sessionTimeout]);
     } catch (error) {
       console.error('Error:', error);
+      cachedClient = null; // Force reconnect on error
       if (!res.headersSent) res.status(500).send("The roaster overheated.");
       return;
+    } finally {
+      // Always attempt cleanup to prevent resource leak
+      try {
+        if (session) await session.stop?.();
+      } catch (cleanupErr) {
+        console.error('Session cleanup error:', cleanupErr);
+      }
     }
 
     res.write('data: [DONE]\n\n');
