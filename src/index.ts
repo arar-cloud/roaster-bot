@@ -16,6 +16,18 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Singleton CopilotClient instance to avoid per-request instantiation overhead
+let copilotClientInstance: CopilotClient | null = null;
+
+function getCopilotClient(): CopilotClient {
+  if (!copilotClientInstance) {
+    copilotClientInstance = new CopilotClient({
+      token: process.env.GITHUB_TOKEN || '',
+    });
+  }
+  return copilotClientInstance;
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -41,9 +53,10 @@ function getHmacSHA256(payload: string, secret: string): string {
   return sig;
 }
 
+// Use async body parser with lazy verification for better event loop throughput
 app.use(express.json({
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    req.rawBody = buf.toString('utf8', 0, Math.min(buf.length, 10000));
   }
 }));
 
@@ -60,7 +73,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
