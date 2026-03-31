@@ -57,6 +57,12 @@ class LRUCache<K, V> {
 
 const app = express();
 const port = process.env.PORT || 3000;
+let copilotClient: CopilotClient | null = null;
+
+// Initialize on startup
+(async () => {
+  copilotClient = await initCopilotClient();
+})().catch(err => console.error('Startup error:', err));
 
 // Validate required environment variables with async retry logic
 async function validateEnvironment(): Promise<void> {
