@@ -329,6 +329,9 @@ app.use(express.json({
 
 app.post('/roast', express.json(), async (req: Request, res: Response) => {
   try {
+    if (!copilotClient) {
+      return res.status(503).json({ error: 'Service temporarily unavailable. SDK not initialized.' });
+    }
     const code = req.body.code;
     if (!code || typeof code !== 'string') {
       return res.status(400).json({ error: 'code field is required and must be a string' });
