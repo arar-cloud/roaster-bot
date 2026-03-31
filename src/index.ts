@@ -125,6 +125,23 @@ app.use(express.json({
   }
 }));
 
+app.post('/roast', express.json(), async (req: Request, res: Response) => {
+  try {
+    const code = req.body.code;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ error: 'code field is required and must be a string' });
+    }
+    const client = await getClient();
+    const roast = await callCopilotWithRetry(client, code);
+    res.json({ roast });
+  } catch (error) {
+    console.error('Error in /roast endpoint:', error);
+    copilotClientInstance = null;
+    initInProgress = false;
+    res.status(500).json({ error: 'Failed to generate roast. Please try again.' });
+  }
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
