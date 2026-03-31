@@ -84,6 +84,26 @@ app.use(express.urlencoded({ limit: '10kb', extended: false }));
 
 app.use(limiter);
 
+// Global error handler for synchronous errors
+app.use((err: any, req: Request, res: Response, next: Function) => {
+  console.error('Error:', err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason: any) => {
+  console.error('Unhandled Rejection:', reason);
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error: Error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
