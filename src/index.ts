@@ -157,7 +157,8 @@ app.use((req: Request, res: Response, next) => {
 // Error recovery middleware for rate limiter and request handling
 app.use((err: any, req: Request, res: Response, next: any) => {
   console.error('Middleware error:', err);
-  res.status(500).json({ error: 'Internal server error', message: err?.message || 'Unknown error' });
+  const sanitizedMessage = sanitizeError(err);
+  res.status(500).json({ error: 'Internal server error', message: sanitizedMessage });
 });
 
 // Initialize Copilot SDK with retry logic and exponential backoff
@@ -341,6 +342,20 @@ private verifyWebhookSignature(payload: string, signature: string, secret: strin
 
 // Use async body parser for standard JSON requests
 app.use(express.json());
+
+function sanitizeError(error: unknown): string {
+  let message = error instanceof Error ? error.message : String(error);
+  const sensitivePatterns = [
+    /sk-[a-zA-Z0-9]{20,}/g,
+    /github_pat_[a-zA-Z0-9]{20,}/g,
+    process.env.GITHUB_TOKEN ? new RegExp(process.env.GITHUB_TOKEN, 'g') : null,
+    process.env.OPENAI_API_KEY ? new RegExp(process.env.OPENAI_API_KEY, 'g') : null
+  ];
+  sensitivePatterns.forEach(pattern => {
+    if (pattern) message = message.replace(pattern, '[REDACTED]');
+  });
+  return message;
+}
 
 app.post('/webhook', express.text({ type: 'application/json' }), (req: Request, res: Response) => {
   const signature = req.headers['x-hub-signature-256'] as string;
