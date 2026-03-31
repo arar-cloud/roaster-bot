@@ -139,7 +139,23 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    await session.sendAndWait({ prompt });
+    // Timeout session operations after 30s to prevent hanging
+    const sessionTimeout = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Session timeout after 30s')), 30000)
+    );
+    
+    try {
+      await Promise.race([session.sendAndWait({ prompt }), sessionTimeout]);
+    } finally {
+      // Ensure cleanup happens even on timeout
+      try {
+        await Promise.race([client.stop(), new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Stop timeout')), 5000)
+        )]);
+      } catch (stopError) {
+        console.warn('Client stop failed or timed out:', stopError);
+      }
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -148,7 +164,13 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    try {
+      await Promise.race([client.stop(), new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Stop timeout')), 5000)
+      )]);
+    } catch (finalStopError) {
+      console.warn('Final client stop failed:', finalStopError);
+    }
   }
 });
 
