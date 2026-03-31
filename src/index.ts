@@ -23,6 +23,24 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// HMAC cache: stores computed signatures to avoid recomputation
+const hmacCache = new Map<string, string>();
+const MAX_CACHE_SIZE = 1000;
+
+function getHmacSHA256(payload: string, secret: string): string {
+  const cacheKey = `${payload.length}:${secret.length}`;
+  if (hmacCache.has(cacheKey)) {
+    return hmacCache.get(cacheKey)!;
+  }
+  const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  if (hmacCache.size >= MAX_CACHE_SIZE) {
+    const firstKey = hmacCache.keys().next().value;
+    hmacCache.delete(firstKey);
+  }
+  hmacCache.set(cacheKey, sig);
+  return sig;
+}
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -51,8 +69,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    const digest = 'sha256=' + getHmacSHA256(rawBody, webhookSecret);
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
         // Simple check for dev
