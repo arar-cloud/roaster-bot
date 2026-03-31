@@ -36,12 +36,23 @@ app.use(helmet({
 }));
 
 // Validate required environment variables
-const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'OPENAI_API_KEY'];
+const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'OPENAI_API_KEY', 'GITHUB_TOKEN'];
 for (const envVar of requiredEnvVars) {
   if (!process.env[envVar]) {
     console.error(`FATAL: Missing required environment variable: ${envVar}`);
     process.exit(1);
   }
+}
+
+// Initialize CopilotClient with error handling
+let client: CopilotClient;
+try {
+  client = new CopilotClient({
+    token: process.env.GITHUB_TOKEN!,
+  });
+} catch (error) {
+  console.error('Failed to initialize CopilotClient:', error);
+  process.exit(1);
 }
 
 const limiter = rateLimit({
@@ -122,8 +133,8 @@ app.post('/agent', body('messages').optional().isArray(), async (req: Request, r
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
+  // Use the globally initialized client with user token override
+  const sessionClient = new CopilotClient({
     env: {
       GITHUB_TOKEN: token,
       ...process.env
@@ -146,7 +157,7 @@ app.post('/agent', body('messages').optional().isArray(), async (req: Request, r
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
+    const session = await sessionClient.createSession({
       model: "gpt-4o",
       streaming: true,
       systemMessage: {
@@ -177,7 +188,7 @@ app.post('/agent', body('messages').optional().isArray(), async (req: Request, r
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    await sessionClient.stop();
   }
 });
 
