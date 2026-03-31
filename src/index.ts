@@ -63,6 +63,7 @@ app.use((req: Request, res: Response, next) => {
 // Singleton CopilotClient instance with Promise-based initialization lock to prevent race conditions
 let copilotClientInstance: CopilotClient | null = null;
 let clientInitPromise: Promise<CopilotClient> | null = null;
+let initInProgress: boolean = false;
 
 async function callCopilotWithRetry(
   client: CopilotClient,
@@ -92,25 +93,42 @@ async function getClient(): Promise<CopilotClient> {
   // Return existing initialization promise if in progress
   if (clientInitPromise) return clientInitPromise;
 
-  // Start new initialization with retry logic
-  clientInitPromise = retryWithBackoff(
-    async () => {
-      if (!copilotClientInstance) {
-        copilotClientInstance = new CopilotClient({
-          token: process.env.GITHUB_TOKEN || '',
-        });
-      }
-      return copilotClientInstance;
-    },
-    3,
-    100
-  ).catch(error => {
-    clientInitPromise = null; // Reset on failure
-    console.error('Failed to initialize CopilotClient after retries:', error);
-    throw new Error('CopilotClient initialization failed');
-  });
+  // Prevent concurrent initialization attempts
+  if (initInProgress) {
+    // Wait for the promise to be set or timeout
+    const maxWait = 5000;
+    const startTime = Date.now();
+    while (!clientInitPromise && Date.now() - startTime < maxWait) {
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    if (clientInitPromise) return clientInitPromise;
+    throw new Error('Client initialization already in progress');
+  }
 
-  return clientInitPromise;
+  try {
+    initInProgress = true;
+    // Start new initialization with retry logic
+    clientInitPromise = retryWithBackoff(
+      async () => {
+        if (!copilotClientInstance) {
+          copilotClientInstance = new CopilotClient({
+            token: process.env.GITHUB_TOKEN || '',
+          });
+        }
+        return copilotClientInstance;
+      },
+      3,
+      100
+    ).catch(error => {
+      clientInitPromise = null; // Reset on failure
+      console.error('Failed to initialize CopilotClient after retries:', error);
+      throw new Error('CopilotClient initialization failed');
+    });
+
+    return await clientInitPromise;
+  } finally {
+    initInProgress = false;
+  }
 }
 
 const limiter = rateLimit({
