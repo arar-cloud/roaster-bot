@@ -106,7 +106,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/webhook', limiter, async (req: Request, res: Response) => {
   // Null-check for copilot client initialization
   if (!globalCopilotClient) {
     res.status(503).json({ error: 'Copilot client not initialized' });
