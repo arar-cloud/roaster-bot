@@ -126,6 +126,8 @@ app.use(express.json({
   }
 }));
 
+app.use(limiter);
+
 app.use((req, res, next) => {
   if (req.method !== 'GET' && (!req.headers['content-type'] || !req.headers['content-type'].includes('application/json'))) {
     return res.status(400).json({ error: 'Content-Type must be application/json' });
