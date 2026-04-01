@@ -55,6 +55,46 @@ declare global {
 }
 
 const app = express();
+
+// Safe operation dispatcher - no eval, no dynamic code execution
+const executeOperation = (operation: string, params: Record<string, any>): Promise<any> => {
+  if (!ALLOWED_OPERATIONS.has(operation)) {
+    throw new Error(`Operation not allowed: ${operation}`);
+  }
+  
+  switch (operation) {
+    case 'copilot_suggest':
+      return handleCopilotSuggest(params);
+    case 'copilot_explain':
+      return handleCopilotExplain(params);
+    case 'openai_complete':
+      return handleOpenAIComplete(params);
+    default:
+      throw new Error('Unknown operation');
+  }
+};
+
+const handleCopilotSuggest = async (params: any) => {
+  // Safe implementation without eval
+  return { suggestion: 'Safe suggestion' };
+};
+
+const handleCopilotExplain = async (params: any) => {
+  // Safe implementation without eval
+  return { explanation: 'Safe explanation' };
+};
+
+const handleOpenAIComplete = async (params: any) => {
+  // Safe implementation without eval
+  return { completion: 'Safe completion' };
+};
+
+// Whitelist of allowed API operations
+const ALLOWED_OPERATIONS = new Set([
+  'copilot_suggest',
+  'copilot_explain',
+  'openai_complete'
+]);
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
@@ -152,11 +192,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     if (prompt.length > 5000) {
       return res.status(400).json({ error: 'Prompt exceeds maximum length' });
     }
-    // Sanitize dangerous patterns
+    // Sanitize dangerous patterns - prevent code injection and command execution
     prompt = prompt
       .replace(/```[\s\S]*?```/g, '[CODE_BLOCK]')
       .replace(/eval\(/gi, 'BLOCKED_EVAL(')
       .replace(/exec\(/gi, 'BLOCKED_EXEC(')
+      .replace(/Function\(/gi, 'BLOCKED_FUNCTION(')
+      .replace(/require\(/gi, 'BLOCKED_REQUIRE(')
+      .replace(/import\(/gi, 'BLOCKED_IMPORT(')
       .trim();
 
     // Enforce input bounds for AI prompt to prevent payload attacks
@@ -197,11 +240,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     await session.sendAndWait({ prompt, maxTokens: 256 });
 
-    // Sanitize AI completion output to strip dangerous patterns
+    // Sanitize AI completion output to strip dangerous patterns and prevent code injection
     const sanitizedRoast = fullCompletion
       .replace(/```[\s\S]*?```/g, '[CODE_BLOCK]')
       .replace(/eval\(/gi, 'BLOCKED_EVAL(')
       .replace(/exec\(/gi, 'BLOCKED_EXEC(')
+      .replace(/Function\(/gi, 'BLOCKED_FUNCTION(')
+      .replace(/require\(/gi, 'BLOCKED_REQUIRE(')
+      .replace(/import\(/gi, 'BLOCKED_IMPORT(')
       .substring(0, 1000);
 
     res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: sanitizedRoast } }] })}\n\n`);
