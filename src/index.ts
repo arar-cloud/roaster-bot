@@ -282,6 +282,14 @@ app.post('/agent', body('messages').optional().isArray(), asyncHandler(async (re
   }
 }));
 
+// Global error handler for unhandled async errors
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Unhandled error:', err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
