@@ -3,7 +3,6 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import { body, query, validationResult } from 'express-validator';
-import type { NextFunction } from 'express';
 import { CopilotClient } from '@github/copilot-sdk';
 
 const asyncHandler = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => {
