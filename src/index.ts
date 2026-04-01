@@ -168,7 +168,20 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+    // Validate messages array input
+    if (!Array.isArray(req.body.messages)) {
+      return res.status(400).json({ error: 'messages must be a non-empty array' });
+    }
+    if (req.body.messages.length === 0) {
+      return res.status(400).json({ error: 'messages array cannot be empty' });
+    }
+    // Validate each message object has required content field
+    for (const msg of req.body.messages) {
+      if (!msg || typeof msg !== 'object' || typeof msg.content !== 'string') {
+        return res.status(400).json({ error: 'each message must have a content string field' });
+      }
+    }
+    const userMessages = req.body.messages;
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
