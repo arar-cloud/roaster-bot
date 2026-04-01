@@ -204,6 +204,17 @@ app.post('/agent', verifyRequestSignature, limiter, webhookLimiter, asyncHandler
   const token = req.get('X-GitHub-Token');
   if (!token || token.trim() === '') return res.status(401).send('Missing or invalid X-GitHub-Token.');
 
+  // Input validation
+  const userMessages = req.body.messages || [];
+  if (!Array.isArray(userMessages)) {
+    return res.status(400).json({ error: 'messages must be an array' });
+  }
+  for (const msg of userMessages) {
+    if (typeof msg.content !== 'string' || msg.content.length > 5000) {
+      return res.status(400).json({ error: 'Invalid message content' });
+    }
+  }
+
   // Initialize client with the user's token
   let client: CopilotClient | null = null;
   try {
@@ -226,9 +237,8 @@ app.post('/agent', verifyRequestSignature, limiter, webhookLimiter, asyncHandler
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    const prompt = lastMessage ? lastMessage.content.trim().slice(0, 5000) : "Roast me.";
 
     // Create session following SDK docs
     const session = await client.createSession({
