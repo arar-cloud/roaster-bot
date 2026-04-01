@@ -11,7 +11,10 @@ let initError: Error | null = null;
 
 function initializeCopilotClient() {
   try {
-    const token = process.env.GITHUB_TOKEN;
+    if (!signingSecret) {
+    return res.status(500).json({ error: 'Server misconfiguration: signing secret not set' });
+  }
+  const token = process.env.GITHUB_TOKEN;
     if (!token || typeof token !== 'string') {
       throw new Error('GITHUB_TOKEN environment variable is required');
     }
