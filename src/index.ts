@@ -283,7 +283,7 @@ app.post('/agent', body('messages').optional().isArray(), asyncHandler(async (re
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
+    console.error('API Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await sessionClient.stop();
