@@ -91,7 +91,21 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    let prompt = lastMessage ? lastMessage.content : "Roast me.";
+
+    // Input validation and sanitization for AI prompt injection prevention
+    if (typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'Invalid prompt type' });
+    }
+    if (prompt.length > 5000) {
+      return res.status(400).json({ error: 'Prompt exceeds maximum length' });
+    }
+    // Sanitize dangerous patterns
+    prompt = prompt
+      .replace(/```[\s\S]*?```/g, '[CODE_BLOCK]')
+      .replace(/eval\(/gi, 'BLOCKED_EVAL(')
+      .replace(/exec\(/gi, 'BLOCKED_EXEC(')
+      .trim();
 
     // Create session following SDK docs
     const session = await client.createSession({
