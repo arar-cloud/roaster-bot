@@ -121,7 +121,12 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
 app.use(express.json({
   limit: '10kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    try {
+      req.rawBody = buf.toString();
+    } catch (err) {
+      console.error('Raw body verification error:', err);
+      throw new Error('Failed to process request body');
+    }
   }
 }));
 
@@ -274,9 +279,14 @@ app.post('/agent', verifyRequestSignature, limiter, webhookLimiter, asyncHandler
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message
-  });
+  const status = err.status || err.statusCode || 500;
+  const message = process.env.NODE_ENV === 'production' ? 'Internal Server Error' : (err.message || 'Unknown error');
+  try {
+    res.status(status).json({ error: message });
+  } catch (serializationErr) {
+    console.error('Response serialization failed:', serializationErr);
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
 });
 
 app.listen(port, () => {
