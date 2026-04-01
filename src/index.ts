@@ -60,6 +60,9 @@ app.use(helmet({
       imgSrc: ["'self'", 'https:'],
     },
   },
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 const port = process.env.PORT || 3000;
 
