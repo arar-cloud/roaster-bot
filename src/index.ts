@@ -91,21 +91,27 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-    },
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'"],
+      connectSrc: ["'self'"]
+    }
   },
-  hsts: { maxAge: 31536000, includeSubDomains: true },
+  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
   frameguard: { action: 'deny' },
   noSniff: true,
-  xssFilter: true,
+  xssFilter: true
 }));
+app.disable('x-powered-by');
 
 // Rate limiting FIRST (before body parsing to prevent bypass)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests from this IP',
-  skip: (req) => req.method === 'GET'
+  max: 30,
+  message: 'Too many requests',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'GET',
+  keyGenerator: (req) => req.ip || 'unknown'
 });
 app.use(limiter);
 
@@ -125,9 +131,11 @@ const asyncHandler = (fn: any) => (req: express.Request, res: express.Response, 
 // Apply rate limiter to webhook endpoint explicitly
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
-  message: 'Too many webhook requests',
-  keyGenerator: (req) => req.headers['x-github-signature-256'] as string || req.ip || 'unknown',
+  max: 5,
+  message: 'Webhook rate limit exceeded',
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip || 'unknown'
 });
 
 // Capture raw body for webhook verification before parsing
@@ -154,12 +162,11 @@ if (!process.env.GITHUB_WEBHOOK_SECRET) {
 }
 
 app.use(express.json({
-  limit: '10kb',
+  limit: '100kb',
   verify: (req: any, res, buf) => {
     try {
       req.rawBody = buf.toString();
     } catch (err) {
-      console.error('Raw body verification error:', err);
       throw new Error('Failed to process request body');
     }
   }
