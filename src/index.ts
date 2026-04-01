@@ -205,13 +205,15 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
   }
   const code = validated;
 
-  // Prevent obvious code injection patterns
   // Prevent obvious code injection patterns and risky eval/exec
   if (/(exec|eval|spawn|fork|require\s*\(|__proto__|constructor|prototype)/.test(code)) {
     return res.status(400).json({ error: 'Dangerous patterns detected in input' });
   }
   // Sanitize code to prevent injection via AI completions
   const sanitizedCode = code.replace(/[\x00-\x1F\x7F]/g, '').trim();
+  if (typeof sanitizedCode !== 'string' || sanitizedCode.length === 0) {
+    return res.status(400).json({ error: 'Invalid code input after sanitization' });
+  }
   try {
     if (!globalCopilotClient || initError) {
       const status = initError ? 503 : 500;
