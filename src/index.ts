@@ -238,6 +238,9 @@ app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) 
   } catch (parseError) {
     console.error('Malformed webhook payload:', parseError);
     return res.status(400).json({ error: 'Invalid JSON payload' });
+  } catch (error) {
+    console.error('Webhook processing error:', error);
+    res.status(400).json({ error: 'Invalid payload or processing failed' });
   }
 });
 
