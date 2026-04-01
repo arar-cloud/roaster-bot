@@ -1,5 +1,6 @@
-import dotenv from 'dotenv';
-dotenv.config();
+import express from 'express';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';otenv.config();
 
 const requiredEnvVars = ['OPENAI_API_KEY', 'PORT'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
