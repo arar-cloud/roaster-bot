@@ -100,6 +100,24 @@ app.use(express.urlencoded({ limit: '10kb', extended: false }));
 
 app.use(limiter);
 
+// Input validation middleware
+const validateInput = (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (req.body && typeof req.body === 'object') {
+      for (const [key, value] of Object.entries(req.body)) {
+        if (typeof value === 'string' && value.length > 10000) {
+          return res.status(400).json({ error: 'Input payload too large' });
+        }
+      }
+    }
+    next();
+  } catch (err) {
+    res.status(400).json({ error: 'Invalid request format' });
+  }
+};
+
+app.use(validateInput);
+
 // Global error handler for synchronous errors
 app.use((err: any, req: Request, res: Response, next: Function) => {
   console.error('Error:', err);
