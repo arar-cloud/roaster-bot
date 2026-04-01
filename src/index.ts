@@ -44,6 +44,19 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP'
 });
 app.use(limiter);
+app.use(express.json({
+  limit: '10kb',
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+// Apply rate limiter to webhook endpoint explicitly
+const webhookLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many webhook requests',
+});
 
 // Capture raw body for webhook verification before parsing
 app.use((req, res, next) => {
@@ -110,7 +123,15 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) => {
+  if (!globalCopilotClient || initError) {
+    const status = initError ? 503 : 500;
+    const message = initError ? 'Service temporarily unavailable' : 'Copilot client not initialized';
+    console.error(`Webhook rejected: ${message}`);
+    res.status(status).json({ error: message });
+    return;
+  }
+
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
@@ -157,12 +178,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     console.error('Failed to initialize user Copilot client:', err);
     return res.status(500).send('Failed to initialize Copilot client.');
   }
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
