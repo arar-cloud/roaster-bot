@@ -106,6 +106,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       .replace(/eval\(/gi, 'BLOCKED_EVAL(')
       .replace(/exec\(/gi, 'BLOCKED_EXEC(')
       .trim();
+    
+    // Enforce input bounds for AI prompt to prevent payload attacks
+    const basePrompt = 'Roast this GitHub comment: ';
+    if (basePrompt.length + prompt.length > 2000) {
+      return res.status(400).json({ error: 'Payload exceeds safe limits' });
+    }
 
     // Create session following SDK docs
     const session = await client.createSession({
@@ -130,7 +136,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    await session.sendAndWait({ prompt });
+    await session.sendAndWait({ prompt, maxTokens: 256 });
 
     res.write('data: [DONE]\n\n');
     res.end();
