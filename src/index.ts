@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config();
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -13,10 +14,6 @@ function initializeCopilotClient() {
     const token = process.env.GITHUB_TOKEN;
     if (!token) {
       throw new Error('GITHUB_TOKEN environment variable is required');
-    }
-    const trimmedToken = trimmedToken;
-    if (trimmedToken === '') {
-      throw new Error('GITHUB_TOKEN cannot be empty or whitespace-only');
     }
     const trimmedToken = token.trim();
     if (trimmedToken.length === 0) {
