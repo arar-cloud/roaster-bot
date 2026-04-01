@@ -12,12 +12,18 @@ let initError: Error | null = null;
 function initializeCopilotClient() {
   try {
     const token = process.env.GITHUB_TOKEN;
-    if (!token) {
+    if (!token || typeof token !== 'string') {
       throw new Error('GITHUB_TOKEN environment variable is required');
     }
     const trimmedToken = token.trim();
     if (trimmedToken.length === 0) {
       throw new Error('GITHUB_TOKEN cannot be empty after trimming');
+    }
+    if (trimmedToken.length < 20 || trimmedToken.length > 1000) {
+      throw new Error('GITHUB_TOKEN has invalid length');
+    }
+    if (!/^[A-Za-z0-9_-]*$/.test(trimmedToken)) {
+      throw new Error('GITHUB_TOKEN contains invalid characters');
     }
     // Validate token format (GitHub tokens typically start with ghp_)
     if (!trimmedToken.match(/^ghp_[a-zA-Z0-9_]{36,}$/)) {
@@ -271,10 +277,10 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
     // Validate model parameter against allowlist
     const allowedModels = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o'];
     const selectedModel = req.body.model && allowedModels.includes(req.body.model) ? req.body.model : 'gpt-4o';
-    
+
     // Sanitize user message to prevent injection
     const sanitizedMessage = prompt.replace(/[\x00-\x1F\x7F]/g, '').trim();
-    
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -298,7 +304,7 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
         content: systemPrompt
       }
     });
-    
+
     // Wrap code in safe prompt context to prevent execution attempts
     const safePrompt = `Review this code snippet for issues (do NOT execute):\n\n\`\`\`\n${sanitizedCode}\n\`\`\``;
 
