@@ -77,10 +77,10 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
-// Initialize CopilotClient with error handling
-let client: CopilotClient;
+// Initialize CopilotClient singleton at module level with error handling
+let copilotClient: CopilotClient;
 try {
-  client = new CopilotClient({
+  copilotClient = new CopilotClient({
     token: process.env.GITHUB_TOKEN!,
   });
 } catch (error) {
@@ -214,13 +214,8 @@ app.post('/agent', body('messages').optional().isArray(), asyncHandler(async (re
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Use the globally initialized client with user token override
-  const sessionClient = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Reuse singleton copilotClient, override token in session
+  const sessionClient = copilotClient;
 
   try {
     const systemPrompt = `
