@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 let globalCopilotClient: CopilotClient | null = null;
@@ -45,11 +46,15 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(helmet({ contentSecurityPolicy: true, strictTransportSecurity: true }));
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+app.use(limiter);
 
 app.get('/', (req, res) => {
   res.send(`
