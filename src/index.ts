@@ -1,5 +1,45 @@
-import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import 'dotenv.config();
+
+// Session token management
+const SESSION_TIMEOUT = 3600000; // 1 hour
+const activeSessions = new Map();
+
+interface SessionData {
+  userId: string;
+  createdAt: number;
+  expiresAt: number;
+}
+
+const generateSessionToken = (userId: string): string => {
+  const token = Buffer.from(`${userId}:${Date.now()}:${Math.random()}`).toString('base64');
+  const session: SessionData = {
+    userId,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + SESSION_TIMEOUT
+  };
+  activeSessions.set(token, session);
+  return token;
+};
+
+const validateSessionToken = (token: string): SessionData | null => {
+  const session = activeSessions.get(token);
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    activeSessions.delete(token);
+    return null;
+  }
+  return session;
+};
+
+// Auth middleware
+const authMiddleware = (req: any, res: any, next: any) => {
+  const token = req.headers.authorization?.split('Bearer ')[1];
+  if (!token || !validateSessionToken(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  req.session = validateSessionToken(token);
+  next();
+};import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
@@ -89,12 +129,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -118,7 +158,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       .replace(/eval\(/gi, 'BLOCKED_EVAL(')
       .replace(/exec\(/gi, 'BLOCKED_EXEC(')
       .trim();
-    
+
     // Enforce input bounds for AI prompt to prevent payload attacks
     const basePrompt = 'Roast this GitHub comment: ';
     if (basePrompt.length + prompt.length > 2000) {
