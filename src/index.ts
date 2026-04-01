@@ -19,6 +19,10 @@ function initializeCopilotClient() {
     if (trimmedToken.length === 0) {
       throw new Error('GITHUB_TOKEN cannot be empty after trimming');
     }
+    // Validate token format (GitHub tokens typically start with ghp_)
+    if (!trimmedToken.match(/^ghp_[a-zA-Z0-9_]{36,}$/)) {
+      throw new Error('GITHUB_TOKEN format is invalid');
+    }
     globalCopilotClient = new CopilotClient({
       token: trimmedToken,
     });
