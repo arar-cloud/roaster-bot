@@ -167,7 +167,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), limiter, (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), limiter, (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
   try {
     // Additional input validation and sanitization
     if (!req.body || !req.body.message) {
@@ -175,6 +175,9 @@ app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape
     }
     if (typeof req.body.message !== 'string' || req.body.message.trim().length === 0) {
       return res.status(400).json({ error: 'Message must be a non-empty string' });
+    }
+    if (req.body.message.length > 5000) {
+      return res.status(413).json({ error: 'Input text exceeds maximum length' });
     }
     // Roast endpoint implementation
     res.json({ roast: 'Your code needs validation!' });
