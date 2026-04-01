@@ -41,6 +41,24 @@ declare global {
 
 const app = express();
 
+// Request signature validation middleware
+function verifyRequestSignature(req: Request, res: Response, next: Function) {
+  const signature = req.headers['x-signature'] as string;
+  const signingSecret = process.env.REQUEST_SIGNING_SECRET;
+  if (!signingSecret) {
+    return next();
+  }
+  if (!signature) {
+    return res.status(401).json({ error: 'Missing request signature' });
+  }
+  const bodyStr = JSON.stringify(req.body);
+  const expectedSignature = crypto.createHmac('sha256', signingSecret).update(bodyStr).digest('hex');
+  if (signature !== expectedSignature) {
+    return res.status(401).json({ error: 'Invalid request signature' });
+  }
+  next();
+}
+
 // Security headers with helmet middleware
 app.use(helmet({
   contentSecurityPolicy: {
