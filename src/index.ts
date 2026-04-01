@@ -4,6 +4,20 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+let globalCopilotClient: CopilotClient | null = null;
+
+try {
+  if (!process.env.GITHUB_TOKEN) {
+    throw new Error('GITHUB_TOKEN environment variable is required');
+  }
+  globalCopilotClient = new CopilotClient({
+    token: process.env.GITHUB_TOKEN,
+  });
+} catch (err) {
+  console.error('Failed to initialize Copilot client:', err);
+  process.exit(1);
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -63,12 +77,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  let client: CopilotClient | null = null;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (err) {
+    console.error('Failed to initialize user Copilot client:', err);
+    return res.status(500).send('Failed to initialize Copilot client.');
+  }
   
   try {
     const systemPrompt = `
