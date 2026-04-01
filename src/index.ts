@@ -29,6 +29,17 @@ declare global {
 }
 
 const app = express();
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP'
+});
+app.use(limiter);
 const port = process.env.PORT || 3000;
 
 // Validate critical environment variables
