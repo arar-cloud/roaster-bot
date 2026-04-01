@@ -178,6 +178,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+// Error handling middleware
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  console.error('Error:', err);
+  res.status(err.status || 500).json({
+    error: process.env.NODE_ENV === 'production' ? 'Internal Server Error' : err.message
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
