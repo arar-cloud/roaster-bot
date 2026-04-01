@@ -260,11 +260,20 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
     return res.status(401).send('Invalid configuration');
   }
 
+  const signatureClean = signature.replace('sha256=', '').toLowerCase();
+  if (!signatureClean || signatureClean.length === 0) {
+    console.warn('Missing signature value');
+    return res.status(401).send('Invalid signature');
+  }
+  if (!/^[a-f0-9]{64}$/.test(signatureClean)) {
+    console.warn('Invalid signature format');
+    return res.status(401).send('Invalid signature');
+  }
   const hmac = crypto.createHmac('sha256', webhookSecret.trim());
-  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  const digest = hmac.update(rawBody).digest('hex');
 
   try {
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+    if (!crypto.timingSafeEqual(Buffer.from(signatureClean, 'hex'), Buffer.from(digest, 'hex'))) {
       console.warn('Invalid webhook signature received');
       return res.status(401).send('Invalid signature');
     }
@@ -282,7 +291,10 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
     return res.status(400).json({ error: 'messages must be an array' });
   }
   for (const msg of userMessages) {
-    if (typeof msg.content !== 'string' || msg.content.length > 5000) {
+    if (typeof msg.role !== 'string' || !/^(user|assistant|system)$/.test(msg.role)) {
+      return res.status(400).json({ error: 'Invalid message role' });
+    }
+    if (typeof msg.content !== 'string' || msg.content.length === 0 || msg.content.length > 5000) {
       return res.status(400).json({ error: 'Invalid message content' });
     }
   }
