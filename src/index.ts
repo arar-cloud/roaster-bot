@@ -42,6 +42,7 @@ const authMiddleware = (req: any, res: any, next: any) => {
 };import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 import { body, validationResult } from 'express-validator';
 
@@ -55,6 +56,8 @@ declare global {
 }
 
 const app = express();
+
+app.use(helmet());
 
 // Safe operation dispatcher - no eval, no dynamic code execution
 const executeOperation = (operation: string, params: Record<string, any>): Promise<any> => {
