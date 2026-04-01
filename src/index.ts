@@ -17,7 +17,7 @@ function initializeCopilotClient() {
     globalCopilotClient = new CopilotClient({
       token: token.trim(),
     });
-    console.log('Copilot client initialized successfully');
+    consolee.log('Copilot client initialized successfully');
   } catch (err) {
     initError = err instanceof Error ? err : new Error(String(err));
     console.error('Failed to initialize Copilot client:', initError);
