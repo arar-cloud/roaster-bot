@@ -6,18 +6,25 @@ import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 let globalCopilotClient: CopilotClient | null = null;
+let initError: Error | null = null;
 
-try {
-  if (!process.env.GITHUB_TOKEN) {
-    throw new Error('GITHUB_TOKEN environment variable is required');
+function initializeCopilotClient() {
+  try {
+    const token = process.env.GITHUB_TOKEN;
+    if (!token || token.trim() === '') {
+      throw new Error('GITHUB_TOKEN environment variable is required and cannot be empty');
+    }
+    globalCopilotClient = new CopilotClient({
+      token: token.trim(),
+    });
+    console.log('Copilot client initialized successfully');
+  } catch (err) {
+    initError = err instanceof Error ? err : new Error(String(err));
+    console.error('Failed to initialize Copilot client:', initError);
   }
-  globalCopilotClient = new CopilotClient({
-    token: process.env.GITHUB_TOKEN,
-  });
-} catch (err) {
-  console.error('Failed to initialize Copilot client:', err);
-  process.exit(1);
 }
+
+initializeCopilotClient();
 
 // Extend Express Request type properly
 declare global {
