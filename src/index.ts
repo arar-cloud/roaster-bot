@@ -136,8 +136,23 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
+    let fullCompletion = '';
+    session.on((event: any) => {
+      if (event.type === "assistant.message_delta") {
+        fullCompletion += event.data.deltaContent;
+      }
+    });
+
     await session.sendAndWait({ prompt, maxTokens: 256 });
 
+    // Sanitize AI completion output to strip dangerous patterns
+    const sanitizedRoast = fullCompletion
+      .replace(/```[\s\S]*?```/g, '[CODE_BLOCK]')
+      .replace(/eval\(/gi, 'BLOCKED_EVAL(')
+      .replace(/exec\(/gi, 'BLOCKED_EXEC(')
+      .substring(0, 1000);
+
+    res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: sanitizedRoast } }] })}\n\n`);
     res.write('data: [DONE]\n\n');
     res.end();
 
