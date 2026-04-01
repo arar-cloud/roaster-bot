@@ -104,6 +104,12 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // Null-check for copilot client initialization
+  if (!globalCopilotClient) {
+    res.status(503).json({ error: 'Copilot client not initialized' });
+    return;
+  }
+
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
