@@ -69,10 +69,11 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'"],
-      imgSrc: ["'self'", 'https:'],
+      styleSrc: ["'self'", "'unsafe-inline'"],
     },
   },
+  frameguard: { action: 'deny' },
+  noSniff: true,
 }));
 
 // Rate limiting FIRST (before body parsing to prevent bypass)
