@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import { body, validationResult } from 'express-validator';
 
 // Extend Express Request type properly
 declare global {
@@ -24,10 +25,21 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+app.use(express.urlencoded({ limit: '1mb', extended: false }));
+
+// Input validation middleware
+const validateInput = (req: Request, res: Response, next: any) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ errors: errors.array() });
+  }
+  next();
+};
 
 app.get('/', (req, res) => {
   res.send(`
