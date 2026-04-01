@@ -170,15 +170,27 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
+function validateInput(input: unknown, maxLength: number = 2000): string | null {
+  if (typeof input !== 'string') {
+    return null;
+  }
+  const trimmed = input.trim();
+  if (trimmed.length === 0 || trimmed.length > maxLength) {
+    return null;
+  }
+  if (!/^[\w\s.,!?'"-]*$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
 app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) => {
-  const { code } = req.body;
-  // Input validation: non-empty, max 50KB, no suspicious patterns
-  if (!code || typeof code !== 'string') {
-    return res.status(400).json({ error: 'Code is required and must be a string' });
+  const validated = validateInput(req.body?.code, 51200);
+  if (!validated) {
+    return res.status(400).json({ error: 'Code is required and must be a non-empty string with valid characters only' });
   }
-  if (code.length > 51200) {
-    return res.status(413).json({ error: 'Code payload too large (max 50KB)' });
-  }
+  const code = validated;
+
   // Prevent obvious code injection patterns
   // Prevent obvious code injection patterns and risky eval/exec
   if (/(exec|eval|spawn|fork|require\s*\(|__proto__|constructor|prototype)/.test(code)) {
