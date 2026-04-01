@@ -37,6 +37,18 @@ declare global {
 
 const app = express();
 
+// Security headers FIRST
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", 'https:'],
+    },
+  },
+}));
+
 // Rate limiting FIRST (before body parsing to prevent bypass)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -44,12 +56,6 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP'
 });
 app.use(limiter);
-app.use(express.json({
-  limit: '10kb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
 
 // Apply rate limiter to webhook endpoint explicitly
 const webhookLimiter = rateLimit({
@@ -71,17 +77,6 @@ app.use((req, res, next) => {
   });
 });
 
-// Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc: ["'self'"],
-      styleSrc: ["'self'"],
-      imgSrc: ["'self'", 'https:'],
-    },
-  },
-}));
 const port = process.env.PORT || 3000;
 
 // Validate critical environment variables
