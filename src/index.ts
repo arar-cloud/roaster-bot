@@ -275,8 +275,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('Error processing webhook:', error);
+    if (!res.headersSent) res.status(500).send('Internal server error');
   } finally {
     await client.stop();
   }
