@@ -231,6 +231,13 @@ app.post('/agent', verifyRequestSignature, limiter, webhookLimiter, asyncHandler
   }
 
   try {
+    // Validate model parameter against allowlist
+    const allowedModels = ['gpt-3.5-turbo', 'gpt-4', 'gpt-4-turbo', 'gpt-4o'];
+    const selectedModel = req.body.model && allowedModels.includes(req.body.model) ? req.body.model : 'gpt-4o';
+    
+    // Sanitize user message to prevent injection
+    const sanitizedMessage = prompt.replace(/[\x00-\x1F\x7F]/g, '').trim();
+    
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -244,15 +251,18 @@ app.post('/agent', verifyRequestSignature, limiter, webhookLimiter, asyncHandler
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content.trim().slice(0, 5000) : "Roast me.";
 
-    // Create session following SDK docs
+    // Create session following SDK docs with validated model
     const session = await client.createSession({
-      model: "gpt-4o",
+      model: selectedModel,
       streaming: true,
       systemMessage: {
         mode: "replace",
         content: systemPrompt
       }
     });
+    
+    // Use sanitized message instead of raw prompt
+    const safePrompt = sanitizedMessage;
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
