@@ -6,7 +6,11 @@ import { body, query, validationResult } from 'express-validator';
 import type { NextFunction } from 'express';
 import { CopilotClient } from '@github/copilot-sdk';
 
-const asyncHandler = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => { Promise.resolve(fn(req, res)).catch((err: Error) => { next(err); }); };
+const asyncHandler = (fn: (req: Request, res: Response) => Promise<void>) => (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(fn(req, res)).catch((err: Error) => {
+    next(err);
+  });
+};
 
 // Extend Express Request type for security validation
 declare global {
