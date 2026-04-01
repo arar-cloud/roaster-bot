@@ -43,7 +43,16 @@ app.use((req, res, next) => {
 });
 
 // Security middleware
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", 'https:'],
+    },
+  },
+}));
 
 // Rate limiting
 const limiter = rateLimit({
