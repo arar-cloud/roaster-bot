@@ -31,17 +31,16 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate critical environment variables
+if (!process.env.OPENAI_API_KEY) {
+  throw new Error('OPENAI_API_KEY environment variable is required');
+}
+
 // Validate required environment variables
-const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'GITHUB_TOKEN', 'OPENAI_API_KEY'];
+const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'GITHUB_TOKEN'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
 if (missingVars.length > 0) {
   console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  process.exit(1);
-}
-
-const apiKey = process.env.OPENAI_API_KEY || '';
-if (!apiKey) {
-  console.error('OPENAI_API_KEY is required');
   process.exit(1);
 }
 
@@ -86,7 +85,7 @@ app.get('/', (req, res) => {
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
