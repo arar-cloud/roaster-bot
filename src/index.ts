@@ -204,12 +204,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     let prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Input validation and sanitization for AI prompt injection prevention
+    // Input validation for user message payload - prevent oversized or malformed data
     if (typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'Invalid prompt type' });
+      return res.status(400).json({ error: 'Invalid message: prompt must be a string' });
     }
-    if (prompt.length > 5000) {
-      return res.status(400).json({ error: 'Prompt exceeds maximum length' });
+    if (prompt.length === 0 || prompt.length > 4000) {
+      return res.status(400).json({ error: 'Invalid message: payload must be 1-4000 characters' });
     }
     // Sanitize dangerous patterns - prevent code injection and command execution
     // Block eval, exec, Function, require, and import patterns
