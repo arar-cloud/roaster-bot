@@ -122,8 +122,19 @@ app.post('/webhook', (req: Request, res: Response) => {
   if (!signature) {
     return res.status(403).json({ error: 'Missing signature' });
   }
-  const hmac = crypto.createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET || '');
-  const digest = 'sha256=' + hmac.update(req.rawBody || '').digest('hex');
+
+  const body = req.rawBody;
+  if (!body) {
+    return res.status(400).json({ error: 'Missing request body' });
+  }
+
+  const secret = process.env.GITHUB_WEBHOOK_SECRET;
+  if (!secret) {
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+
+  const hmac = crypto.createHmac('sha256', secret);
+  const digest = 'sha256=' + hmac.update(body).digest('hex');
   if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
     return res.status(403).json({ error: 'Invalid signature' });
   }
@@ -147,8 +158,8 @@ app.post('/agent', body('messages').optional().isArray(), asyncHandler(async (re
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from('sha256=' + digest))) {
+      return res.status(403).json({ error: 'Invalid signature' });
     }
   }
 
