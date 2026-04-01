@@ -51,11 +51,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
+    if (typeof signature !== 'string') {
+      return res.status(400).send('Invalid signature header type.');
+    }
+
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+        return res.status(401).send('Invalid signature.');
+      }
+    } catch (err) {
+      return res.status(401).send('Signature verification failed.');
     }
   }
 
