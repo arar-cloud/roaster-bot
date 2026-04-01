@@ -42,10 +42,10 @@ function initializeCopilotClient() {
     globalCopilotClient = new CopilotClient({
       token: trimmedToken,
     });
-    console.log('Copilot client initialized successfully');
+    console.log('[INFO] Copilot client initialized successfully - no secrets logged');
   } catch (err) {
     initError = err instanceof Error ? err : new Error(String(err));
-    console.error('Failed to initialize Copilot client:', initError);
+    console.error('[ERROR] Failed to initialize Copilot client: Invalid configuration');
   }
 }
 
@@ -313,7 +313,7 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
       token: token.trim()
     });
   } catch (err) {
-    console.error('Failed to initialize user Copilot client:', err);
+    console.error('[ERROR] Webhook processing failed:', err instanceof Error ? err.message : 'Unknown error');
     return res.status(500).send('Failed to initialize Copilot client.');
   }
 
