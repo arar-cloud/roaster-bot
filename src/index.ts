@@ -65,22 +65,7 @@ try {
   process.exit(1);
 }
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-  trust: function (req) {
-    return true;
-  },
-  skip: function (req) {
-    return req.path === '/health' || req.path === '/';
-  },
-  keyGenerator: function (req) {
-    return req.ip || req.connection.remoteAddress || 'unknown';
-  },
-  message: 'Too many requests from this IP, please try again later.'
-});
+
 
 app.use(express.json({
   limit: '10kb',
