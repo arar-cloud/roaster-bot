@@ -1,4 +1,9 @@
-# The Roaster Bot 🌶️💀
+# Th# roaster-bot
+
+## Security Fixes Applied
+- **issue-1bcbc74383**: Enhanced helmet security headers with CSP, HSTS, frameguard, and referrer policy
+- **issue-36e612c4b8**: Improved rate-limiting with proper error handling and response headers
+- **issue-1a30ebc138**: Added input validation for API endpoints to prevent malformed requests 🌶️💀
 
 > "An AI coding assistant that doesn't fix your bugs, but makes sure you feel bad about them."
 

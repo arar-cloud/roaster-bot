@@ -1,13 +1,6 @@
 import express from 'express';
 import helmet from 'helmet';
-import rateLimit from 'express-rate-limit';otenv.config();
-
-const requiredEnvVars = ['OPENAI_API_KEY', 'PORT'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-if (missingVars.length > 0) {
-  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  process.exit(1);
-}
+import rateLimit from 'express-rate-limit';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -30,19 +23,19 @@ declare global {
 
 const app = express();
 
-app.use(helmet());
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use('/api/', limiter);
-app.use(express.json());
-const port = process.env.PORT || 3000;
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
+  frameguard: { action: 'deny' },
+  noSniff: true,
+  referrerPolicy: { policy: 'no-referrer' },
+}));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -174,7 +167,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
+app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), limiter, (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
   // Roast endpoint implementation
   res.json({ roast: 'Your code needs validation!' });
 }));
