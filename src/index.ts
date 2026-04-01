@@ -99,6 +99,14 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// Content-Type validation middleware
+app.use((req, res, next) => {
+  if (req.method === 'POST' && !req.is('application/json')) {
+    return res.status(415).json({ success: false, message: 'Content-Type must be application/json' });
+  }
+  next();
+});
+
 // Error handling wrapper for async endpoints
 const asyncHandler = (fn: any) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
   return Promise.resolve(fn(req, res, next)).catch(next);
@@ -307,6 +315,14 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
 
     // Wrap code in safe prompt context to prevent execution attempts
     const safePrompt = `Review this code snippet for issues (do NOT execute):\n\n\`\`\`\n${sanitizedCode}\n\`\`\``;
+
+    // Validate response format before streaming
+    if (!session || typeof session !== 'object') {
+      return res.status(500).json({
+        success: false,
+        message: 'Invalid session from Copilot service',
+      });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
