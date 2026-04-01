@@ -30,6 +30,14 @@ declare global {
 
 const app = express();
 
+// Rate limiting FIRST (before body parsing to prevent bypass)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP'
+});
+app.use(limiter);
+
 // Capture raw body for webhook verification before parsing
 app.use((req, res, next) => {
   let data = '';
@@ -53,14 +61,6 @@ app.use(helmet({
     },
   },
 }));
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Too many requests from this IP'
-});
-app.use(limiter);
 const port = process.env.PORT || 3000;
 
 // Validate critical environment variables
@@ -76,15 +76,6 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use(helmet({ contentSecurityPolicy: true, strictTransportSecurity: true }));
-
 app.use(express.json({
   limit: '10kb',
   verify: (req: any, res, buf) => {
@@ -98,8 +89,6 @@ app.use((req, res, next) => {
   }
   next();
 });
-
-app.use(limiter);
 
 app.get('/', (req, res) => {
   res.send(`
