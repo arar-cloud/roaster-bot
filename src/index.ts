@@ -112,6 +112,24 @@ app.use(express.json({
 }));
 app.use(express.urlencoded({ limit: '1mb', extended: false }));
 
+// Input validation middleware for code submission
+app.use((req: Request, res: Response, next) => {
+  if (req.method === 'POST' && req.body?.code) {
+    const code = req.body.code;
+    if (typeof code !== 'string') {
+      return res.status(400).json({ error: 'Invalid input: code must be a string' });
+    }
+    if (code.length > 10000) {
+      return res.status(413).json({ error: 'Input too large: code exceeds 10KB limit' });
+    }
+    // Reject code with dangerous patterns
+    if (/require\s*\(|import\s+|eval\s*\(|Function\s*\(/i.test(code)) {
+      return res.status(400).json({ error: 'Invalid input: dangerous patterns detected' });
+    }
+  }
+  next();
+});
+
 // Input validation middleware
 const validateInput = (req: Request, res: Response, next: any) => {
   const errors = validationResult(req);
