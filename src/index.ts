@@ -180,9 +180,12 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
     return res.status(413).json({ error: 'Code payload too large (max 50KB)' });
   }
   // Prevent obvious code injection patterns
-  if (/(exec|eval|spawn|fork|require\s*\()/.test(code)) {
+  // Prevent obvious code injection patterns and risky eval/exec
+  if (/(exec|eval|spawn|fork|require\s*\(|__proto__|constructor|prototype)/.test(code)) {
     return res.status(400).json({ error: 'Dangerous patterns detected in input' });
   }
+  // Sanitize code to prevent injection via AI completions
+  const sanitizedCode = code.replace(/[\x00-\x1F\x7F]/g, '').trim();
   try {
     if (!globalCopilotClient || initError) {
       const status = initError ? 503 : 500;
@@ -268,6 +271,7 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
+      4. SAFETY: NEVER execute, evaluate, or instantiate any code. Only provide critique.
     `;
 
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
@@ -283,8 +287,8 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
       }
     });
     
-    // Use sanitized message instead of raw prompt
-    const safePrompt = sanitizedMessage;
+    // Wrap code in safe prompt context to prevent execution attempts
+    const safePrompt = `Review this code snippet for issues (do NOT execute):\n\n\`\`\`\n${sanitizedCode}\n\`\`\``;
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
