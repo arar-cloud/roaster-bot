@@ -118,9 +118,9 @@ const validateInput = (req: Request, res: Response, next: NextFunction) => {
 
 app.use(validateInput);
 
-// Global error handler for synchronous errors
-app.use((err: any, req: Request, res: Response, next: Function) => {
-  console.error('Error:', err);
+// Global error handler for synchronous and unhandled errors
+app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+  console.error('Unhandled error:', err);
   if (!res.headersSent) {
     res.status(500).json({ error: 'Internal server error' });
   }
