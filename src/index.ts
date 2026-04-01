@@ -1,5 +1,12 @@
 import dotenv from 'dotenv';
 dotenv.config();
+
+const requiredEnvVars = ['OPENAI_API_KEY', 'PORT'];
+const missingVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -64,11 +71,10 @@ app.use(helmet({
 
 // Validate required environment variables
 const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'OPENAI_API_KEY', 'GITHUB_TOKEN'];
-for (const envVar of requiredEnvVars) {
-  if (!process.env[envVar]) {
-    console.error(`FATAL: Missing required environment variable: ${envVar}`);
-    process.exit(1);
-  }
+const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
+if (missingEnvVars.length > 0) {
+  console.error(`FATAL: Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
 }
 
 // Initialize CopilotClient with error handling
@@ -112,6 +118,15 @@ process.on('unhandledRejection', (reason: any) => {
 process.on('uncaughtException', (error: Error) => {
   console.error('Uncaught Exception:', error);
   process.exit(1);
+});
+
+app.get('/health', (req, res) => {
+  try {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  } catch (error) {
+    console.error('Health check error:', error);
+    res.status(500).json({ status: 'error' });
+  }
 });
 
 app.get('/', (req, res) => {
