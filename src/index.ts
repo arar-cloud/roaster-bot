@@ -168,8 +168,15 @@ app.get('/', (req, res) => {
 });
 
 app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), limiter, (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
-  // Roast endpoint implementation
-  res.json({ roast: 'Your code needs validation!' });
+  try {
+    // Roast endpoint implementation
+    res.json({ roast: 'Your code needs validation!' });
+  } catch (error) {
+    console.error('Roast endpoint error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to process roast request' });
+    }
+  }
 }));
 
 app.post('/webhook', (req: Request, res: Response) => {
@@ -282,6 +289,8 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+const port = process.env.PORT || 3000;
 
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
