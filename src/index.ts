@@ -132,7 +132,7 @@ app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) 
     return;
   }
 
-  // Webhook signature verification
+  // Webhook signature verification with HMAC-SHA256 and constant-time comparison
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
@@ -141,25 +141,30 @@ app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) 
     return res.status(400).send('WEBHOOK_SECRET not configured');
   }
 
-  if (signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+  if (!signature) {
+    console.warn('No webhook signature provided');
+    return res.status(401).send('Missing X-Hub-Signature-256');
+  }
 
-    if (!webhookSecret.trim()) {
-      console.warn('Webhook signature verification skipped: WEBHOOK_SECRET empty');
-      return res.status(401).send('Invalid configuration');
-    }
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret.trim());
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  if (!webhookSecret.trim()) {
+    console.warn('Webhook signature verification skipped: WEBHOOK_SECRET empty');
+    return res.status(401).send('Invalid configuration');
+  }
 
+  const hmac = crypto.createHmac('sha256', webhookSecret.trim());
+  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+
+  try {
     if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
       console.warn('Invalid webhook signature received');
       return res.status(401).send('Invalid signature');
     }
-  } else {
-    console.warn('No webhook signature provided');
-    return res.status(401).send('Missing X-Hub-Signature-256');
+  } catch (err) {
+    console.warn('Signature comparison failed:', err);
+    return res.status(401).send('Invalid signature');
   }
 
   const token = req.get('X-GitHub-Token');
