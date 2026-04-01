@@ -30,6 +30,18 @@ declare global {
 
 const app = express();
 
+// Capture raw body for webhook verification before parsing
+app.use((req, res, next) => {
+  let data = '';
+  req.on('data', chunk => {
+    data += chunk;
+  });
+  req.on('end', () => {
+    req.rawBody = data;
+    next();
+  });
+});
+
 // Security middleware
 app.use(helmet());
 
