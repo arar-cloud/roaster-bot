@@ -212,13 +212,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Prompt exceeds maximum length' });
     }
     // Sanitize dangerous patterns - prevent code injection and command execution
+    // Block eval, exec, Function, require, and import patterns
     prompt = prompt
       .replace(/```[\s\S]*?```/g, '[CODE_BLOCK]')
-      .replace(/eval\(/gi, 'BLOCKED_EVAL(')
-      .replace(/exec\(/gi, 'BLOCKED_EXEC(')
-      .replace(/Function\(/gi, 'BLOCKED_FUNCTION(')
-      .replace(/require\(/gi, 'BLOCKED_REQUIRE(')
-      .replace(/import\(/gi, 'BLOCKED_IMPORT(')
+      .replace(/eval\s*\(/gi, 'BLOCKED_EVAL(')
+      .replace(/exec\s*\(/gi, 'BLOCKED_EXEC(')
+      .replace(/Function\s*\(/gi, 'BLOCKED_FUNCTION(')
+      .replace(/require\s*\(/gi, 'BLOCKED_REQUIRE(')
+      .replace(/import\s*\(/gi, 'BLOCKED_IMPORT(')
       .trim();
 
     // Enforce input bounds for AI prompt to prevent payload attacks
