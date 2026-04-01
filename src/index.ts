@@ -135,6 +135,11 @@ app.post('/webhook', limiter, async (req: Request, res: Response) => {
     return res.status(401).send('Invalid signature');
   }
 
+  // Additional validation to ensure signature is not bypassed
+  if (!signature || signature.length === 0 || !digest || digest.length === 0) {
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
