@@ -28,8 +28,12 @@ const limiter = rateLimit({
   message: 'Too many requests from this IP, please try again after 15 minutes',
   standardHeaders: true,
   legacyHeaders: false,
+  trustProxy: true,
+  keyGenerator: (req: Request) => req.ip || 'unknown',
+  skip: (req: Request) => !req.isGithubVerified
 });
 
+app.set('trust proxy', 1);
 app.use(helmet({
   contentSecurityPolicy: true,
   crossOriginEmbedderPolicy: true,
