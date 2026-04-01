@@ -29,6 +29,19 @@ declare global {
 }
 
 const app = express();
+
+app.use(helmet());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+app.use('/api/', limiter);
+app.use(express.json());
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
