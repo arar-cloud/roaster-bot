@@ -169,6 +169,13 @@ app.get('/', (req, res) => {
 
 app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), limiter, (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
   try {
+    // Additional input validation and sanitization
+    if (!req.body || !req.body.message) {
+      return res.status(400).json({ error: 'Missing required field: message' });
+    }
+    if (typeof req.body.message !== 'string' || req.body.message.trim().length === 0) {
+      return res.status(400).json({ error: 'Message must be a non-empty string' });
+    }
     // Roast endpoint implementation
     res.json({ roast: 'Your code needs validation!' });
   } catch (error) {
@@ -205,13 +212,14 @@ app.post('/webhook', (req: Request, res: Response) => {
 });
 
 app.post('/agent', body('messages').optional().isArray(), asyncHandler(async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    // Webhook signature verification
+    const signature = req.get('X-Hub-Signature-256');
+    const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
