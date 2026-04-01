@@ -165,14 +165,27 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-app.post('/agent', verifyRequestSignature, limiter, webhookLimiter, asyncHandler(async (req: Request, res: Response) => {
-  if (!globalCopilotClient || initError) {
-    const status = initError ? 503 : 500;
-    const message = initError ? 'Service temporarily unavailable' : 'Copilot client not initialized';
-    console.error(`Webhook rejected: ${message}`);
-    res.status(status).json({ error: message });
-    return;
+app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) => {
+  const { code } = req.body;
+  // Input validation: non-empty, max 50KB, no suspicious patterns
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ error: 'Code is required and must be a string' });
   }
+  if (code.length > 51200) {
+    return res.status(413).json({ error: 'Code payload too large (max 50KB)' });
+  }
+  // Prevent obvious code injection patterns
+  if (/(exec|eval|spawn|fork|require\s*\()/.test(code)) {
+    return res.status(400).json({ error: 'Dangerous patterns detected in input' });
+  }
+  try {
+    if (!globalCopilotClient || initError) {
+      const status = initError ? 503 : 500;
+      const message = initError ? 'Service temporarily unavailable' : 'Copilot client not initialized';
+      console.error(`Webhook rejected: ${message}`);
+      res.status(status).json({ error: message });
+      return;
+    }
 
   // Webhook signature verification with HMAC-SHA256 and constant-time comparison
   const signature = req.get('X-Hub-Signature-256');
