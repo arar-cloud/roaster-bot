@@ -14,8 +14,12 @@ function initializeCopilotClient() {
     if (!token || token.trim() === '') {
       throw new Error('GITHUB_TOKEN environment variable is required and cannot be empty');
     }
+    const trimmedToken = token.trim();
+    if (trimmedToken.length === 0) {
+      throw new Error('GITHUB_TOKEN cannot be empty after trimming');
+    }
     globalCopilotClient = new CopilotClient({
-      token: token.trim(),
+      token: trimmedToken,
     });
     consolee.log('Copilot client initialized successfully');
   } catch (err) {
