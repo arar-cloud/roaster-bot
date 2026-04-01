@@ -53,9 +53,10 @@ app.use(express.json({
 
 // Apply rate limiter to webhook endpoint explicitly
 const webhookLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 60 * 1000,
+  max: 10,
   message: 'Too many webhook requests',
+  keyGenerator: (req) => req.headers['x-github-signature-256'] as string || req.ip || 'unknown',
 });
 
 // Capture raw body for webhook verification before parsing
