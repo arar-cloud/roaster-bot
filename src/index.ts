@@ -151,7 +151,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     try {
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+      // Ensure both buffers have equal length to prevent timing attacks
+      if (signature.length !== digest.length || !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
         return res.status(401).send('Invalid signature.');
       }
     } catch (err) {
