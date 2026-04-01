@@ -125,6 +125,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) => {
+  try {
   if (!globalCopilotClient || initError) {
     const status = initError ? 503 : 500;
     const message = initError ? 'Service temporarily unavailable' : 'Copilot client not initialized';
@@ -233,6 +234,10 @@ app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) 
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
+  }
+  } catch (parseError) {
+    console.error('Malformed webhook payload:', parseError);
+    return res.status(400).json({ error: 'Invalid JSON payload' });
   }
 });
 
