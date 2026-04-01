@@ -73,8 +73,10 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
     },
   },
+  hsts: { maxAge: 31536000, includeSubDomains: true },
   frameguard: { action: 'deny' },
   noSniff: true,
+  xssFilter: true,
 }));
 
 // Rate limiting FIRST (before body parsing to prevent bypass)
@@ -138,6 +140,8 @@ app.use((req, res, next) => {
   if (req.method !== 'GET' && (!req.headers['content-type'] || !req.headers['content-type'].includes('application/json'))) {
     return res.status(400).json({ error: 'Content-Type must be application/json' });
   }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
   next();
 });
 
