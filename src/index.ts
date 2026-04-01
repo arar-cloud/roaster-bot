@@ -128,7 +128,6 @@ const corsOptions = {
 };
 
 app.post('/agent', limiter, webhookLimiter, asyncHandler(async (req: Request, res: Response) => {
-  try {
   if (!globalCopilotClient || initError) {
     const status = initError ? 503 : 500;
     const message = initError ? 'Service temporarily unavailable' : 'Copilot client not initialized';
