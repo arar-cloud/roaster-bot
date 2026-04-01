@@ -39,6 +39,12 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 
+const apiKey = process.env.OPENAI_API_KEY || '';
+if (!apiKey) {
+  console.error('OPENAI_API_KEY is required');
+  process.exit(1);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
