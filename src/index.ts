@@ -35,7 +35,19 @@ const limiter = rateLimit({
 
 app.set('trust proxy', 1);
 app.use(helmet({
-  contentSecurityPolicy: true,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
   crossOriginEmbedderPolicy: true,
   crossOriginOpenerPolicy: true,
   crossOriginResourcePolicy: true,
