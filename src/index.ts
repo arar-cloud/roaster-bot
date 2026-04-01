@@ -56,9 +56,14 @@ function verifyRequestSignature(req: Request, res: Response, next: Function) {
   if (!signature) {
     return res.status(401).json({ error: 'Missing request signature' });
   }
+  // Validate signature format (must be valid hex string)
+  if (!/^[a-f0-9]{64}$/.test(signature)) {
+    return res.status(401).json({ error: 'Invalid signature format' });
+  }
   const bodyStr = JSON.stringify(req.body);
   const expectedSignature = crypto.createHmac('sha256', signingSecret).update(bodyStr).digest('hex');
-  if (signature !== expectedSignature) {
+  // Use constant-time comparison to prevent timing attacks
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
     return res.status(401).json({ error: 'Invalid request signature' });
   }
   next();
