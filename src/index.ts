@@ -35,7 +35,7 @@ function initializeCopilotClient() {
     globalCopilotClient = new CopilotClient({
       token: trimmedToken,
     });
-    consolee.log('Copilot client initialized successfully');
+    console.log('Copilot client initialized successfully');
   } catch (err) {
     initError = err instanceof Error ? err : new Error(String(err));
     console.error('Failed to initialize Copilot client:', initError);
@@ -293,6 +293,9 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
 
     // Sanitize user message to prevent injection
     const sanitizedMessage = prompt.replace(/[\x00-\x1F\x7F]/g, '').trim();
+    if (typeof sanitizedMessage !== 'string' || sanitizedMessage.length === 0) {
+      return res.status(400).json({ error: 'Invalid message after sanitization' });
+    }
 
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
