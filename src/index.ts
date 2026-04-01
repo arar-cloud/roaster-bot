@@ -37,7 +37,7 @@ declare global {
 
 const app = express();
 
-// Security headers FIRST
+// Security headers with helmet middleware
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -79,17 +79,13 @@ app.use((req, res, next) => {
 
 const port = process.env.PORT || 3000;
 
-// Validate critical environment variables
+// Validate critical environment variables at startup
 if (!process.env.OPENAI_API_KEY) {
   throw new Error('OPENAI_API_KEY environment variable is required');
 }
 
-// Validate required environment variables
-const requiredEnvVars = ['GITHUB_WEBHOOK_SECRET', 'GITHUB_TOKEN'];
-const missingVars = requiredEnvVars.filter(v => !process.env[v]);
-if (missingVars.length > 0) {
-  console.error(`Missing required environment variables: ${missingVars.join(', ')}`);
-  process.exit(1);
+if (!process.env.GITHUB_WEBHOOK_SECRET) {
+  throw new Error('GITHUB_WEBHOOK_SECRET environment variable is required');
 }
 
 app.use(express.json({
