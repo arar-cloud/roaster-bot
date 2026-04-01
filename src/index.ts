@@ -57,6 +57,11 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+// Error handling wrapper for async endpoints
+const asyncHandler = (fn: any) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  return Promise.resolve(fn(req, res, next)).catch(next);
+};
+
 // Apply rate limiter to webhook endpoint explicitly
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -122,7 +127,7 @@ const corsOptions = {
   optionsSuccessStatus: 200
 };
 
-app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, webhookLimiter, asyncHandler(async (req: Request, res: Response) => {
   try {
   if (!globalCopilotClient || initError) {
     const status = initError ? 503 : 500;
