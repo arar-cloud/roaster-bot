@@ -165,16 +165,13 @@ app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) 
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token || token.trim() === '') return res.status(401).send('Missing or invalid X-GitHub-Token.');
 
   // Initialize client with the user's token
   let client: CopilotClient | null = null;
   try {
     client = new CopilotClient({
-      env: {
-        GITHUB_TOKEN: token,
-        ...process.env
-      }
+      token: token.trim()
     });
   } catch (err) {
     console.error('Failed to initialize user Copilot client:', err);
