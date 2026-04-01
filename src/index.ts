@@ -160,6 +160,11 @@ app.get('/', (req, res) => {
   `);
 });
 
+app.post('/roast', body('message').trim().isLength({ min: 1, max: 1000 }).escape(), (req: Request, res: Response, next: NextFunction) => { const errors = validationResult(req); if (!errors.isEmpty()) { return res.status(400).json({ errors: errors.array() }); } next(); }, asyncHandler(async (req: Request, res: Response) => {
+  // Roast endpoint implementation
+  res.json({ roast: 'Your code needs validation!' });
+}));
+
 app.post('/webhook', (req: Request, res: Response) => {
   const signature = req.headers['x-hub-signature-256'] as string;
   if (!signature) {
