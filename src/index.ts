@@ -119,6 +119,13 @@ app.get('/', (req, res) => {
   `);
 });
 
+// CORS configuration - restrict to trusted origins only
+const corsOptions = {
+  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
 app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) => {
   try {
   if (!globalCopilotClient || initError) {
@@ -232,7 +239,10 @@ app.post('/agent', limiter, webhookLimiter, async (req: Request, res: Response) 
     return res.status(400).json({ error: 'Invalid JSON payload' });
   } catch (error) {
     console.error('Webhook processing error:', error);
-    res.status(400).json({ error: 'Invalid payload or processing failed' });
+    // Sanitize error response to prevent sensitive data leakage
+    const isProduction = process.env.NODE_ENV === 'production';
+    const errorResponse = isProduction ? { error: 'Request processing failed' } : { error: 'Invalid payload or processing failed' };
+    res.status(400).json(errorResponse);
   }
 });
 
