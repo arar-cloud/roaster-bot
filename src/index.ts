@@ -80,7 +80,8 @@ app.use(helmet({
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: 'Too many requests from this IP'
+  message: 'Too many requests from this IP',
+  skip: (req) => req.method === 'GET'
 });
 app.use(limiter);
 
@@ -126,8 +127,6 @@ app.use(express.json({
     req.rawBody = buf.toString();
   }
 }));
-
-app.use(limiter);
 
 app.use((req, res, next) => {
   if (req.method !== 'GET' && (!req.headers['content-type'] || !req.headers['content-type'].includes('application/json'))) {
