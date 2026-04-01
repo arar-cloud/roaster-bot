@@ -11,8 +11,12 @@ let initError: Error | null = null;
 
 function initializeCopilotClient() {
   try {
-    if (!signingSecret) {
+    if (!signingSecret || signingSecret.trim().length === 0) {
     return res.status(500).json({ error: 'Server misconfiguration: signing secret not set' });
+  }
+  const signingSecretTrimmed = signingSecret.trim();
+  if (!/^[a-zA-Z0-9_\-]+$/.test(signingSecretTrimmed)) {
+    return res.status(400).json({ error: 'Invalid webhook secret format' });
   }
   const token = process.env.GITHUB_TOKEN;
     if (!token || typeof token !== 'string') {
@@ -21,6 +25,9 @@ function initializeCopilotClient() {
     const trimmedToken = token.trim();
     if (trimmedToken.length === 0) {
       throw new Error('GITHUB_TOKEN cannot be empty after trimming');
+    }
+    if (!/^[a-zA-Z0-9_\-]+$/.test(trimmedToken)) {
+      throw new Error('GITHUB_TOKEN contains invalid characters');
     }
     if (trimmedToken.length < 20 || trimmedToken.length > 1000) {
       throw new Error('GITHUB_TOKEN has invalid length');
@@ -230,9 +237,14 @@ app.post('/roast', verifyRequestSignature, async (req: Request, res: Response) =
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
 
-  if (!webhookSecret) {
+  if (!webhookSecret || webhookSecret.trim().length === 0) {
     console.warn('WEBHOOK_SECRET not configured; webhook verification disabled');
     return res.status(400).send('WEBHOOK_SECRET not configured');
+  }
+  const webhookSecretTrimmed = webhookSecret.trim();
+  if (!/^[a-zA-Z0-9_\-]+$/.test(webhookSecretTrimmed)) {
+    console.warn('Invalid webhook secret format');
+    return res.status(400).send('Invalid webhook secret format');
   }
 
   if (!signature) {
