@@ -177,8 +177,18 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
   if (code.length > 50000) {
     return res.status(413).json({ error: 'Code payload exceeds maximum size' });
   }
-  // Prevent dangerous patterns: eval, Function constructor, exec, spawn
-  if (/\b(eval|Function|exec|spawn|require|import)\s*\(/.test(code)) {
+  // Prevent dangerous patterns: eval, Function constructor, exec, spawn, indirect eval
+  // Check direct calls: eval(...), Function(...), exec(...), spawn(...), require(...), import(...)
+  // Also catch variations: eval`...`, Function\`...\`, etc.
+  const dangerousEvalPatterns = [
+    /\b(eval|Function)\s*\(/,           // Direct calls
+    /\b(eval|Function)\s*`/,            // Template literals
+    /\beval\s*=/,                       // Assignment
+    /\bnew\s+Function\s*\(/,            // new Function
+    /\b(require|import)\s*\(/,          // Module loading
+    /\b(exec|spawn)\s*\(/               // Process execution
+  ];
+  if (dangerousEvalPatterns.some(pattern => pattern.test(code))) {
     return res.status(400).json({ error: 'Code contains restricted operations' });
   }
 
