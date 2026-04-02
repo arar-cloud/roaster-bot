@@ -45,9 +45,60 @@ const validateInput = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+// Session tracking map: token -> {createdAt, lastUsedAt, expiresAt}
+const sessionMap = new Map<string, {createdAt: number; lastUsedAt: number; expiresAt: number}>();
+const SESSION_TIMEOUT_MS = 3600000; // 1 hour
+const SESSION_IDLE_TIMEOUT_MS = 900000; // 15 minutes
+
 // Retry wrapper for external API calls with exponential backoff
 // Auth middleware: validate API key token without exposing it in logs
 const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid authorization header' });
+  }
+
+  const token = authHeader.slice(7);
+  const now = Date.now();
+  const session = sessionMap.get(token);
+
+  // Check if token exists and hasn't expired
+  if (!session) {
+    const apiKey = process.env.COPILOT_API_KEY;
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const apiKeyHash = crypto.createHash('sha256').update(apiKey || '').digest('hex');
+    
+    if (tokenHash !== apiKeyHash) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+    
+    // Create new session
+    sessionMap.set(token, {
+      createdAt: now,
+      lastUsedAt: now,
+      expiresAt: now + SESSION_TIMEOUT_MS
+    });
+  } else {
+    // Check session expiration
+    if (now > session.expiresAt) {
+      sessionMap.delete(token);
+      return res.status(401).json({ error: 'Token expired' });
+    }
+    
+    // Check idle timeout
+    if (now - session.lastUsedAt > SESSION_IDLE_TIMEOUT_MS) {
+      sessionMap.delete(token);
+      return res.status(401).json({ error: 'Session timeout due to inactivity' });
+    }
+    
+    // Update last used time
+    session.lastUsedAt = now;
+  }
+
+  next();
+};
+
+const oldVerifyApiKey = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.get('Authorization');
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Missing or invalid Authorization header' });
