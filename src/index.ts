@@ -149,9 +149,15 @@ const validateToken = (req: express.Request, res: express.Response, next: expres
 
 // Safe command dispatcher - no eval, no dynamic code execution
 const executeCommand = (cmd: string): any => {
+  // Validate command format before processing
+  if (typeof cmd !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(cmd) || cmd.length > 256) {
+    throw new Error('Invalid command format');
+  }
+  
   const allowedCommands: { [key: string]: () => any } = {
     'roast': () => ({ type: 'roast', status: 'initiated' }),
     'status': () => ({ type: 'status', status: 'online' }),
+    'ping': () => ({ type: 'ping', status: 'pong' }),
   };
   if (allowedCommands[cmd]) {
     return allowedCommands[cmd]();
@@ -161,6 +167,11 @@ const executeCommand = (cmd: string): any => {
 
 // Safe operation dispatcher - no eval, no dynamic code execution
 const executeOperation = (operation: string, params: Record<string, any>): Promise<any> => {
+  // Validate operation parameter format
+  if (typeof operation !== 'string' || !/^[a-zA-Z0-9_]+$/.test(operation) || operation.length > 256) {
+    throw new Error('Invalid operation format');
+  }
+  
   if (!ALLOWED_OPERATIONS.has(operation)) {
     throw new Error(`Operation not allowed: ${operation}`);
   }
