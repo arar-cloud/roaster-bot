@@ -1,4 +1,24 @@
-import 'dotenv.config();
+import 'dotenv/config';
+import { body, validationResult } from 'express-validator';
+
+// Input validation helpers
+const sanitizeInput = (input: string): string => {
+  if (typeof input !== 'string') return '';
+  return input
+    .trim()
+    .slice(0, 10000) // Max 10KB
+    .replace(/[<>"']/g, (char) => {
+      const escapeMap: { [key: string]: string } = {
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      };
+      return escapeMap[char] || char;
+    });
+};
+
+const validateUserId = (id: string): boolean => /^[a-zA-Z0-9_-]+$/.test(id) && id.length < 256;
 
 // Session token management
 const SESSION_TIMEOUT = 3600000; // 1 hour
@@ -133,7 +153,13 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-// Input validation middleware
+// Express validator middleware - validate and sanitize request bodies
+const validateMessagePayload = [
+  body('messages').optional().isArray().withMessage('Messages must be an array'),
+  body('messages.*.content').optional().isString().trim().isLength({ max: 4000 }).withMessage('Message content must be ≤4000 chars'),
+  body('messages.*.role').optional().isIn(['user', 'assistant']).withMessage('Invalid message role'),
+];
+
 const validateInput = (req: Request, res: Response, next: any) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
