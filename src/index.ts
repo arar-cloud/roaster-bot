@@ -86,7 +86,25 @@ const app = express();
 const authMiddleware = (req: Request, res: Response, next: Function) => {
   const authHeader = req.headers['authorization'];
   const apiKey = process.env.API_KEY;
-  if (!apiKey || !authHeader || authHeader !== `Bearer ${apiKey}`) {
+  
+  // Validate token existence and minimum length
+  if (!apiKey || apiKey.length < 20) {
+    console.error('Missing or invalid API_KEY configuration');
+    return res.status(500).json({ error: 'Server misconfiguration' });
+  }
+  
+  // Check authorization header format and minimum length
+  if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  const token = authHeader.slice(7); // Remove 'Bearer '
+  if (token.length < 20) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // Use timing-safe comparison to prevent token guessing attacks
+  if (!crypto.timingSafeEqual(Buffer.from(token), Buffer.from(apiKey))) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   next();
