@@ -35,6 +35,26 @@ declare global {
 }
 
 const app = express();
+
+// Request-scoped memoization cache for Copilot API calls
+const requestCacheMap = new WeakMap<Request, Map<string, Promise<any>>>();
+
+const getMemoizedResponse = async <T>(
+  req: Request,
+  cacheKey: string,
+  fn: () => Promise<T>
+): Promise<T> => {
+  if (!requestCacheMap.has(req)) {
+    requestCacheMap.set(req, new Map());
+  }
+  const cache = requestCacheMap.get(req)!;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey)!;
+  }
+  const promise = fn();
+  cache.set(cacheKey, promise);
+  return promise;
+};
 const port = process.env.PORT || 3000;
 let isHealthy = true;
 
