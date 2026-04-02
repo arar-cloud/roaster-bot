@@ -273,6 +273,12 @@ const limiter = rateLimit({
   keyGenerator: (req: Request) => getCachedRateLimitKey(req),
 });
 
+// Apply security middleware globally before route handlers
+app.use(express.json());
+app.use(helmet());
+app.use(limiter);
+app.use(validateInput);
+
 // Input validation middleware for user commands
 const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     const { code, messages } = req.body;
