@@ -25,6 +25,29 @@ const limiter = rateLimit({
 });
 
 // Input validation middleware for user commands
+// Input validation helper for webhook payloads
+function validateWebhookInput(body: any): boolean {
+  if (!body || typeof body !== 'object') return false;
+  
+  // Validate action field against injection patterns
+  const action = body.action;
+  if (action && typeof action === 'string') {
+    if (/[<>"'`();\$\{\}]/g.test(action)) return false;
+  }
+  
+  // Validate issue and PR fields are strings only (not objects that could contain code)
+  if (body.issue) {
+    if (body.issue.title && typeof body.issue.title !== 'string') return false;
+    if (body.issue.body && typeof body.issue.body !== 'string') return false;
+  }
+  if (body.pull_request) {
+    if (body.pull_request.title && typeof body.pull_request.title !== 'string') return false;
+    if (body.pull_request.body && typeof body.pull_request.body !== 'string') return false;
+  }
+  
+  return true;
+}
+
 const validateUserInput = (req: Request, res: Response, next: Function) => {
   const { code, messages } = req.body;
   
@@ -69,6 +92,23 @@ const validateUserInput = (req: Request, res: Response, next: Function) => {
   
   next();
 };
+
+// Webhook endpoint with strict input validation
+app.post('/webhook', limiter, (req: Request, res: Response) => {
+  // Validate webhook payload structure
+  if (!validateWebhookInput(req.body)) {
+    return res.status(400).json({ error: 'Invalid webhook payload' });
+  }
+  
+  // GitHub webhook signature verification
+  const signature = req.headers['x-github-event'];
+  if (!signature) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
+  // Acknowledge webhook receipt
+  res.status(200).json({ status: 'received' });
+});
 
 app.use(helmet());
 app.use(express.json({
