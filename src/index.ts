@@ -141,11 +141,18 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    // Use timing-safe comparison to prevent timing attacks
+    // Use async crypto.subtle for non-blocking HMAC computation
+    const encoder = new TextEncoder();
     try {
+      const keyData = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(webhookSecret),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const signatureBuffer = await crypto.subtle.sign('HMAC', keyData, encoder.encode(rawBody));
+      const digest = 'sha256=' + Buffer.from(signatureBuffer).toString('hex');
       if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
