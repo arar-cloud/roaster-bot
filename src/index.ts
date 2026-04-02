@@ -22,6 +22,29 @@ const sanitizeForLogging = (obj: any): any => {
   return sanitized;
 };
 
+// Input validation middleware: sanitize and validate all user inputs
+const validateInput = (req: Request, res: Response, next: NextFunction) => {
+  const allowedPattern = /^[a-zA-Z0-9_\-\.\(\)\{\}\[\]\,;:\s'"`=+*/<>!&|?~^@#$%\\\n]*$/;
+  
+  // Validate query parameters
+  for (const [key, value] of Object.entries(req.query)) {
+    if (typeof value === 'string' && !allowedPattern.test(value)) {
+      return res.status(400).json({ error: `Invalid characters in query parameter: ${key}` });
+    }
+  }
+  
+  // Validate request body
+  if (req.body && typeof req.body === 'object') {
+    for (const [key, value] of Object.entries(req.body)) {
+      if (typeof value === 'string' && !allowedPattern.test(value)) {
+        return res.status(400).json({ error: `Invalid characters in request body: ${key}` });
+      }
+    }
+  }
+  
+  next();
+};
+
 // Retry wrapper for external API calls with exponential backoff
 // Auth middleware: validate API key token without exposing it in logs
 const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
