@@ -58,11 +58,29 @@ const getMemoizedResponse = async <T>(
 const port = process.env.PORT || 3000;
 let isHealthy = true;
 
+const rateLimitKeyCache = new Map<string, string>();
+
+const getCachedRateLimitKey = (req: Request): string => {
+  const ip = req.ip || 'unknown';
+  if (rateLimitKeyCache.has(ip)) {
+    return rateLimitKeyCache.get(ip)!;
+  }
+  const key = `rl:${ip}`;
+  rateLimitKeyCache.set(ip, key);
+  // Evict oldest cache entry when size exceeds threshold to prevent unbounded growth
+  if (rateLimitKeyCache.size > 10000) {
+    const firstKey = rateLimitKeyCache.keys().next().value;
+    rateLimitKeyCache.delete(firstKey);
+  }
+  return key;
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req: Request) => getCachedRateLimitKey(req),
 });
 
 // Input validation middleware for user commands
