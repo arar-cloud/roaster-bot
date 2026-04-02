@@ -191,6 +191,22 @@ app.use((req: Request, res: Response, next: Function) => {
   next();
 });
 
+// Test Copilot connection at startup with graceful fallback
+let copilotReady = false;
+try {
+  if (process.env.COPILOT_TOKEN) {
+    const testClient = new CopilotClient({ token: process.env.COPILOT_TOKEN });
+    console.log('Copilot client initialized successfully');
+    copilotReady = true;
+  } else {
+    console.warn('Warning: COPILOT_TOKEN not set. Copilot features disabled.');
+  }
+} catch (error) {
+  console.error('Warning: Copilot client initialization failed. Running in degraded mode.');
+  console.error(error instanceof Error ? error.message : String(error));
+  copilotReady = false;
+}
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
