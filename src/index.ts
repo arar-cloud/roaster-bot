@@ -24,6 +24,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Authentication middleware for protected endpoints
+const authMiddleware = (req: Request, res: Response, next: Function) => {
+  const token = req.headers['x-auth-token'] || req.headers.authorization?.replace('Bearer ', '');
+  const expectedToken = process.env.AUTH_TOKEN;
+  
+  if (!token || !expectedToken || token !== expectedToken) {
+    return res.status(401).json({ error: 'Unauthorized: invalid or missing auth token' });
+  }
+  next();
+};
+
 // Input validation middleware for user commands
 // Input validation helper for webhook payloads
 function validateWebhookInput(body: any): boolean {
@@ -132,7 +143,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, validateUserInput, async (req: Request, res: Response) => {
+app.post('/agent', limiter, validateUserInput, authMiddleware, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
