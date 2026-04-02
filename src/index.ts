@@ -94,9 +94,18 @@ const validateToken = (req: express.Request, res: express.Response, next: expres
   const token = req.headers['authorization']?.replace('Bearer ', '');
   const validToken = process.env.API_TOKEN;
   
-  if (!token || token !== validToken) {
+  if (!token || !validToken) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
+  
+  try {
+    const tokenBuffer = Buffer.from(token);
+    const validTokenBuffer = Buffer.from(validToken);
+    timingSafeEqual(tokenBuffer, validTokenBuffer);
+  } catch (err) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  
   next();
 };
 
