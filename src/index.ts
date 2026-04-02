@@ -227,6 +227,7 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
   if (messages.length === 0 || messages.length > 100) {
     return res.status(400).json({ error: 'Messages array length must be 1-100' });
   }
+  const MAX_MESSAGE_SIZE = 8192; // 8KB per individual message
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
     if (!msg || typeof msg !== 'object') {
@@ -237,6 +238,11 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     }
     if (typeof msg.content !== 'string' || msg.content.length === 0 || msg.content.length > 10000) {
       return res.status(400).json({ error: `messages[${i}].content must be a string between 1-10000 chars` });
+    }
+    // Enforce size limit per individual message and prevent deeply nested payloads
+    const messageSize = JSON.stringify(msg).length;
+    if (messageSize > MAX_MESSAGE_SIZE) {
+      return res.status(400).json({ error: `messages[${i}] exceeds maximum size of ${MAX_MESSAGE_SIZE} bytes` });
     }
     // Sanitize error messages for XSS: escape HTML entities
     const htmlEscapeMap: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
