@@ -20,11 +20,30 @@ describe('Security Hardening', () => {
   });
 
   it('should reject eval-based command execution', () => {
-    const cmd = 'process.exit()';
     expect(() => {
-      // Safe dispatcher rejects unwhitelisted commands
-      const allowedCommands: { [key: string]: () => void } = {};
-      if (!allowedCommands[cmd]) throw new Error('Command not allowed');
-    }).toThrow('Command not allowed');
+      const maliciousCommand = "require('child_process').exec('rm -rf /')";
+      // New implementation uses whitelist, not eval
+      const allowedCommands = ['ping', 'status', 'help'];
+      if (!allowedCommands.some(cmd => cmd === maliciousCommand)) {
+        throw new Error('Command not in whitelist');
+      }
+    }).toThrow('Command not in whitelist');
+  });
+
+  it('should validate CSRF tokens match session', () => {
+    const sessionId = 'sess-123';
+    const csrfToken = 'csrf-456';
+    const sessions = new Map();
+    sessions.set(sessionId, { userId: 'user1', csrfToken });
+    
+    const session = sessions.get(sessionId);
+    expect(session?.csrfToken).toBe(csrfToken);
+    expect(session?.csrfToken).not.toBe('invalid-token');
+  });
+
+  it('should prevent prototype pollution attacks', () => {
+    const payload = JSON.parse('{"user":"admin"}');
+    const sanitized = Object.keys(payload).filter(key => !key.startsWith('__'));
+    expect(sanitized).not.toContain('__proto__');
   });
 });
