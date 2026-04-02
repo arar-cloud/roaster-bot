@@ -11,7 +11,6 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    }
   }
 }
 
@@ -51,18 +50,18 @@ const verifyWebhookSignature = (req: any, res: Response, next: Function) => {
   if (req.path === '/api/github-webhook' || req.path === '/webhook') {
     const signature = req.headers['x-hub-signature-256'] as string;
     const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
-    
+
     if (!signature || !webhookSecret) {
       return res.status(401).json({ error: 'Missing signature or secret' });
     }
-    
+
     const hash = crypto
       .createHmac('sha256', webhookSecret)
       .update(req.rawBody || '')
       .digest('hex');
-    
+
     const expectedSignature = `sha256=${hash}`;
-    
+
     try {
       if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
         return res.status(401).json({ error: 'Invalid signature' });
@@ -177,13 +176,13 @@ const validateInputSanitization = (req: Request, res: Response, next: Function) 
   if (req.body && JSON.stringify(req.body).length > 1048576) {
     return res.status(413).json({ error: 'Request body too large' });
   }
-  
+
   // Sanitize string inputs: remove null bytes and control characters
   const sanitizeString = (str: string): string => {
     if (typeof str !== 'string') return str;
     return str.replace(/[\x00-\x1F\x7F]/g, '').slice(0, 10000);
   };
-  
+
   // Recursively sanitize string fields in request body
   const sanitizeObject = (obj: any): any => {
     if (obj === null || obj === undefined) return obj;
@@ -200,7 +199,7 @@ const validateInputSanitization = (req: Request, res: Response, next: Function) 
     }
     return obj;
   };
-  
+
   if (req.body && typeof req.body === 'object') {
     req.body = sanitizeObject(req.body);
   }
