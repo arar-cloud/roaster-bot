@@ -52,14 +52,24 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
+    // Validate required headers and payload
+    if (typeof signature !== 'string') {
+      return res.status(400).json({ error: 'Invalid signature header' });
+    }
+    
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+    } catch (e) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
   }
 
