@@ -308,6 +308,19 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
 };
 
 app.use(helmet());
+
+// Input validation middleware
+app.use(express.json({ limit: '1mb' }));
+app.use((req, res, next) => {
+  if (req.body && typeof req.body.prompt === 'string') {
+    // Sanitize: remove null bytes, limit length, escape HTML
+    req.body.prompt = req.body.prompt
+      .replace(/\0/g, '')
+      .substring(0, 5000)
+      .replace(/[<>"']/g, char => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#x27;' })[char]);
+  }
+  next();
+});
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
