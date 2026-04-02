@@ -3,6 +3,27 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import helmet from 'helmet';
+
+// Retry wrapper for external API calls with exponential backoff
+const retryWithBackoff = async <T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3
+): Promise<T> => {
+  let lastError: Error | undefined;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      if (i < maxRetries - 1) {
+        const delay = Math.pow(2, i) * 1000; // exponential backoff: 1s, 2s, 4s
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError || new Error('Retries exhausted');
+};
 
 // Extend Express Request type properly
 declare global {
@@ -121,13 +142,17 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Initialize client with the user's token using retry logic
+  const client = await retryWithBackoff(
+    () => Promise.resolve(
+      new CopilotClient({
+        env: {
+          GITHUB_TOKEN: token,
+          ...process.env
+        }
+      })
+    )
+  );
 
   try {
     const systemPrompt = `
