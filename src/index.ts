@@ -128,7 +128,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, validateUserInput, async (req: Request, res: Response) => {
+app.post('/agent', limiter, validateUserInput, async (req: Request, res: Response, next: Function) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -216,8 +216,10 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
 
   } catch (error) {
     console.error('Error:', error);
-    // Don't expose internal error details to client
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    // Pass to error middleware instead of sending response directly
+    if (!res.headersSent) {
+      next(error);
+    }
   } finally {
     await client.stop();
   }
@@ -273,6 +275,13 @@ function gracefulShutdown() {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
 
 initializeClients();
 
