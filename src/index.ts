@@ -99,13 +99,44 @@ const limiter = rateLimit({
 });
 
 // Input validation middleware for user commands
-const validateUserInput = (req: Request, res: Response, next: Function) => {
+const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     const { code, messages } = req.body;
 
   // Validate content-type
   const contentType = req.get('Content-Type');
   if (contentType && !contentType.includes('application/json')) {
     return res.status(415).json({ error: 'Content-Type must be application/json' });
+  }
+
+  // Validate code field exists and is string (prevent injection)
+  if (typeof code !== 'string') {
+    return res.status(400).json({ error: 'Invalid code format' });
+  }
+  if (code.length > 50000) {
+    return res.status(413).json({ error: 'Code payload exceeds maximum size' });
+  }
+  // Prevent dangerous patterns: eval, Function constructor, exec, spawn
+  if (/\b(eval|Function|exec|spawn|require|import)\s*\(/.test(code)) {
+    return res.status(400).json({ error: 'Code contains restricted operations' });
+  }
+
+  // Validate messages array
+  if (!Array.isArray(messages)) {
+    return res.status(400).json({ error: 'Messages must be an array' });
+  }
+  if (messages.length === 0 || messages.length > 100) {
+    return res.status(400).json({ error: 'Messages array length must be 1-100' });
+  }
+  for (const msg of messages) {
+    if (typeof msg.role !== 'string' || typeof msg.content !== 'string') {
+      return res.status(400).json({ error: 'Invalid message format' });
+    }
+    if (!['user', 'assistant', 'system'].includes(msg.role)) {
+      return res.status(400).json({ error: 'Invalid message role' });
+    }
+    if (msg.content.length > 10000) {
+      return res.status(413).json({ error: 'Message content exceeds maximum size' });
+    }
   }
 
   // Enforce payload size limits (1MB already set by express.json, but validate at logic level)
