@@ -15,6 +15,12 @@ const sanitizeForLogging = (obj: any): any => {
     } else if (typeof sanitized[key] === 'object') {
       sanitized[key] = sanitizeForLogging(sanitized[key]);
     }
+    // Strict whitelist: alphanumeric, underscore, dot, dash, newline, space, braces, brackets, quotes, common operators
+    // Explicitly reject shell metacharacters and command injection vectors
+    const allowedPattern = /^[a-zA-Z0-9_\-\.\(\)\{\}\[\]\,;:\s'"`=+*/<>!&|?~^@#$%\\\n]*$/;
+    if (!allowedPattern.test(code)) {
+      return res.status(400).json({ error: 'Code contains invalid characters' });
+    }
   }
   return sanitized;
 };
@@ -263,7 +269,7 @@ app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request
         return false;
       }
     })();
-    
+
     if (!validationResult) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
