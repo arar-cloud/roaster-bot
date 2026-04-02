@@ -156,8 +156,9 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Pragma', 'no-cache');
 
     session.on((event: any) => {
       if (event.type === "assistant.message_delta") {
@@ -175,10 +176,20 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
 
   } catch (error) {
     console.error('Error:', error);
+    // Don't expose internal error details to client
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
   }
+});
+
+// Security headers for sensitive endpoints
+app.use((req: Request, res: Response, next: Function) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  next();
 });
 
 app.listen(port, () => {
