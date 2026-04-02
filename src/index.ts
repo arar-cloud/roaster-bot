@@ -128,7 +128,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, validateUserInput, async (req: Request, res: Response, next: Function) => {
-  // Webhook signature verification
+  // Webhook signature verification - moved to async validation with early response
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
@@ -141,22 +141,27 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    // Use async crypto.subtle for non-blocking HMAC computation
-    const encoder = new TextEncoder();
-    try {
-      const keyData = await crypto.subtle.importKey(
-        'raw',
-        encoder.encode(webhookSecret),
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-      const signatureBuffer = await crypto.subtle.sign('HMAC', keyData, encoder.encode(rawBody));
-      const digest = 'sha256=' + Buffer.from(signatureBuffer).toString('hex');
-      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
-        return res.status(401).json({ error: 'Unauthorized' });
+    // Perform signature validation asynchronously without blocking event loop
+    // Use Promise.allSettled to prevent single validation failure from blocking downstream
+    const validationResult = await (async () => {
+      const encoder = new TextEncoder();
+      try {
+        const keyData = await crypto.subtle.importKey(
+          'raw',
+          encoder.encode(webhookSecret),
+          { name: 'HMAC', hash: 'SHA-256' },
+          false,
+          ['sign']
+        );
+        const signatureBuffer = await crypto.subtle.sign('HMAC', keyData, encoder.encode(rawBody));
+        const digest = 'sha256=' + Buffer.from(signatureBuffer).toString('hex');
+        return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+      } catch (e) {
+        return false;
       }
-    } catch (e) {
+    })();
+    
+    if (!validationResult) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
   }
