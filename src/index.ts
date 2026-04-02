@@ -285,7 +285,13 @@ app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request
         );
         const signatureBuffer = await crypto.subtle.sign('HMAC', keyData, encoder.encode(rawBody));
         const digest = 'sha256=' + Buffer.from(signatureBuffer).toString('hex');
-        return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+        try {
+          const signatureBuf = Buffer.from(signature);
+          const digestBuf = Buffer.from(digest);
+          return crypto.timingSafeEqual(signatureBuf, digestBuf);
+        } catch (error) {
+          return false;
+        }
       } catch (e) {
         return false;
       }
