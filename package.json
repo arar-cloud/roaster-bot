@@ -5,8 +5,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node-esm src/index.ts",
-    "dev": "ts-node-esm src/index.ts",
+    "start": "node --require dotenv/config -e \"if(!process.env.GITHUB_TOKEN || !process.env.OPENAI_API_KEY) throw new Error('Missing auth env vars')\" && ts-node-esm src/index.ts",
+    "dev": "node --require dotenv/config -e \"if(!process.env.GITHUB_TOKEN || !process.env.OPENAI_API_KEY) throw new Error('Missing auth env vars')\" && ts-node-esm src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
