@@ -234,12 +234,43 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation and sanitization middleware
 app.use(express.json({
-  limit: '1mb',
+  limit: '10kb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  // Validate Content-Type for state-changing requests
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    const contentType = req.headers['content-type'];
+    if (!contentType || !contentType.includes('application/json')) {
+      return res.status(400).json({ error: 'Content-Type must be application/json' });
+    }
+  }
+  
+  // Prevent prototype pollution attacks
+  const sanitizeObject = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(sanitizeObject);
+    
+    const sanitized: any = {};
+    for (const key of Object.keys(obj)) {
+      if (!['__proto__', 'constructor', 'prototype'].includes(key)) {
+        sanitized[key] = sanitizeObject(obj[key]);
+      }
+    }
+    return sanitized;
+  };
+  
+  if (req.body && typeof req.body === 'object') {
+    req.body = sanitizeObject(req.body);
+  }
+  
+  next();
+});
 app.use(express.urlencoded({ limit: '1mb', extended: false }));
 
 // Apply CSRF validation middleware to all state-changing requests
