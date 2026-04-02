@@ -47,9 +47,18 @@ const validateSessionToken = (token: string): SessionData | null => {
   if (!session) return null;
   if (Date.now() > session.expiresAt) {
     activeSessions.delete(token);
+    csrfTokens.delete(token);
     return null;
   }
   return session;
+};
+
+const invalidateSession = (sessionId: string): void => {
+  const session = activeSessions.get(sessionId);
+  if (session) {
+    activeSessions.delete(sessionId);
+    csrfTokens.delete(sessionId);
+  }
 };
 
 // Auth middleware
