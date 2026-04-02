@@ -10,14 +10,21 @@ const sanitizeForLogging = (obj: any): any => {
   if (typeof obj !== 'object' || obj === null) return obj;
   const sanitized = Array.isArray(obj) ? [...obj] : { ...obj };
   const sensitiveKeys = ['token', 'authorization', 'copilot_token', 'api_key', 'password', 'secret'];
+  const bearerTokenPattern = /Bearer\s+[\S]+/gi;
   const allowedPattern = /^[a-zA-Z0-9_\-\.\(\)\{\}\[\]\,;:\s'"`=+*/<>!&|?~^@#$%\\\n]*$/;
   for (const key in sanitized) {
     if (sensitiveKeys.some(sk => key.toLowerCase().includes(sk))) {
       sanitized[key] = '[REDACTED]';
+      }
     } else if (typeof sanitized[key] === 'object') {
       sanitized[key] = sanitizeForLogging(sanitized[key]);
-    } else if (typeof sanitized[key] === 'string' && !allowedPattern.test(sanitized[key])) {
-      sanitized[key] = '[INVALID_CHARACTERS]';
+    } else if (typeof sanitized[key] === 'string') {
+      // Strip bearer tokens from any string value
+      if (bearerTokenPattern.test(sanitized[key])) {
+        sanitized[key] = sanitized[key].replace(bearerTokenPattern, 'Bearer [REDACTED]');
+      }
+      if (!allowedPattern.test(sanitized[key])) {
+        sanitized[key] = '[INVALID_CHARACTERS]';
     }
   }
   return sanitized;
@@ -282,19 +289,19 @@ const sessionSecurityMiddleware = (req: Request, res: Response, next: NextFuncti
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('X-XSS-Protection', '1; mode=block');
   res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
-  
+
   // Generate CSRF token if not present
   if (!req.get('x-csrf-token') && req.method !== 'GET') {
     const token = createHash('sha256').update(Date.now() + Math.random().toString()).digest('hex');
     res.setHeader('X-CSRF-Token', token);
   }
-  
+
   // Validate auth header format
   const authHeader = req.get('authorization');
   if (authHeader && !/^Bearer\s+[A-Za-z0-9\-_]+$/.test(authHeader)) {
     return res.status(401).json({ error: 'Invalid authorization format' });
   }
-  
+
   next();
 };
 
