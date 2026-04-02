@@ -82,6 +82,16 @@ declare global {
 
 const app = express();
 
+// Authentication middleware
+const authMiddleware = (req: Request, res: Response, next: Function) => {
+  const authHeader = req.headers['authorization'];
+  const apiKey = process.env.API_KEY;
+  if (!apiKey || !authHeader || authHeader !== `Bearer ${apiKey}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
 // Request-scoped memoization cache for Copilot API calls
 const requestCacheMap = new WeakMap<Request, Map<string, Promise<any>>>();
 
