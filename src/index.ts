@@ -217,15 +217,18 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs with retry logic
-    const session = await retryWithBackoff(() =>
-      client.createSession({
-        model: "gpt-4o",
-        streaming: true,
-        systemMessage: {
-          mode: "replace",
-          content: systemPrompt
-        }
-      })
+    const sessionCacheKey = `session:${Buffer.from(systemPrompt).toString('base64').slice(0, 32)}`;
+    const session = await getMemoizedResponse(req, sessionCacheKey, () =>
+      retryWithBackoff(() =>
+        client.createSession({
+          model: "gpt-4o",
+          streaming: true,
+          systemMessage: {
+            mode: "replace",
+            content: systemPrompt
+          }
+        })
+      )
     );
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -242,7 +245,10 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
       }
     });
 
-    await retryWithBackoff(() => session.sendAndWait({ prompt }), 3, 1000);
+    const sendCacheKey = `send:${Buffer.from(prompt).toString('base64').slice(0, 32)}`;
+    await getMemoizedResponse(req, sendCacheKey, () =>
+      retryWithBackoff(() => session.sendAndWait({ prompt }), 3, 1000)
+    );
 
     res.write('data: [DONE]\n\n');
     res.end();
