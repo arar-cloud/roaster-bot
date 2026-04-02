@@ -79,6 +79,26 @@ const app = express();
 
 app.use(helmet());
 
+// Security headers middleware
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+// Authentication middleware
+const validateToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const token = req.headers['authorization']?.replace('Bearer ', '');
+  const validToken = process.env.API_TOKEN;
+  
+  if (!token || token !== validToken) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
 // Safe operation dispatcher - no eval, no dynamic code execution
 const executeOperation = (operation: string, params: Record<string, any>): Promise<any> => {
   if (!ALLOWED_OPERATIONS.has(operation)) {
@@ -181,7 +201,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, validateToken, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
