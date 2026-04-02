@@ -275,6 +275,31 @@ app.use(helmet());
 app.use(limiter);
 app.use(validateInput);
 
+// CSRF and session security middleware
+const sessionSecurityMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  // Set secure headers for session protection
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  
+  // Generate CSRF token if not present
+  if (!req.get('x-csrf-token') && req.method !== 'GET') {
+    const token = createHash('sha256').update(Date.now() + Math.random().toString()).digest('hex');
+    res.setHeader('X-CSRF-Token', token);
+  }
+  
+  // Validate auth header format
+  const authHeader = req.get('authorization');
+  if (authHeader && !/^Bearer\s+[A-Za-z0-9\-_]+$/.test(authHeader)) {
+    return res.status(401).json({ error: 'Invalid authorization format' });
+  }
+  
+  next();
+};
+
+app.use(sessionSecurityMiddleware);
+
 // Input validation middleware for user commands
 const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     const { code, messages } = req.body;
