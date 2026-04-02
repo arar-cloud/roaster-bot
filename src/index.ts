@@ -61,6 +61,14 @@ const invalidateSession = (sessionId: string): void => {
   }
 };
 
+app.post('/logout', authMiddleware, (req: Request, res: Response) => {
+  const token = req.headers.authorization?.split('Bearer ')[1];
+  if (token) {
+    invalidateSession(token);
+  }
+  res.json({ message: 'Logged out successfully' });
+});
+
 // Auth middleware
 const authMiddleware = (req: any, res: any, next: any) => {
   const token = req.headers.authorization?.split('Bearer ')[1];
@@ -71,21 +79,29 @@ const authMiddleware = (req: any, res: any, next: any) => {
   next();
 };
 
-// CSRF token management
-const csrfTokens = new Map();
+// CSRF token management with secure binding
+const csrfTokens = new Map<string, { token: string; createdAt: number }>();
+const CSRF_TOKEN_TIMEOUT = 3600000; // 1 hour
 
 const generateCSRFToken = (sessionId: string): string => {
-  const token = Buffer.from(crypto.randomBytes(32)).toString('hex');
-  csrfTokens.set(sessionId, token);
+  const token = randomBytes(32).toString('hex');
+  csrfTokens.set(sessionId, { token, createdAt: Date.now() });
   return token;
 };
 
 const validateCSRFToken = (sessionId: string, token: string): boolean => {
-  const valid = csrfTokens.get(sessionId) === token;
-  if (!valid) {
+  const stored = csrfTokens.get(sessionId);
+  if (!stored) {
+    throw new Error('CSRF token not found');
+  }
+  if (Date.now() - stored.createdAt > CSRF_TOKEN_TIMEOUT) {
+    csrfTokens.delete(sessionId);
+    throw new Error('CSRF token expired');
+  }
+  if (stored.token !== token) {
     throw new Error('CSRF token validation failed');
   }
-  return valid;
+  return true;
 };
 
 // CSRF token validation middleware for state-changing requests
