@@ -210,7 +210,7 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
       }
     });
 
-    await retryWithBackoff(() => session.sendAndWait({ prompt }));
+    await retryWithBackoff(() => session.sendAndWait({ prompt }), 3, 1000);
 
     res.write('data: [DONE]\n\n');
     res.end();
