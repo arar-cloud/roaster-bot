@@ -277,5 +277,15 @@ process.on('SIGINT', gracefulShutdown);
 initializeClients();
 
 server = app.listen(port, () => {
-  console.log(`Server running on ${port}`);
+  console.log(`Server running on port ${port}`);
+  isHealthy = true;
+});
+
+server.on('error', (error: any) => {
+  console.error('Server error:', error);
+  isHealthy = false;
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Port ${port} is already in use`);
+    process.exit(1);
+  }
 });
