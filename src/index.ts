@@ -105,7 +105,7 @@ const validateUserInput = (req: Request, res: Response, next: Function) => {
 };
 
 // Webhook endpoint with strict input validation
-app.post('/webhook', limiter, (req: Request, res: Response) => {
+app.post('/webhook', limiter, authMiddleware, (req: Request, res: Response) => {
   // Validate webhook payload structure
   if (!validateWebhookInput(req.body)) {
     return res.status(400).json({ error: 'Invalid webhook payload' });
