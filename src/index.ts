@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import { body, validationResult } from 'express-validator';
+import { randomBytes, timingSafeEqual } from 'crypto';
 
 // Input validation helpers
 const sanitizeInput = (input: string): string => {
