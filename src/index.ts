@@ -60,6 +60,35 @@ const authMiddleware = (req: any, res: any, next: any) => {
   }
   req.session = validateSessionToken(token);
   next();
+};
+
+// CSRF token management
+const csrfTokens = new Map();
+
+const generateCSRFToken = (sessionId: string): string => {
+  const token = Buffer.from(crypto.randomBytes(32)).toString('hex');
+  csrfTokens.set(sessionId, token);
+  return token;
+};
+
+const validateCSRFToken = (sessionId: string, token: string): boolean => {
+  const valid = csrfTokens.get(sessionId) === token;
+  if (!valid) {
+    throw new Error('CSRF token validation failed');
+  }
+  return valid;
+};
+
+// CSRF token validation middleware for state-changing requests
+const verifyCsrfMiddleware = (req: any, res: any, next: any) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const sessionId = req.headers['x-session-id'];
+    const csrfToken = req.headers['x-csrf-token'];
+    if (!sessionId || !csrfToken || !validateCSRFToken(sessionId, csrfToken)) {
+      return res.status(403).json({ error: 'CSRF validation failed' });
+    }
+  }
+  next();
 };import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
@@ -176,6 +205,9 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ limit: '1mb', extended: false }));
+
+// Apply CSRF validation middleware to all state-changing requests
+app.use(verifyCsrfMiddleware);
 
 // Input validation middleware for code submission
 app.use((req: Request, res: Response, next) => {
