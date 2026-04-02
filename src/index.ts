@@ -25,7 +25,7 @@ const limiter = rateLimit({
 
 // Input validation middleware for user commands
 const validateUserInput = (req: Request, res: Response, next: Function) => {
-  const { code, messages } = req.body;
+    const { code, messages } = req.body;
 
   // Validate content-type
   const contentType = req.get('Content-Type');
