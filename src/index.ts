@@ -37,6 +37,7 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+let isHealthy = true;
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -99,6 +100,20 @@ app.use(express.json({
   limit: '1mb'
 }));
 app.use(limiter);
+
+// Error handler middleware for graceful degradation
+app.use((err: any, req: Request, res: Response, next: Function) => {
+  console.error('Unhandled error:', err);
+  isHealthy = false;
+  if (!res.headersSent) {
+    res.status(503).json({ error: 'Service temporarily unavailable', message: err.message });
+  }
+});
+
+// Health check endpoint
+app.get('/health', (req: Request, res: Response) => {
+  res.status(isHealthy ? 200 : 503).json({ healthy: isHealthy });
+});
 
 app.get('/', (req, res) => {
   res.send(`
