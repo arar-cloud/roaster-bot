@@ -258,8 +258,8 @@ function initializeClients() {
 }
 
 // Graceful shutdown handler
-function gracefulShutdown() {
-  console.log('Shutdown signal received, closing connections...');
+function gracefulShutdown(signal: string) {
+  console.log(`Received ${signal}, initiating graceful shutdown...`);
   if (server) {
     server.close(() => {
       console.log('Server closed');
@@ -275,8 +275,8 @@ function gracefulShutdown() {
   }
 }
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
