@@ -18,6 +18,12 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Security: Enforce mandatory WEBHOOK_SECRET at startup
+if (!process.env.WEBHOOK_SECRET) {
+  console.error('ERROR: WEBHOOK_SECRET environment variable is required for security.');
+  process.exit(1);
+}
+
 app.use(helmet({
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   contentSecurityPolicy: {
