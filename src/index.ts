@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { CopilotClient } from '@github/copilot-sdk';met';
+import { CopilotClient } from '@github/copilot-sdk';
 
 // Retry wrapper for external API calls with exponential backoff
 const retryWithBackoff = async <T>(
