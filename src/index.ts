@@ -232,22 +232,50 @@ app.use((req: Request, res: Response, next: Function) => {
   next();
 });
 
-// Test Copilot connection at startup with graceful fallback
+// Initialize clients with proper lifecycle management
 let copilotReady = false;
-try {
-  if (process.env.COPILOT_TOKEN) {
-    const testClient = new CopilotClient({ token: process.env.COPILOT_TOKEN });
-    console.log('Copilot client initialized successfully');
-    copilotReady = true;
-  } else {
-    console.warn('Warning: COPILOT_TOKEN not set. Copilot features disabled.');
+let server: any = null;
+
+function initializeClients() {
+  try {
+    if (process.env.COPILOT_TOKEN) {
+      const testClient = new CopilotClient({ token: process.env.COPILOT_TOKEN });
+      console.log('Copilot client initialized successfully');
+      copilotReady = true;
+    } else {
+      console.warn('Warning: COPILOT_TOKEN not set. Copilot features disabled.');
+    }
+  } catch (error) {
+    console.error('Warning: Copilot client initialization failed. Running in degraded mode.');
+    console.error(error instanceof Error ? error.message : String(error));
+    copilotReady = false;
+    isHealthy = false;
   }
-} catch (error) {
-  console.error('Warning: Copilot client initialization failed. Running in degraded mode.');
-  console.error(error instanceof Error ? error.message : String(error));
-  copilotReady = false;
 }
 
-app.listen(port, () => {
+// Graceful shutdown handler
+function gracefulShutdown() {
+  console.log('Shutdown signal received, closing connections...');
+  if (server) {
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+    // Force exit after 30 seconds if graceful close doesn't complete
+    setTimeout(() => {
+      console.error('Forced shutdown due to timeout');
+      process.exit(1);
+    }, 30000);
+  } else {
+    process.exit(0);
+  }
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+initializeClients();
+
+server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
