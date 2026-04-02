@@ -216,7 +216,8 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('[WEBHOOK_ERROR]', { timestamp: new Date().toISOString(), error: errorMsg, stack: error instanceof Error ? error.stack : undefined });
     // Pass to error middleware instead of sending response directly
     if (!res.headersSent) {
       next(error);
