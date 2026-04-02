@@ -109,6 +109,18 @@ const validateToken = (req: express.Request, res: express.Response, next: expres
   next();
 };
 
+// Safe command dispatcher - no eval, no dynamic code execution
+const executeCommand = (cmd: string): any => {
+  const allowedCommands: { [key: string]: () => any } = {
+    'roast': () => ({ type: 'roast', status: 'initiated' }),
+    'status': () => ({ type: 'status', status: 'online' }),
+  };
+  if (allowedCommands[cmd]) {
+    return allowedCommands[cmd]();
+  }
+  throw new Error('Command not allowed');
+};
+
 // Safe operation dispatcher - no eval, no dynamic code execution
 const executeOperation = (operation: string, params: Record<string, any>): Promise<any> => {
   if (!ALLOWED_OPERATIONS.has(operation)) {
