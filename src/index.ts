@@ -24,6 +24,52 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation middleware for user commands
+const validateUserInput = (req: Request, res: Response, next: Function) => {
+  const { code, messages } = req.body;
+  
+  // Validate content-type
+  const contentType = req.get('Content-Type');
+  if (contentType && !contentType.includes('application/json')) {
+    return res.status(415).json({ error: 'Content-Type must be application/json' });
+  }
+  
+  // Enforce payload size limits (1MB already set by express.json, but validate at logic level)
+  const bodySize = JSON.stringify(req.body).length;
+  if (bodySize > 1048576) {
+    return res.status(413).json({ error: 'Request payload too large' });
+  }
+  
+  // Validate code parameter if present
+  if (code && typeof code !== 'string') {
+    return res.status(400).json({ error: 'Invalid code parameter type' });
+  }
+  
+  // Reject null bytes and dangerous control characters
+  const dangerousPattern = /\0|[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+  if (code && dangerousPattern.test(code)) {
+    return res.status(400).json({ error: 'Invalid characters detected in payload' });
+  }
+  
+  // Validate messages array format if present
+  if (messages && !Array.isArray(messages)) {
+    return res.status(400).json({ error: 'Messages must be an array' });
+  }
+  
+  if (messages) {
+    for (const msg of messages) {
+      if (!msg.role || !msg.content || typeof msg.content !== 'string') {
+        return res.status(400).json({ error: 'Invalid message format' });
+      }
+      if (dangerousPattern.test(msg.content)) {
+        return res.status(400).json({ error: 'Invalid characters detected in message' });
+      }
+    }
+  }
+  
+  next();
+};
+
 app.use(helmet());
 app.use(express.json({
   verify: (req: any, res, buf) => {
@@ -46,7 +92,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, validateUserInput, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
