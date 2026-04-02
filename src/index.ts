@@ -72,10 +72,12 @@ const retryWithBackoff = async <T>(
 };
 
 // Extend Express Request type properly
+// Extend Express Request type for security tracking
 declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      id?: string; // Request ID for audit logging
     }
   }
 }
@@ -185,11 +187,18 @@ const getCachedRateLimitKey = (req: Request): string => {
   return key;
 };
 
+// Add request ID tracking middleware for audit logging
+app.use((req: Request, res: Response, next: NextFunction) => {
+  req.id = Math.random().toString(36).substring(7);
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/health',
   keyGenerator: (req: Request) => getCachedRateLimitKey(req),
 });
 
