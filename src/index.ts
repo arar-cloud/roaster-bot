@@ -108,6 +108,11 @@ function validateWebhookInput(body: any): boolean {
   return true;
 }
 
+// Ensure at least issue or pull_request is present in payload
+function hasValidEventPayload(body: any): boolean {
+  return (body?.issue || body?.pull_request) ? true : false;
+}
+
 const validateUserInput = (req: Request, res: Response, next: Function) => {
   const { code, messages } = req.body;
 
@@ -158,6 +163,12 @@ app.post('/webhook', limiter, authMiddleware, (req: Request, res: Response) => {
   // Validate webhook payload structure
   if (!validateWebhookInput(req.body)) {
     return res.status(400).json({ error: 'Invalid webhook payload' });
+  }
+
+  // Validate that payload contains expected event data
+  if (!hasValidEventPayload(req.body)) {
+    console.warn('Webhook rejected: no issue or pull_request in payload');
+    return res.status(400).json({ error: 'Bad request: invalid payload structure' });
   }
 
   // GitHub webhook signature verification
