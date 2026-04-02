@@ -93,6 +93,27 @@ const getMemoizedResponse = async <T>(
   cache.set(cacheKey, promise);
   return promise;
 };
+// Secure env access: validate presence, format, and length before use
+const initializeClients = () => {
+  try {
+    const copilotToken = process.env.COPILOT_TOKEN || '';
+    if (copilotToken && copilotToken.length > 0 && copilotToken.length < 10000) {
+      // Token format validation: reject if contains null bytes or non-printable chars
+      if (/[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]/.test(copilotToken)) {
+        console.warn('Warning: COPILOT_TOKEN contains invalid characters. Copilot features disabled.');
+        return;
+      }
+    } else if (copilotToken.length === 0) {
+      console.warn('Warning: COPILOT_TOKEN not set or invalid. Copilot features disabled.');
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Warning: Copilot client initialization failed. Running in degraded mode.', errorMsg);
+  }
+};
+
+initializeClients();
+
 const port = process.env.PORT || 3000;
 let isHealthy = true;
 
