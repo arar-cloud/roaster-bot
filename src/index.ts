@@ -202,6 +202,12 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, validateToken, async (req: Request, res: Response) => {
+  // Input validation for request body
+  const userMessages = req.body.messages;
+  if (!Array.isArray(userMessages)) {
+    return res.status(400).json({ error: 'Invalid request: messages must be an array' });
+  }
+  
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -249,14 +255,12 @@ app.post('/agent', limiter, validateToken, async (req: Request, res: Response) =
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    let prompt = lastMessage ? lastMessage.content : "Roast me.";
-
-    // Input validation for user message payload - prevent oversized or malformed data
-    if (typeof prompt !== 'string') {
-      return res.status(400).json({ error: 'Invalid message: prompt must be a string' });
+    if (!lastMessage || typeof lastMessage.content !== 'string') {
+      return res.status(400).json({ error: 'Invalid message: no valid user message found' });
     }
+    
+    let prompt = lastMessage.content.trim();
     if (prompt.length === 0 || prompt.length > 4000) {
       return res.status(400).json({ error: 'Invalid message: payload must be 1-4000 characters' });
     }
