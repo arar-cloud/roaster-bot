@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { createHash } from 'crypto';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Sanitize sensitive data from logs to prevent token exposure
@@ -25,14 +26,14 @@ const sanitizeForLogging = (obj: any): any => {
 // Input validation middleware: sanitize and validate all user inputs
 const validateInput = (req: Request, res: Response, next: NextFunction) => {
   const allowedPattern = /^[a-zA-Z0-9_\-\.\(\)\{\}\[\]\,;:\s'"`=+*/<>!&|?~^@#$%\\\n]*$/;
-  
+
   // Validate query parameters
   for (const [key, value] of Object.entries(req.query)) {
     if (typeof value === 'string' && !allowedPattern.test(value)) {
       return res.status(400).json({ error: `Invalid characters in query parameter: ${key}` });
     }
   }
-  
+
   // Validate request body
   if (req.body && typeof req.body === 'object') {
     for (const [key, value] of Object.entries(req.body)) {
@@ -41,7 +42,7 @@ const validateInput = (req: Request, res: Response, next: NextFunction) => {
       }
     }
   }
-  
+
   next();
 };
 
@@ -67,11 +68,11 @@ const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
     const apiKey = process.env.COPILOT_API_KEY;
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
     const apiKeyHash = crypto.createHash('sha256').update(apiKey || '').digest('hex');
-    
+
     if (tokenHash !== apiKeyHash) {
       return res.status(401).json({ error: 'Invalid token' });
     }
-    
+
     // Create new session
     sessionMap.set(token, {
       createdAt: now,
@@ -84,13 +85,13 @@ const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
       sessionMap.delete(token);
       return res.status(401).json({ error: 'Token expired' });
     }
-    
+
     // Check idle timeout
     if (now - session.lastUsedAt > SESSION_IDLE_TIMEOUT_MS) {
       sessionMap.delete(token);
       return res.status(401).json({ error: 'Session timeout due to inactivity' });
     }
-    
+
     // Update last used time
     session.lastUsedAt = now;
   }
@@ -112,13 +113,8 @@ const oldVerifyApiKey = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-// Input validation helper
-const validateInput = (input: unknown): string => {
-  if (typeof input !== 'string') throw new Error('Input must be a string');
-  if (input.length === 0 || input.length > 5000) throw new Error('Input length must be 1-5000 characters');
-  if (!/^[a-zA-Z0-9\s.,!?()-]*$/.test(input)) throw new Error('Input contains invalid characters');
-  return input.trim();
-};
+// Input validation helper - REMOVED: duplicate function definition
+// Use validateInput middleware instead (defined above at line ~26)
 
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
@@ -159,23 +155,23 @@ const app = express();
 const authMiddleware = (req: Request, res: Response, next: Function) => {
   const authHeader = req.headers['authorization'];
   const apiKey = process.env.API_KEY;
-  
+
   // Validate token existence and minimum length
   if (!apiKey || apiKey.length < 20) {
     console.error('Missing or invalid API_KEY configuration');
     return res.status(500).json({ error: 'Server misconfiguration' });
   }
-  
+
   // Check authorization header format and minimum length
   if (!authHeader || typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   const token = authHeader.slice(7); // Remove 'Bearer '
   if (token.length < 20) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  
+
   // Use timing-safe comparison to prevent token guessing attacks
   if (!crypto.timingSafeEqual(Buffer.from(token), Buffer.from(apiKey))) {
     return res.status(401).json({ error: 'Unauthorized' });
@@ -299,7 +295,7 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
   if (code.length > MAX_CODE_LENGTH) {
     return res.status(400).json({ error: `code exceeds ${MAX_CODE_LENGTH} bytes` });
   }
-  
+
   // Block common XSS vectors in code field
   const xssPatterns = [/<script|javascript:|onerror=|onload=|<iframe/i];
   if (xssPatterns.some(pattern => pattern.test(code))) {
