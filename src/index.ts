@@ -185,15 +185,17 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    // Create session following SDK docs with retry logic
+    const session = await retryWithBackoff(() =>
+      client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      })
+    );
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -209,7 +211,7 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
       }
     });
 
-    await session.sendAndWait({ prompt });
+    await retryWithBackoff(() => session.sendAndWait({ prompt }));
 
     res.write('data: [DONE]\n\n');
     res.end();
