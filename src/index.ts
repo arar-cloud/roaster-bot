@@ -9,17 +9,14 @@ const sanitizeForLogging = (obj: any): any => {
   if (typeof obj !== 'object' || obj === null) return obj;
   const sanitized = Array.isArray(obj) ? [...obj] : { ...obj };
   const sensitiveKeys = ['token', 'authorization', 'copilot_token', 'api_key', 'password', 'secret'];
+  const allowedPattern = /^[a-zA-Z0-9_\-\.\(\)\{\}\[\]\,;:\s'"`=+*/<>!&|?~^@#$%\\\n]*$/;
   for (const key in sanitized) {
     if (sensitiveKeys.some(sk => key.toLowerCase().includes(sk))) {
       sanitized[key] = '[REDACTED]';
     } else if (typeof sanitized[key] === 'object') {
       sanitized[key] = sanitizeForLogging(sanitized[key]);
-    }
-    // Strict whitelist: alphanumeric, underscore, dot, dash, newline, space, braces, brackets, quotes, common operators
-    // Explicitly reject shell metacharacters and command injection vectors
-    const allowedPattern = /^[a-zA-Z0-9_\-\.\(\)\{\}\[\]\,;:\s'"`=+*/<>!&|?~^@#$%\\\n]*$/;
-    if (!allowedPattern.test(code)) {
-      return res.status(400).json({ error: 'Code contains invalid characters' });
+    } else if (typeof sanitized[key] === 'string' && !allowedPattern.test(sanitized[key])) {
+      sanitized[key] = '[INVALID_CHARACTERS]';
     }
   }
   return sanitized;
