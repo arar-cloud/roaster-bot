@@ -32,7 +32,7 @@ interface SessionData {
 }
 
 const generateSessionToken = (userId: string): string => {
-  const token = Buffer.from(`${userId}:${Date.now()}:${Math.random()}`).toString('base64');
+  const token = Buffer.from(`${userId}:${Date.now()}:${randomBytes(32).toString('hex')}`).toString('base64');
   const session: SessionData = {
     userId,
     createdAt: Date.now(),
