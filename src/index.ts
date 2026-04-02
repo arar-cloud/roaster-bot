@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -27,35 +26,35 @@ const limiter = rateLimit({
 // Input validation middleware for user commands
 const validateUserInput = (req: Request, res: Response, next: Function) => {
   const { code, messages } = req.body;
-  
+
   // Validate content-type
   const contentType = req.get('Content-Type');
   if (contentType && !contentType.includes('application/json')) {
     return res.status(415).json({ error: 'Content-Type must be application/json' });
   }
-  
+
   // Enforce payload size limits (1MB already set by express.json, but validate at logic level)
   const bodySize = JSON.stringify(req.body).length;
   if (bodySize > 1048576) {
     return res.status(413).json({ error: 'Request payload too large' });
   }
-  
+
   // Validate code parameter if present
   if (code && typeof code !== 'string') {
     return res.status(400).json({ error: 'Invalid code parameter type' });
   }
-  
+
   // Reject null bytes and dangerous control characters
   const dangerousPattern = /\0|[\x00-\x08\x0B\x0C\x0E-\x1F]/;
   if (code && dangerousPattern.test(code)) {
     return res.status(400).json({ error: 'Invalid characters detected in payload' });
   }
-  
+
   // Validate messages array format if present
   if (messages && !Array.isArray(messages)) {
     return res.status(400).json({ error: 'Messages must be an array' });
   }
-  
+
   if (messages) {
     for (const msg of messages) {
       if (!msg.role || !msg.content || typeof msg.content !== 'string') {
@@ -66,7 +65,7 @@ const validateUserInput = (req: Request, res: Response, next: Function) => {
       }
     }
   }
-  
+
   next();
 };
 
@@ -102,7 +101,7 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
     if (typeof signature !== 'string') {
       return res.status(400).json({ error: 'Invalid signature header' });
     }
-    
+
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
@@ -129,12 +128,12 @@ app.post('/agent', limiter, validateUserInput, async (req: Request, res: Respons
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
