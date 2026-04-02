@@ -40,6 +40,34 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Webhook signature verification middleware
+const verifyWebhookSignature = (req: any, res: Response, next: Function) => {
+  if (req.path === '/api/github-webhook' || req.path === '/webhook') {
+    const signature = req.headers['x-hub-signature-256'] as string;
+    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET;
+    
+    if (!signature || !webhookSecret) {
+      return res.status(401).json({ error: 'Missing signature or secret' });
+    }
+    
+    const hash = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(req.rawBody || '')
+      .digest('hex');
+    
+    const expectedSignature = `sha256=${hash}`;
+    
+    try {
+      if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+  }
+  next();
+};
+
 // Authentication middleware for protected endpoints
 const authMiddleware = (req: Request, res: Response, next: Function) => {
   const token = req.headers['x-auth-token'] || req.headers.authorization?.replace('Bearer ', '');
@@ -144,6 +172,7 @@ app.use(express.json({
   },
   limit: '1mb'
 }));
+app.use(verifyWebhookSignature);
 app.use(limiter);
 
 app.get('/', (req, res) => {
