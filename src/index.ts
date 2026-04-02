@@ -165,6 +165,42 @@ app.post('/webhook', limiter, authMiddleware, (req: Request, res: Response) => {
   res.status(200).json({ status: 'received' });
 });
 
+// Input validation and sanitization middleware
+const validateInputSanitization = (req: Request, res: Response, next: Function) => {
+  // Limit request body size to 1MB
+  if (req.body && JSON.stringify(req.body).length > 1048576) {
+    return res.status(413).json({ error: 'Request body too large' });
+  }
+  
+  // Sanitize string inputs: remove null bytes and control characters
+  const sanitizeString = (str: string): string => {
+    if (typeof str !== 'string') return str;
+    return str.replace(/[\x00-\x1F\x7F]/g, '').slice(0, 10000);
+  };
+  
+  // Recursively sanitize string fields in request body
+  const sanitizeObject = (obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (typeof obj === 'string') return sanitizeString(obj);
+    if (Array.isArray(obj)) {
+      return obj.map(item => sanitizeObject(item));
+    }
+    if (typeof obj === 'object') {
+      const sanitized: any = {};
+      for (const key of Object.keys(obj)) {
+        sanitized[key] = sanitizeObject(obj[key]);
+      }
+      return sanitized;
+    }
+    return obj;
+  };
+  
+  if (req.body && typeof req.body === 'object') {
+    req.body = sanitizeObject(req.body);
+  }
+  next();
+};
+
 app.use(helmet());
 app.use(express.json({
   verify: (req: any, res, buf) => {
@@ -172,6 +208,7 @@ app.use(express.json({
   },
   limit: '1mb'
 }));
+app.use(validateInputSanitization);
 app.use(verifyWebhookSignature);
 app.use(limiter);
 
