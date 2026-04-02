@@ -1,10 +1,25 @@
 import 'dotenv/config';
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Retry wrapper for external API calls with exponential backoff
+// Auth middleware: validate API key token without exposing it in logs
+const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
+  const authHeader = req.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+
+  const token = authHeader.slice(7); // Remove 'Bearer '
+  const validToken = process.env.API_KEY;
+  if (!validToken || !crypto.timingSafeEqual(Buffer.from(token), Buffer.from(validToken))) {
+    return res.status(403).json({ error: 'Unauthorized' });
+  }
+  next();
+};
+
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
@@ -139,7 +154,7 @@ app.use(express.json({
 app.use(limiter);
 
 // Error handler middleware for graceful degradation
-app.use((err: any, req: Request, res: Response, next: Function) => {
+app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   console.error('Unhandled error:', err);
   isHealthy = false;
   if (!res.headersSent) {
@@ -165,7 +180,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, validateUserInput, async (req: Request, res: Response, next: Function) => {
+app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request, res: Response, next: NextFunction) => {
   // Webhook signature verification - moved to async validation with early response
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
