@@ -178,6 +178,8 @@ const limiter = rateLimit({
 // Input validation middleware for user commands
 const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     const { code, messages } = req.body;
+    const MAX_CODE_LENGTH = 5120;      // 5KB max for code
+    const MAX_MESSAGES_LENGTH = 51200; // 50KB max for messages array
 
   // Validate content-type
   const contentType = req.get('Content-Type');
@@ -189,8 +191,15 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
   if (typeof code !== 'string') {
     return res.status(400).json({ error: 'Invalid code format' });
   }
-  if (code.length > 50000) {
-    return res.status(413).json({ error: 'Code payload exceeds maximum size' });
+  // Enforce strict length limits to prevent DoS and buffer overflows
+  if (code.length > MAX_CODE_LENGTH) {
+    return res.status(400).json({ error: `code exceeds ${MAX_CODE_LENGTH} bytes` });
+  }
+  
+  // Block common XSS vectors in code field
+  const xssPatterns = [/<script|javascript:|onerror=|onload=|<iframe/i];
+  if (xssPatterns.some(pattern => pattern.test(code))) {
+    return res.status(400).json({ error: 'Code contains XSS payload' });
   }
   // Prevent dangerous patterns: eval, Function constructor, exec, spawn, indirect eval
   // Check direct calls: eval(...), Function(...), exec(...), spawn(...), require(...), import(...)
@@ -211,6 +220,10 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
   if (!Array.isArray(messages)) {
     return res.status(400).json({ error: 'Messages must be an array' });
   }
+  const totalMessageSize = JSON.stringify(messages).length;
+  if (totalMessageSize > MAX_MESSAGES_LENGTH) {
+    return res.status(400).json({ error: `messages exceed ${MAX_MESSAGES_LENGTH} bytes` });
+  }
   if (messages.length === 0 || messages.length > 100) {
     return res.status(400).json({ error: 'Messages array length must be 1-100' });
   }
@@ -225,6 +238,9 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     if (typeof msg.content !== 'string' || msg.content.length === 0 || msg.content.length > 10000) {
       return res.status(400).json({ error: `messages[${i}].content must be a string between 1-10000 chars` });
     }
+    // Sanitize error messages for XSS: escape HTML entities
+    const htmlEscapeMap: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+    const sanitizedContent = msg.content.replace(/[&<>"']/g, c => htmlEscapeMap[c]);
     const dangerousPatterns = ['<script', '<!--', 'eval(', 'process.', 'require(', '__dirname', '__filename'];
     if (dangerousPatterns.some(pattern => msg.content.toLowerCase().includes(pattern))) {
       return res.status(400).json({ error: `messages[${i}].content contains suspicious patterns` });
