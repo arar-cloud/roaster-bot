@@ -164,22 +164,27 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
     return res.status(400).json({ error: 'Code contains restricted operations' });
   }
 
-  // Validate messages array
+  // Validate messages array with strict constraints
   if (!Array.isArray(messages)) {
     return res.status(400).json({ error: 'Messages must be an array' });
   }
   if (messages.length === 0 || messages.length > 100) {
     return res.status(400).json({ error: 'Messages array length must be 1-100' });
   }
-  for (const msg of messages) {
-    if (typeof msg.role !== 'string' || typeof msg.content !== 'string') {
-      return res.status(400).json({ error: 'Invalid message format' });
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    if (!msg || typeof msg !== 'object') {
+      return res.status(400).json({ error: `messages[${i}] must be a non-null object` });
     }
-    if (!['user', 'assistant', 'system'].includes(msg.role)) {
-      return res.status(400).json({ error: 'Invalid message role' });
+    if (!msg.role || !['user', 'assistant', 'system'].includes(msg.role)) {
+      return res.status(400).json({ error: `messages[${i}].role must be 'user', 'assistant', or 'system'` });
     }
-    if (msg.content.length > 10000) {
-      return res.status(413).json({ error: 'Message content exceeds maximum size' });
+    if (typeof msg.content !== 'string' || msg.content.length === 0 || msg.content.length > 10000) {
+      return res.status(400).json({ error: `messages[${i}].content must be a string between 1-10000 chars` });
+    }
+    const dangerousPatterns = ['<script', '<!--', 'eval(', 'process.', 'require(', '__dirname', '__filename'];
+    if (dangerousPatterns.some(pattern => msg.content.toLowerCase().includes(pattern))) {
+      return res.status(400).json({ error: `messages[${i}].content contains suspicious patterns` });
     }
   }
 
