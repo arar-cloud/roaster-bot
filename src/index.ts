@@ -4,6 +4,21 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Sanitize sensitive data from logs to prevent token exposure
+const sanitizeForLogging = (obj: any): any => {
+  if (typeof obj !== 'object' || obj === null) return obj;
+  const sanitized = Array.isArray(obj) ? [...obj] : { ...obj };
+  const sensitiveKeys = ['token', 'authorization', 'copilot_token', 'api_key', 'password', 'secret'];
+  for (const key in sanitized) {
+    if (sensitiveKeys.some(sk => key.toLowerCase().includes(sk))) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof sanitized[key] === 'object') {
+      sanitized[key] = sanitizeForLogging(sanitized[key]);
+    }
+  }
+  return sanitized;
+};
+
 // Retry wrapper for external API calls with exponential backoff
 // Auth middleware: validate API key token without exposing it in logs
 const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
@@ -37,6 +52,8 @@ const retryWithBackoff = async <T>(
       }
     }
   }
+  const logError = lastError instanceof Error ? { message: lastError.message } : {};
+  console.error('Retry exhausted:', sanitizeForLogging(logError));
   throw lastError || new Error('Retries exhausted');
 };
 
@@ -322,7 +339,8 @@ app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     const isDev = process.env.NODE_ENV === 'development';
-    console.error('[WEBHOOK_ERROR]', { timestamp: new Date().toISOString(), error: errorMsg, ...(isDev && { stack: error instanceof Error ? error.stack : undefined }) });
+    const sanitizedError = sanitizeForLogging({ timestamp: new Date().toISOString(), error: errorMsg, ...(isDev && { stack: error instanceof Error ? error.stack : undefined }) });
+    console.error('[WEBHOOK_ERROR]', sanitizedError);
     // Pass to error middleware instead of sending response directly
     if (!res.headersSent) {
       next(error);
