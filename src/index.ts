@@ -121,6 +121,21 @@ const initializeClients = () => {
         console.warn('Warning: COPILOT_TOKEN contains invalid characters. Copilot features disabled.');
         return;
       }
+      // Reject placeholder/example tokens
+      if (/^(test|example|placeholder|dummy|fake|token123|abc123)$/i.test(copilotToken)) {
+        console.warn('Warning: COPILOT_TOKEN appears to be a placeholder. Use a real token.');
+        return;
+      }
+      // Enforce minimum token entropy: must contain mix of character types
+      const hasLower = /[a-z]/.test(copilotToken);
+      const hasUpper = /[A-Z]/.test(copilotToken);
+      const hasDigit = /\d/.test(copilotToken);
+      const hasSpecial = /[^a-zA-Z0-9]/.test(copilotToken);
+      const entropyPassed = [hasLower, hasUpper, hasDigit, hasSpecial].filter(Boolean).length >= 2;
+      if (!entropyPassed) {
+        console.warn('Warning: COPILOT_TOKEN has insufficient entropy. Copilot features disabled.');
+        return;
+      }
     } else if (copilotToken.length === 0) {
       console.warn('Warning: COPILOT_TOKEN not set or invalid. Copilot features disabled.');
     }
