@@ -8,7 +8,8 @@ import helmet from 'helmet';
 // Retry wrapper for external API calls with exponential backoff
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3
+  maxRetries: number = 3,
+  baseDelayMs: number = 1000
 ): Promise<T> => {
   let lastError: Error | undefined;
   for (let i = 0; i < maxRetries; i++) {
@@ -17,7 +18,7 @@ const retryWithBackoff = async <T>(
     } catch (error) {
       lastError = error as Error;
       if (i < maxRetries - 1) {
-        const delay = Math.pow(2, i) * 1000; // exponential backoff: 1s, 2s, 4s
+        const delay = baseDelayMs * Math.pow(2, i); // exponential backoff: 1s, 2s, 4s
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
