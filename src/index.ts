@@ -270,7 +270,7 @@ const limiter = rateLimit({
 });
 
 // Apply security middleware globally before route handlers
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 app.use(helmet());
 app.use(limiter);
 app.use(validateInput);
@@ -302,14 +302,22 @@ app.use(sessionSecurityMiddleware);
 
 // Input validation middleware for user commands
 const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
-    const { code, messages } = req.body;
+    const { code, messages, prompt } = req.body;
     const MAX_CODE_LENGTH = 5120;      // 5KB max for code
     const MAX_MESSAGES_LENGTH = 51200; // 50KB max for messages array
+    const MAX_PROMPT_LENGTH = 5000;    // 5KB max for prompt
 
   // Validate content-type
   const contentType = req.get('Content-Type');
   if (contentType && !contentType.includes('application/json')) {
     return res.status(415).json({ error: 'Content-Type must be application/json' });
+  }
+
+  // Strict validation for prompt parameter
+  if (prompt !== undefined) {
+    if (!prompt || typeof prompt !== 'string' || prompt.length === 0 || prompt.length > MAX_PROMPT_LENGTH) {
+      return res.status(400).json({ error: 'Invalid prompt: must be non-empty string, max 5000 characters' });
+    }
   }
 
   // Validate code field exists and is string (prevent injection)
