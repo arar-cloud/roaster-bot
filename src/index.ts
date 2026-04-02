@@ -41,6 +41,14 @@ const verifyApiKey = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+// Input validation helper
+const validateInput = (input: unknown): string => {
+  if (typeof input !== 'string') throw new Error('Input must be a string');
+  if (input.length === 0 || input.length > 5000) throw new Error('Input length must be 1-5000 characters');
+  if (!/^[a-zA-Z0-9\s.,!?()-]*$/.test(input)) throw new Error('Input contains invalid characters');
+  return input.trim();
+};
+
 const retryWithBackoff = async <T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
@@ -323,6 +331,8 @@ app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request
   );
 
   try {
+    // Construct prompt with code as literal text parameter only (no eval/interpolation risks)
+    const sanitizedCode = code.replace(/`/g, '\\`').substring(0, 50000); // Max code size
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
