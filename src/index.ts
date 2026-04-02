@@ -186,10 +186,12 @@ app.use(limiter);
 
 // Error handler middleware for graceful degradation
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error('Unhandled error:', err);
+  const isDev = process.env.NODE_ENV === 'development';
+  console.error('Unhandled error:', isDev ? err : err.message);
   isHealthy = false;
   if (!res.headersSent) {
-    res.status(503).json({ error: 'Service temporarily unavailable', message: err.message });
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.status(503).json({ error: 'Service temporarily unavailable', ...(isDev && { message: err.message }) });
   }
 });
 
@@ -296,7 +298,7 @@ app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request
     );
 
     res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('Pragma', 'no-cache');
 
@@ -319,7 +321,8 @@ app.post('/agent', limiter, verifyApiKey, validateUserInput, async (req: Request
 
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
-    console.error('[WEBHOOK_ERROR]', { timestamp: new Date().toISOString(), error: errorMsg, stack: error instanceof Error ? error.stack : undefined });
+    const isDev = process.env.NODE_ENV === 'development';
+    console.error('[WEBHOOK_ERROR]', { timestamp: new Date().toISOString(), error: errorMsg, ...(isDev && { stack: error instanceof Error ? error.stack : undefined }) });
     // Pass to error middleware instead of sending response directly
     if (!res.headersSent) {
       next(error);
