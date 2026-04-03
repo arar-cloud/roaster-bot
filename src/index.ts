@@ -16,6 +16,46 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Security headers via helmet: sets X-Frame-Options, X-Content-Type-Options,
+// Strict-Transport-Security, Referrer-Policy, and a restrictive CSP.
+app.use(
+  (require('helmet') as typeof import('helmet').default)({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'none'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: true,
+  })
+);
+
+// CORS: reject cross-origin requests unless the Origin is explicitly allowlisted.
+// Set ALLOWED_ORIGINS=https://example.com,https://other.com in your environment.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? '')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+app.use((req: Request, res: Response, next) => {
+  const origin = req.get('origin');
+  if (origin !== undefined) {
+    if (ALLOWED_ORIGINS.length === 0 || !ALLOWED_ORIGINS.includes(origin)) {
+      res.status(403).send('CORS: origin not allowed');
+      return;
+    }
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  }
+  if (req.method === 'OPTIONS') {
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token, X-Hub-Signature-256');
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 // Global limiter: coarse protection against unauthenticated burst traffic.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -57,7 +97,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
