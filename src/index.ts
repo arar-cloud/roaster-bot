@@ -206,6 +206,9 @@ const getMemoizedResponse = async <T>(
   return promise;
 };
 // Secure env access: validate presence, format, and length before use
+let copilotClient: CopilotClient | null = null;
+let copilotClientError: Error | null = null;
+
 const initializeClients = () => {
   try {
     const copilotToken = process.env.COPILOT_TOKEN || '';
@@ -214,6 +217,14 @@ const initializeClients = () => {
       if (/[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]/.test(copilotToken)) {
         console.warn('Warning: COPILOT_TOKEN contains invalid characters. Copilot features disabled.');
         return;
+      }
+      try {
+        copilotClient = new CopilotClient({
+          token: copilotToken,
+        });
+      } catch (err) {
+        copilotClientError = err as Error;
+        console.error('[STARTUP] CopilotClient initialization failed:', copilotClientError.message);
       }
       // Reject placeholder/example tokens
       if (/^(test|example|placeholder|dummy|fake|token123|abc123)$/i.test(copilotToken)) {
