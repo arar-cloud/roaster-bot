@@ -199,6 +199,41 @@ test('truncates prompt exceeding MAX_PROMPT_LEN', () => {
   assert.strictEqual(sanitizePrompt(raw).length, MAX_PROMPT_LEN);
 });
 
+console.log('\n=== Regression: rawBody encoding (issue-66d66177a6) ===');
+
+test('rawBody utf8 round-trip with multibyte chars', () => {
+  const original = 'hello wörld 🌍';
+  const buf = Buffer.from(original, 'utf8');
+  assert.strictEqual(captureRawBody(buf), original);
+});
+
+console.log('\n=== Regression: signature verification (issue-0339adfb79) ===');
+
+test('verifySignature accepts bare hex digest', () => {
+  const secret = 'test-secret';
+  const body = JSON.stringify({ action: 'ping' });
+  const digest = crypto.createHmac('sha256', secret).update(body).digest('hex');
+  assert.ok(verifySignature(secret, body, digest));
+});
+
+test('verifySignature accepts sha256= prefixed digest', () => {
+  const secret = 'test-secret';
+  const body = JSON.stringify({ action: 'ping' });
+  const digest = crypto.createHmac('sha256', secret).update(body).digest('hex');
+  assert.ok(verifySignature(secret, body, `sha256=${digest}`));
+});
+
+test('verifySignature rejects literal template string (old bug)', () => {
+  const secret = 'test-secret';
+  const body = JSON.stringify({ action: 'ping' });
+  const digest = crypto.createHmac('sha256', secret).update(body).digest('hex');
+  assert.ok(!verifySignature(secret, body, 'sha256=${digest}'));
+});
+
+test('verifySignature rejects invalid signature', () => {
+  assert.ok(!verifySignature('secret', 'body', 'bad-signature'));
+});
+
 console.log('\n=== Results ===');
 console.log(`Passed: ${passed}  Failed: ${failed}`);
 if (failed > 0) process.exit(1);
