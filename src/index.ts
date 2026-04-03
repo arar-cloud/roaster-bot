@@ -16,11 +16,26 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Global limiter: coarse protection against unauthenticated burst traffic.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  limit: 30,               // tightened from 100
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+// Per-token limiter: applied after token validation using the hashed token as key.
+// Prevents a single valid token from exhausting backend capacity.
+const tokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: Request) => {
+    const t = req.get('X-GitHub-Token') ?? '';
+    return crypto.createHash('sha256').update(t).digest('hex').slice(0, 16);
+  },
+  skip: (req: Request) => !req.get('X-GitHub-Token'), // only applies after a token is present
 });
 
 app.use(express.json({
