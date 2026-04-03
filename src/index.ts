@@ -79,15 +79,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(413).send('Payload too large');
   }
 
+  // Enhanced message validation: enforce structure and content length
+  const MAX_CONTENT_LENGTH = 4096;
+  const MAX_PROMPT_LENGTH = 2048;
+
   for (const msg of req.body.messages) {
     if (typeof msg !== 'object' || msg === null) {
       return res.status(400).send('Invalid input: each message must be an object');
     }
-    if (typeof msg.content !== 'string' || msg.content.length > MAX_MESSAGE_LENGTH) {
-      return res.status(400).send(`Invalid input: message content must be string, max ${MAX_MESSAGE_LENGTH} chars`);
-    }
     if (typeof msg.role !== 'string' || !['user', 'assistant', 'system'].includes(msg.role)) {
       return res.status(400).send('Invalid input: message role must be user, assistant, or system');
+    }
+    if (typeof msg.content !== 'string') {
+      return res.status(400).send('Invalid input: message content must be a string');
+    }
+    if (msg.content.length > MAX_CONTENT_LENGTH) {
+      return res.status(400).send(`Invalid input: message content exceeds ${MAX_CONTENT_LENGTH} character limit`);
     }
   }
 
@@ -134,6 +141,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
+
+    // Enforce MAX_PROMPT_LENGTH guard before sending to AI session
+    if (prompt.length > MAX_PROMPT_LENGTH) {
+      return res.status(400).send(`Prompt exceeds maximum length of ${MAX_PROMPT_LENGTH} characters`);
+    }
 
     // Create session following SDK docs
     const session = await client.createSession({
