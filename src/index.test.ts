@@ -12,6 +12,24 @@ import crypto from 'crypto';
 // Helpers replicated from index.ts for isolated unit testing
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Regression guard: buf.toString encoding (issue-66d66177a6)
+// ---------------------------------------------------------------------------
+function captureRawBody(buf: Buffer): string {
+  return buf.toString('utf8');
+}
+
+// ---------------------------------------------------------------------------
+// Regression guard: signature verification (issue-0339adfb79)
+// ---------------------------------------------------------------------------
+function verifySignature(secret: string, body: string, header: string): boolean {
+  const digest = crypto
+    .createHmac('sha256', secret)
+    .update(body)
+    .digest('hex');
+  return header === digest || header === `sha256=${digest}`;
+}
+
 const TOKEN_CONTROL_RE = /[\r\n\x00-\x1f]/;
 const TOKEN_MODERN_RE  = /^(ghp_|gho_|ghu_|ghs_|ghr_)[a-zA-Z0-9_]{36,255}$/;
 const TOKEN_LEGACY_RE  = /^[a-zA-Z0-9_-]{40,255}$/;
