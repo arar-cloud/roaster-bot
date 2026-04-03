@@ -257,9 +257,11 @@ let copilotClientError: Error | null = null;
 
 const initializeClients = () => {
   try {
-    const copilotToken = process.env.COPILOT_TOKEN || '';
+    const copilotToken = process.env.GITHUB_TOKEN || process.env.COPILOT_TOKEN || '';
     if (!copilotToken || copilotToken.length === 0) {
-      throw new Error('GITHUB_COPILOT_TOKEN is not set or is empty (stability:issue-8bff93fd35)');
+      console.warn('[Copilot] No token available, API will use fallback');
+      copilotClient = null;
+      return;
     }
     if (copilotToken && copilotToken.length > 0 && copilotToken.length < 10000) {
       // Token format validation: reject if contains null bytes or non-printable chars
@@ -273,7 +275,8 @@ const initializeClients = () => {
         });
       } catch (err) {
         copilotClientError = err as Error;
-        console.error('[STARTUP] CopilotClient initialization failed:', copilotClientError.message);
+        console.warn('[Copilot] SDK initialization failed, API will use fallback:', copilotClientError.message);
+        copilotClient = null;
       }
       // Reject placeholder/example tokens
       if (/^(test|example|placeholder|dummy|fake|token123|abc123)$/i.test(copilotToken)) {
