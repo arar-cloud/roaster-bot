@@ -5,6 +5,49 @@ import rateLimit from 'express-rate-limit';
 import { createHash } from 'crypto';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Request timeout enforcement (ms)
+const REQUEST_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT || '5000', 10);
+
+// Exponential backoff retry helper with timeout enforcement
+const retryWithBackoff = async (
+  fn: () => Promise<any>,
+  maxRetries: number = 3,
+  initialDelayMs: number = 100,
+  timeoutMs: number = REQUEST_TIMEOUT
+): Promise<any> => {
+  let lastError: Error | null = null;
+  const startTime = Date.now();
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const elapsed = Date.now() - startTime;
+    if (elapsed > timeoutMs) {
+      throw new Error(`Request timeout: exceeded ${timeoutMs}ms after ${attempt} attempts`);
+    }
+    try {
+      const controller = new AbortController();
+      const timeoutHandle = setTimeout(() => controller.abort(), Math.max(timeoutMs - elapsed, 100));
+      try {
+        const result = await Promise.race([
+          fn(),
+          new Promise((_, reject) => {
+            controller.signal.addEventListener('abort', () => reject(new Error('Request aborted by timeout')));
+          })
+        ]);
+        clearTimeout(timeoutHandle);
+        return result;
+      } finally {
+        clearTimeout(timeoutHandle);
+      }
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxRetries - 1) {
+        const delayMs = initialDelayMs * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError || new Error('Retry exhausted');
+};
+
 // Sanitize sensitive data from logs to prevent token exposure
 const sanitizeForLogging = (obj: any): any => {
   if (typeof obj !== 'object' || obj === null) return obj;
@@ -123,27 +166,7 @@ const oldVerifyApiKey = (req: Request, res: Response, next: NextFunction) => {
 // Input validation helper - REMOVED: duplicate function definition
 // Use validateInput middleware instead (defined above at line ~26)
 
-const retryWithBackoff = async <T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelayMs: number = 1000
-): Promise<T> => {
-  let lastError: Error | undefined;
-  for (let i = 0; i < maxRetries; i++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error as Error;
-      if (i < maxRetries - 1) {
-        const delay = baseDelayMs * Math.pow(2, i); // exponential backoff: 1s, 2s, 4s
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-  const logError = lastError instanceof Error ? { message: lastError.message } : {};
-  console.error('Retry exhausted:', sanitizeForLogging(logError));
-  throw lastError || new Error('Retries exhausted');
-};
+
 
 // Extend Express Request type properly
 // Extend Express Request type for security tracking
@@ -157,6 +180,17 @@ declare global {
 }
 
 const app = express();
+
+// Timeout middleware: enforce max request duration
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const timeoutId = setTimeout(() => {
+    res.status(408).json({ error: 'Request timeout' });
+    req.socket.destroy();
+  }, REQUEST_TIMEOUT);
+  res.on('finish', () => clearTimeout(timeoutId));
+  res.on('close', () => clearTimeout(timeoutId));
+  next();
+});
 
 // Authentication middleware
 const authMiddleware = (req: Request, res: Response, next: Function) => {
@@ -212,6 +246,9 @@ let copilotClientError: Error | null = null;
 const initializeClients = () => {
   try {
     const copilotToken = process.env.COPILOT_TOKEN || '';
+    if (!copilotToken || copilotToken.length === 0) {
+      throw new Error('GITHUB_COPILOT_TOKEN is not set or is empty (stability:issue-8bff93fd35)');
+    }
     if (copilotToken && copilotToken.length > 0 && copilotToken.length < 10000) {
       // Token format validation: reject if contains null bytes or non-printable chars
       if (/[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f-\x9f]/.test(copilotToken)) {
