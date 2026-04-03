@@ -207,6 +207,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
+    clearTimeout(streamTimer);
+    req.off('close', onClientClose);
     await client.stop();
   }
 });
