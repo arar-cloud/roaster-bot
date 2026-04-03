@@ -59,8 +59,35 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   }
 
+  // Strict input validation for messages array
+  const MAX_MESSAGES = 50;
+  const MAX_MESSAGE_LENGTH = 10000;
+  const MAX_PAYLOAD_SIZE = 1024 * 500; // 500KB
+  
+  if (!Array.isArray(req.body.messages)) {
+    return res.status(400).send('Invalid input: messages must be an array');
+  }
+  if (req.body.messages.length === 0 || req.body.messages.length > MAX_MESSAGES) {
+    return res.status(400).send(`Invalid input: messages array must have 1-${MAX_MESSAGES} items`);
+  }
+  if ((req.rawBody || '').length > MAX_PAYLOAD_SIZE) {
+    return res.status(413).send('Payload too large');
+  }
+  
+  for (const msg of req.body.messages) {
+    if (typeof msg !== 'object' || msg === null) {
+      return res.status(400).send('Invalid input: each message must be an object');
+    }
+    if (typeof msg.content !== 'string' || msg.content.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).send(`Invalid input: message content must be string, max ${MAX_MESSAGE_LENGTH} chars`);
+    }
+    if (typeof msg.role !== 'string' || !['user', 'assistant', 'system'].includes(msg.role)) {
+      return res.status(400).send('Invalid input: message role must be user, assistant, or system');
+    }
+  }
+
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) return res.status(401).send('Missing X-GitHub-Token');
 
   // Initialize client with the user's token
   const client = new CopilotClient({
