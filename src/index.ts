@@ -165,6 +165,26 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
+    const STREAM_TIMEOUT_MS = 30_000;   // 30 seconds max stream duration
+    const MAX_STREAM_BYTES = 524_288;   // 512 KB max total response size
+    let streamBytes = 0;
+    let streamTimedOut = false;
+
+    // Abort stream if client disappears mid-response to free session resources immediately.
+    const onClientClose = () => {
+      if (session) {
+        try { (session as any).destroy?.(); } catch (_) { /* best-effort */ }
+      }
+    };
+    req.on('close', onClientClose);
+
+    // Hard deadline: kill stream after STREAM_TIMEOUT_MS regardless of progress.
+    const streamTimer = setTimeout(() => {
+      streamTimedOut = true;
+      res.write('data: [STREAM_TIMEOUT]\n\n');
+      res.end();
+    }, STREAM_TIMEOUT_MS);
+
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
