@@ -17,13 +17,31 @@ const validateConfig = () => {
   }
 };
 
-// Exponential backoff retry helper with timeout enforcement, jitter, and consistent error tracking
+// Circuit breaker state for retry management
+let circuitBreakerOpen = false;
+let circuitBreakerFailureCount = 0;
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const CIRCUIT_BREAKER_TIMEOUT_MS = 30000;
+let circuitBreakerOpenTime: number | null = null;
+
+// Exponential backoff retry helper with circuit breaker, timeout enforcement, jitter, and consistent error tracking
 const retryWithBackoff = async (
   fn: () => Promise<any>,
   maxRetries: number = 3,
   initialDelayMs: number = 100,
   timeoutMs: number = REQUEST_TIMEOUT
 ): Promise<any> => {
+  // Check if circuit breaker should be reset
+  if (circuitBreakerOpen && circuitBreakerOpenTime && Date.now() - circuitBreakerOpenTime > CIRCUIT_BREAKER_TIMEOUT_MS) {
+    circuitBreakerOpen = false;
+    circuitBreakerFailureCount = 0;
+    circuitBreakerOpenTime = null;
+  }
+  
+  if (circuitBreakerOpen) {
+    throw new Error('Circuit breaker open: too many failures, retry temporarily disabled');
+  }
+  
   let lastError: Error | null = null;
   const startTime = Date.now();
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -42,14 +60,20 @@ const retryWithBackoff = async (
           })
         ]);
         clearTimeout(timeoutHandle);
+        circuitBreakerFailureCount = 0; // Reset on success
         return result;
       } finally {
         clearTimeout(timeoutHandle);
       }
     } catch (error) {
       lastError = error as Error;
+      circuitBreakerFailureCount++;
+      if (circuitBreakerFailureCount >= CIRCUIT_BREAKER_THRESHOLD) {
+        circuitBreakerOpen = true;
+        circuitBreakerOpenTime = Date.now();
+      }
       if (attempt < maxRetries - 1) {
-        const exponentialDelay = initialDelayMs * Math.pow(2, attempt);
+        const exponentialDelay = Math.min(initialDelayMs * Math.pow(2, attempt), 30000); // Cap at 30s
         const jitter = Math.random() * exponentialDelay * 0.1;
         const delayMs = exponentialDelay + jitter;
         await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -208,6 +232,25 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.on('close', () => clearTimeout(timeoutId));
   next();
 });
+
+// API Rate limiting with strict enforcement
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS'
+});
+
+// Strict API key validation middleware
+const validateApiKey = (req: Request, res: Response, next: NextFunction) => {
+  const apiKey = req.headers['x-api-key']?.toString();
+  if (!apiKey || apiKey.length < 16) {
+    return res.status(401).json({ error: 'Missing or invalid API key' });
+  }
+  next();
+};
 
 // Authentication middleware
 const authMiddleware = (req: Request, res: Response, next: Function) => {
