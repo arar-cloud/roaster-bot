@@ -253,10 +253,15 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
       }
     });
 
-    await session.sendAndWait({ prompt });
-
-    res.write('data: [DONE]\n\n');
-    res.end();
+    try {
+      await session.sendAndWait({ prompt });
+      res.write('data: [DONE]\n\n');
+    } catch (streamErr) {
+      const msg = streamErr instanceof Error ? streamErr.message : 'Stream error';
+      res.write(`data: {"error":"${msg}"}\n\n`);
+    } finally {
+      res.end();
+    }
 
   } catch (error) {
     console.error('Error:', error);
@@ -264,7 +269,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   } finally {
     clearTimeout(streamTimer);
     req.off('close', onClientClose);
-    await client.stop();
+    if (streamTimedOut !== true) await client.stop();
   }
 });
 
