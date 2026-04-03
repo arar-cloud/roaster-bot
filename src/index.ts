@@ -47,7 +47,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
+  // If a webhook secret is configured, a valid signature is REQUIRED on every request.
+  // Reject immediately if the secret is set but the signature header is absent.
+  if (webhookSecret) {
+    if (!signature) {
+      return res.status(401).send('Missing webhook signature');
+    }
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
