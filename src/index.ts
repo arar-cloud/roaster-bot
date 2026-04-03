@@ -243,6 +243,27 @@ const limiter = rateLimit({
   skip: (req) => req.method === 'OPTIONS'
 });
 
+// Request timeout enforcement middleware
+app.use((req: Request, res: Response, next: NextFunction) => {
+  req.setTimeout(REQUEST_TIMEOUT);
+  res.setTimeout(REQUEST_TIMEOUT, () => {
+    res.status(408).json({ error: 'Request timeout' });
+  });
+  next();
+});
+
+// Input validation middleware
+app.use(express.json({ limit: '1mb' }));
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.body && typeof req.body === 'object') {
+    const bodyStr = JSON.stringify(req.body);
+    if (bodyStr.length > 10000) {
+      return res.status(400).json({ error: 'Request body too large' });
+    }
+  }
+  next();
+});
+
 // Strict API key validation middleware
 const validateApiKey = (req: Request, res: Response, next: NextFunction) => {
   const apiKey = req.headers['x-api-key']?.toString();
