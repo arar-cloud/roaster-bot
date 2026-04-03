@@ -177,8 +177,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   // leaking secrets (DATABASE_URL, WEBHOOK_SECRET, etc.) into CopilotClient internals.
   const client = new CopilotClient({
     env: {
-      GITHUB_TOKEN: sanitizedToken, // isolated — no other env vars forwarded
-      ...process.env
+      GITHUB_TOKEN: sanitizedToken
     }
   });
 
