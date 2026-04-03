@@ -17,7 +17,7 @@ const validateConfig = () => {
   }
 };
 
-// Exponential backoff retry helper with timeout enforcement
+// Exponential backoff retry helper with timeout enforcement, jitter, and consistent error tracking
 const retryWithBackoff = async (
   fn: () => Promise<any>,
   maxRetries: number = 3,
@@ -49,12 +49,17 @@ const retryWithBackoff = async (
     } catch (error) {
       lastError = error as Error;
       if (attempt < maxRetries - 1) {
-        const delayMs = initialDelayMs * Math.pow(2, attempt);
+        const exponentialDelay = initialDelayMs * Math.pow(2, attempt);
+        const jitter = Math.random() * exponentialDelay * 0.1;
+        const delayMs = exponentialDelay + jitter;
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
   }
-  throw lastError || new Error('Retry exhausted');
+  if (lastError) {
+    throw new Error(`Retry exhausted after ${maxRetries} attempts: ${lastError.message}`);
+  }
+  throw new Error('Retry exhausted');
 };
 
 // Sanitize sensitive data from logs to prevent token exposure
