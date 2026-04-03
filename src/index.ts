@@ -252,7 +252,28 @@ const initializeClients = () => {
 
 initializeClients();
 
-const port = process.env.PORT || 3000;
+// Validate required environment variables
+const validateEnvVars = (): { valid: boolean; errors: string[] } => {
+  const errors: string[] = [];
+  const requiredVars = ['COPILOT_TOKEN', 'OPENAI_API_KEY'];
+  
+  for (const varName of requiredVars) {
+    if (!process.env[varName] || process.env[varName]!.trim().length === 0) {
+      errors.push(`Missing or empty required environment variable: ${varName}`);
+    }
+  }
+  
+  return { valid: errors.length === 0, errors };
+};
+
+const envValidation = validateEnvVars();
+if (!envValidation.valid) {
+  console.error('[STARTUP] Environment validation failed:');
+  envValidation.errors.forEach(err => console.error('  -', err));
+  process.exit(1);
+}
+
+const port = parseInt(process.env.PORT || '3000', 10) || 3000;
 let isHealthy = true;
 
 const rateLimitKeyCache = new Map<string, string>();
@@ -329,6 +350,17 @@ const validateUserInput = (req: Request, res: Response, next: NextFunction) => {
   const contentType = req.get('Content-Type');
   if (contentType && !contentType.includes('application/json')) {
     return res.status(415).json({ error: 'Content-Type must be application/json' });
+  }
+
+  // Validate roast endpoint input
+  if (req.path === '/roast') {
+    const { username } = req.body;
+    if (!username || typeof username !== 'string' || username.trim().length === 0) {
+      return res.status(400).json({ error: 'Username is required and must be a non-empty string' });
+    }
+    if (username.length > 255) {
+      return res.status(400).json({ error: 'Username must not exceed 255 characters' });
+    }
   }
 
   // Strict validation for prompt parameter
