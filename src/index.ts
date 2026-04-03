@@ -79,8 +79,9 @@ const tokenLimiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    req.rawBody = buf.toString('utf8');
   }
 }));
 
