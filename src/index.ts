@@ -244,7 +244,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    session.on((event: any) => {
+    session.on('message', (event: any) => {
       if (event.type === "assistant.message_delta") {
         const chunk = {
           choices: [{ delta: { content: event.data.deltaContent } }]
