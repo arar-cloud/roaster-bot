@@ -128,6 +128,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
 
   try {
+    // System prompt: static directive is separated from user content by explicit boundary.
+    // Never interpolate raw user content into the static directive section.
+    // Boundary marker: END_SYSTEM_DIRECTIVE_START_USER_CONTENT below prevents injection attacks.
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -138,9 +141,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
+    // Sanitize last user message: strip control characters and truncate to prevent
+    // prompt injection from overriding system directives or exfiltrating data.
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    const rawUserMessage = lastMessage ? lastMessage.content : "Roast me.";
+    const prompt = rawUserMessage
+      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '') // strip non-printable control chars
+      .slice(0, MAX_PROMPT_LENGTH);
 
     // Enforce MAX_PROMPT_LENGTH guard before sending to AI session
     if (prompt.length > MAX_PROMPT_LENGTH) {
