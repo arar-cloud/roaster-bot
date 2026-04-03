@@ -210,14 +210,20 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     }
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    let session;
+    try {
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+    } catch (sessionErr) {
+      const msg = sessionErr instanceof Error ? sessionErr.message : 'Session creation failed';
+      return res.status(500).json({ error: msg });
+    }
 
     const STREAM_TIMEOUT_MS = 30_000;   // 30 seconds max stream duration
     const MAX_STREAM_BYTES = 524_288;   // 512 KB max total response size
