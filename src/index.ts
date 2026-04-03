@@ -268,6 +268,17 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
 });
 
+// Catch malformed JSON from express.json() — must be a 4-argument Express error handler.
+// Returns a plain 400 without stack trace to prevent information disclosure.
+app.use((err: any, req: Request, res: Response, next: any) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    res.status(400).send('Malformed JSON in request body');
+    return;
+  }
+  // Pass other errors to the default handler without leaking internals.
+  next(err);
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
