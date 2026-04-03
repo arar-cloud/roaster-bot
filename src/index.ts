@@ -8,6 +8,15 @@ import { CopilotClient } from '@github/copilot-sdk';
 // Request timeout enforcement (ms)
 const REQUEST_TIMEOUT = parseInt(process.env.REQUEST_TIMEOUT || '5000', 10);
 
+// Validate required environment variables at startup
+const validateConfig = () => {
+  const required = ['GITHUB_TOKEN', 'OPENAI_API_KEY'];
+  const missing = required.filter(key => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+};
+
 // Exponential backoff retry helper with timeout enforcement
 const retryWithBackoff = async (
   fn: () => Promise<any>,
@@ -178,6 +187,9 @@ declare global {
     }
   }
 }
+
+// Validate configuration before starting
+validateConfig();
 
 const app = express();
 
