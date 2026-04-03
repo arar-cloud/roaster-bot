@@ -321,9 +321,10 @@ const initializeClients = () => {
         copilotClient = new CopilotClient({
           token: copilotToken,
         });
+        console.log('[Copilot] Client initialized successfully');
       } catch (err) {
         copilotClientError = err as Error;
-        console.warn('[Copilot] SDK initialization failed, API will use fallback:', copilotClientError.message);
+        console.error('[Copilot] SDK initialization failed, API will use fallback:', copilotClientError.message);
         copilotClient = null;
       }
       // Reject placeholder/example tokens
