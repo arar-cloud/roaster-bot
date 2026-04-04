@@ -279,6 +279,10 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
     res.setHeader('Connection', 'keep-alive');
 
     const ALLOWED_EVENT_TYPES = new Set(['message', 'content', 'done', 'error']);
+    // Ensure session is terminated if the client disconnects early.
+    req.on('close', () => {
+      try { session.terminate?.(); } catch (_) {}
+    });
     session.on('message', (event: any) => {
       if (!event || typeof event.type !== 'string' || !ALLOWED_EVENT_TYPES.has(event.type)) {
         // Silently drop unrecognised or malformed event payloads.
