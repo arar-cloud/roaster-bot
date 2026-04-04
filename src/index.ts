@@ -278,7 +278,12 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    const ALLOWED_EVENT_TYPES = new Set(['message', 'content', 'done', 'error']);
     session.on('message', (event: any) => {
+      if (!event || typeof event.type !== 'string' || !ALLOWED_EVENT_TYPES.has(event.type)) {
+        // Silently drop unrecognised or malformed event payloads.
+        return;
+      }
       if (event.type === "assistant.message_delta") {
         const chunk = {
           choices: [{ delta: { content: event.data.deltaContent } }]
