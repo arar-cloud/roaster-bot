@@ -210,13 +210,20 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    // Sanitize last user message: strip control characters and truncate to prevent
-    // prompt injection from overriding system directives or exfiltrating data.
+    // Sanitize last user message: strip control characters, prompt-injection delimiters,
+    // and dangerous sequences before truncating to prevent injection attacks.
+    function sanitizeForPrompt(text: string): string {
+      return text
+        .replace(/\x00/g, '')           // null bytes
+        .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // control chars (keep \t \n \r)
+        .replace(/<\|[^|]*\|>/g, '')    // GPT-style delimiters e.g. <|system|>
+        .replace(/```[\s\S]*?```/g, '[code block removed]') // fenced code blocks
+        .trim();
+    }
     const userMessages = rawMessages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const rawUserMessage = lastMessage ? lastMessage.content : "Roast me.";
-    const prompt = rawUserMessage
-      .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '') // strip non-printable control chars
+    const prompt = sanitizeForPrompt(rawUserMessage)
       .slice(0, MAX_PROMPT_LENGTH);
 
     // Enforce MAX_PROMPT_LENGTH guard before sending to AI session
