@@ -113,9 +113,18 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== `sha256=${hmac.update(rawBody).digest('hex')}`) {
+    hmac.update(rawBody);
+    const expected = `sha256=${hmac.digest('hex')}`;
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+    try {
+      if (!crypto.timingSafeEqual(sigBuf, expBuf)) {
+        return res.status(401).json({ error: 'Invalid signature' });
+      }
+    } catch {
       return res.status(401).json({ error: 'Invalid signature' });
     }
   }
