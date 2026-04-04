@@ -133,33 +133,34 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
   const MAX_MESSAGES = 50;
   const MAX_MESSAGE_LENGTH = 10000;
   const MAX_PAYLOAD_SIZE = 1024 * 500; // 500KB
+  const MAX_CONTENT_LENGTH = 8000;  // Updated per security hardening
+  const MAX_PROMPT_LENGTH = 2048;
 
-  if (!Array.isArray(req.body.messages)) {
-    return res.status(400).send('Invalid input: messages must be an array');
+  const rawMessages = req.body.messages;
+  if (!Array.isArray(rawMessages)) {
+    return res.status(400).json({ error: 'messages must be a non-empty array' });
   }
-  if (req.body.messages.length === 0 || req.body.messages.length > MAX_MESSAGES) {
-    return res.status(400).send(`Invalid input: messages array must have 1-${MAX_MESSAGES} items`);
+  if (rawMessages.length === 0 || rawMessages.length > MAX_MESSAGES) {
+    return res.status(400).json({ error: `messages array must have 1-${MAX_MESSAGES} items` });
   }
   if ((req.rawBody || '').length > MAX_PAYLOAD_SIZE) {
     return res.status(413).send('Payload too large');
   }
 
   // Enhanced message validation: enforce structure and content length
-  const MAX_CONTENT_LENGTH = 4096;
-  const MAX_PROMPT_LENGTH = 2048;
-
-  for (const msg of req.body.messages) {
+  const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
+  for (const msg of rawMessages) {
     if (typeof msg !== 'object' || msg === null) {
-      return res.status(400).send('Invalid input: each message must be an object');
+      return res.status(400).json({ error: 'Each message must be an object' });
     }
-    if (typeof msg.role !== 'string' || !['user', 'assistant', 'system'].includes(msg.role)) {
-      return res.status(400).send('Invalid input: message role must be user, assistant, or system');
+    if (typeof msg.role !== 'string' || !ALLOWED_ROLES.has(msg.role)) {
+      return res.status(400).json({ error: 'Each message must have a valid role: user, assistant, or system' });
     }
     if (typeof msg.content !== 'string') {
-      return res.status(400).send('Invalid input: message content must be a string');
+      return res.status(400).json({ error: 'Each message content must be a string' });
     }
     if (msg.content.length > MAX_CONTENT_LENGTH) {
-      return res.status(400).send(`Invalid input: message content exceeds ${MAX_CONTENT_LENGTH} character limit`);
+      return res.status(400).json({ error: `message content exceeds ${MAX_CONTENT_LENGTH} character limit` });
     }
   }
 
@@ -211,7 +212,7 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
 
     // Sanitize last user message: strip control characters and truncate to prevent
     // prompt injection from overriding system directives or exfiltrating data.
-    const userMessages = req.body.messages || [];
+    const userMessages = rawMessages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const rawUserMessage = lastMessage ? lastMessage.content : "Roast me.";
     const prompt = rawUserMessage
