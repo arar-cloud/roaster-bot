@@ -307,8 +307,12 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
     }
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('[roaster-bot] internal error:', error);
+    // Never expose raw error messages or stack traces to callers.
+    if (!res.headersSent) {
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({ error: 'Internal server error' });
+    }
   } finally {
     clearTimeout(streamTimer);
     req.off('close', onClientClose);
@@ -316,7 +320,17 @@ app.post('/agent', agentLimiter, limiter, tokenLimiter, async (req: Request, res
   }
 });
 
-// Catch malformed JSON from express.json() — must be a 4-argument Express error handler.
+// Catch malformed JSON from express.json() and set sanitized error response
+app.use((err: any, req: Request, res: Response, next) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    console.error('[roaster-bot] malformed JSON:', err.message);
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(400).json({ error: 'Invalid JSON' });
+  }
+  console.error('[roaster-bot] unhandled error:', err);
+  res.setHeader('Content-Type', 'application/json');
+  res.status(500).json({ error: 'Internal server error' });
+}); — must be a 4-argument Express error handler.
 // Returns a plain 400 without stack trace to prevent information disclosure.
 app.use((err: any, req: Request, res: Response, next: any) => {
   if (err instanceof SyntaxError && 'body' in err) {
