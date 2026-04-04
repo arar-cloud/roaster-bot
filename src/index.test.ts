@@ -9,6 +9,53 @@ import assert from 'assert';
 import crypto from 'crypto';
 
 // ---------------------------------------------------------------------------
+// Helpers under test (must be kept in sync with src/index.ts)
+// ---------------------------------------------------------------------------
+
+function verifyWebhookSignature(rawBody: string, signature: string | undefined, secret: string): boolean {
+  if (!signature || typeof signature !== 'string') return false;
+  const hmac = crypto.createHmac('sha256', secret);
+  hmac.update(rawBody);
+  const expected = `sha256=${hmac.digest('hex')}`;
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expected);
+  if (sigBuf.length !== expBuf.length) return false;
+  return crypto.timingSafeEqual(sigBuf, expBuf);
+}
+
+function validateTokenFormat(token: unknown): boolean {
+  if (!token || typeof token !== 'string') return false;
+  return /^[A-Za-z0-9_\-]{20,255}$/.test(token);
+}
+
+function validateMessages(msgs: unknown): string | null {
+  if (!Array.isArray(msgs) || msgs.length === 0) return 'messages must be a non-empty array';
+  if (msgs.length > 50) return 'messages array exceeds maximum length of 50';
+  const ALLOWED_ROLES = new Set(['user', 'assistant', 'system']);
+  for (const msg of msgs) {
+    if (typeof msg !== 'object' || msg === null) return 'Each message must be an object';
+    if (typeof (msg as any).role !== 'string' || !ALLOWED_ROLES.has((msg as any).role)) return 'Each message must have a valid role';
+    if (typeof (msg as any).content !== 'string') return 'Each message content must be a string';
+    if ((msg as any).content.length > 8000) return 'Message content exceeds maximum length of 8000';
+  }
+  return null;
+}
+
+function sanitizeForPrompt(text: string): string {
+  return text
+    .replace(/\x00/g, '')
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .replace(/<\|[^|]*\|>/g, '')
+    .replace(/```[\s\S]*?```/g, '[code block removed]')
+    .trim();
+}
+
+const ALLOWED_EVENT_TYPES = new Set(['message', 'content', 'done', 'error']);
+function isAllowedEventType(type: unknown): boolean {
+  return typeof type === 'string' && ALLOWED_EVENT_TYPES.has(type);
+}
+
+// ---------------------------------------------------------------------------
 // Helpers replicated from index.ts for isolated unit testing
 // ---------------------------------------------------------------------------
 
