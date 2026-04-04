@@ -164,16 +164,20 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token');
+  if (!token || typeof token !== 'string') {
+    return res.status(401).send('Missing X-GitHub-Token');
+  }
 
-  // Validate token format: must be a known GitHub token prefix followed by alphanumeric chars,
-  // or a legacy 40-character alphanumeric token. Reject any token containing whitespace,
-  // newlines, or control characters to block header-injection and env-var manipulation.
-  if (/[\r\n\x00-\x1f]/.test(token)) {
+  // Validate token format: GitHub tokens are alphanumeric with underscores/hyphens,
+  // typically 20–255 characters. Reject anything outside this envelope.
+  const TOKEN_RE = /^[A-Za-z0-9_\-]{20,255}$/;
+  if (!TOKEN_RE.test(token)) {
     return res.status(401).send('Invalid GitHub token format');
   }
-  if (!/^(ghp_|gho_|ghu_|ghs_|ghr_)[a-zA-Z0-9_]{36,255}$/.test(token) &&
-      !/^[a-zA-Z0-9_-]{40,255}$/.test(token)) {
+
+  // Additional security: reject any token containing control characters or whitespace
+  // to block header-injection and env-var manipulation.
+  if (/[\r\n\x00-\x1f\s]/.test(token)) {
     return res.status(401).send('Invalid GitHub token format');
   }
 
