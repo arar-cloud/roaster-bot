@@ -28,20 +28,20 @@ app.use((req, res, next) => {
   req.id = correlationId;
   res.setHeader('x-correlation-id', correlationId);
   
-  // Structured logging helper
-  const originalLog = console.log;
-  const originalError = console.error;
-  const originalWarn = console.warn;
+  // Structured logging helper with JSON formatting
+  req.log = {
+    info: (msg, meta = {}) => console.log(JSON.stringify({ level: 'info', correlationId, msg, ...meta, timestamp: new Date().toISOString() })),
+    error: (msg, meta = {}) => console.error(JSON.stringify({ level: 'error', correlationId, msg, ...meta, timestamp: new Date().toISOString() })),
+    warn: (msg, meta = {}) => console.warn(JSON.stringify({ level: 'warn', correlationId, msg, ...meta, timestamp: new Date().toISOString() }))
+  };
   
-  console.log = (...args) => originalLog(`[${correlationId}]`, ...args);
-  console.error = (...args) => originalError(`[${correlationId}]`, ...args);
-  console.warn = (...args) => originalWarn(`[${correlationId}]`, ...args);
+  req.log.info('request_received', { method: req.method, path: req.path, ip: req.ip });
   
-  res.on('finish', () => {
-    console.log = originalLog;
-    console.error = originalError;
-    console.warn = originalWarn;
-  });
+  const originalJson = res.json.bind(res);
+  res.json = function(data) {
+    req.log.info('response_sent', { statusCode: res.statusCode });
+    return originalJson(data);
+  };
   
   next();
 });
