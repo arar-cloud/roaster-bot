@@ -70,6 +70,51 @@ app.use((req, res, next) => {
   next();
 });
 
+// Queue manager with backpressure limits
+class BoundedQueue {
+  constructor(maxSize = 1000) {
+    this.queue = [];
+    this.maxSize = maxSize;
+    this.processing = 0;
+    this.metrics = { total: 0, dropped: 0, processed: 0 };
+  }
+  
+  enqueue(job) {
+    if (this.queue.length >= this.maxSize) {
+      this.metrics.dropped++;
+      throw new Error(`Queue full: ${this.maxSize} items (backpressure triggered)`);
+    }
+    this.queue.push(job);
+    this.metrics.total++;
+    return this.metrics.total;
+  }
+  
+  async process(handler) {
+    if (this.queue.length === 0) return;
+    const job = this.queue.shift();
+    this.processing++;
+    try {
+      await handler(job);
+      this.metrics.processed++;
+    } catch (err) {
+      console.error(`Queue job failed: ${err.message}`);
+    } finally {
+      this.processing--;
+    }
+  }
+  
+  getStatus() {
+    return {
+      queueLength: this.queue.length,
+      processing: this.processing,
+      maxSize: this.maxSize,
+      metrics: this.metrics
+    };
+  }
+}
+
+app.jobQueue = new BoundedQueue(1000);
+
 // Utility for making external calls with timeout
 app.makeExternalCall = async (url, options = {}) => {
   const controller = new AbortController();
