@@ -1,5 +1,7 @@
 import app from '../src/index.js';
 import { randomUUID } from 'crypto';
+import http from 'http';
+import https from 'https';
 
 // Validate app module is properly initialized
 if (!app) {
@@ -48,6 +50,43 @@ app.use((req, res, next) => {
   }
   next();
 });
+
+// Timeout middleware for external API calls
+const DEFAULT_TIMEOUT_MS = 30000; // 30 seconds
+const UPSTREAM_TIMEOUT_MS = 25000; // 25 seconds for upstream calls
+
+app.use((req, res, next) => {
+  // Set response timeout
+  res.setTimeout(DEFAULT_TIMEOUT_MS, () => {
+    req.log.error('response_timeout', { timeout: DEFAULT_TIMEOUT_MS });
+    if (!res.headersSent) {
+      res.status(504).json({ error: 'Gateway Timeout', correlationId: req.correlationId });
+    }
+    req.socket?.destroy();
+  });
+  
+  // Store timeout config for use in external calls
+  req.upstreamTimeout = UPSTREAM_TIMEOUT_MS;
+  next();
+});
+
+// Utility for making external calls with timeout
+app.makeExternalCall = async (url, options = {}) => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeout || UPSTREAM_TIMEOUT_MS);
+  
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeout);
+    return response;
+  } catch (err) {
+    clearTimeout(timeout);
+    if (err.name === 'AbortError') {
+      throw new Error(`Upstream call timeout after ${options.timeout || UPSTREAM_TIMEOUT_MS}ms`);
+    }
+    throw err;
+  }
+};
 
 // Request correlation ID middleware for distributed tracing
 app.use((req, res, next) => {
