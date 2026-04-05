@@ -13,6 +13,54 @@ if (!app) {
 // Request-level isolation middleware - prevent race conditions
 const requestMutexes = new Map();
 
+// Idempotency key tracking for mutation operations
+const idempotencyCache = new Map();
+const IDEMPOTENCY_TTL = 3600000; // 1 hour
+
+const idempotencyMiddleware = (req, res, next) => {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+  
+  const idempotencyKey = req.get('idempotency-key');
+  if (!idempotencyKey) {
+    return next();
+  }
+  
+  // Check if this idempotency key was already processed
+  if (idempotencyCache.has(idempotencyKey)) {
+    const cached = idempotencyCache.get(idempotencyKey);
+    return res.status(cached.statusCode).json(cached.response);
+  }
+  
+  // Store original json method to intercept response
+  const originalJson = res.json.bind(res);
+  res.json = function(data) {
+    // Cache the response with this idempotency key
+    idempotencyCache.set(idempotencyKey, {
+      statusCode: res.statusCode,
+      response: data,
+      timestamp: Date.now()
+    });
+    
+    // Clean up old entries periodically
+    if (idempotencyCache.size > 10000) {
+      const now = Date.now();
+      for (const [key, value] of idempotencyCache.entries()) {
+        if (now - value.timestamp > IDEMPOTENCY_TTL) {
+          idempotencyCache.delete(key);
+        }
+      }
+    }
+    
+    return originalJson(data);
+  };
+  
+  next();
+};
+
+app.use(idempotencyMiddleware);
+
 // Request validation and sanitization middleware
 const validateRequest = (req, res, next) => {
   try {
