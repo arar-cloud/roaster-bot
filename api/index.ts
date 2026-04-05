@@ -677,4 +677,54 @@ async function executeWithTransactionRetry(
 // Log successful initialization
 console.log('[INIT-SUCCESS] API module initialized successfully');
 
+// Centralized error handling middleware
+app.use((err, req, res, next) => {
+  const errorId = randomUUID();
+  const timestamp = new Date().toISOString();
+  
+  // Structured error logging with correlation ID
+  const errorContext = {
+    errorId,
+    requestId: req.requestId,
+    timestamp,
+    method: req.method,
+    path: req.path,
+    statusCode: err.statusCode || 500,
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  };
+  console.error('[ERROR]', JSON.stringify(errorContext));
+  
+  // Determine HTTP status and client-facing message
+  const statusCode = err.statusCode || (err.name === 'ValidationError' ? 400 : 500);
+  const clientMessage = statusCode === 500 ? 'Internal server error' : err.message || 'Request failed';
+  
+  res.status(statusCode).json({
+    error: {
+      id: errorId,
+      message: clientMessage,
+      code: err.code || 'UNKNOWN_ERROR'
+    },
+    requestId: req.requestId
+  });
+});
+
+// Graceful degradation for unhandled errors
+process.on('uncaughtException', (error) => {
+  console.error('[FATAL]', JSON.stringify({
+    type: 'uncaughtException',
+    message: error.message,
+    stack: error.stack,
+    timestamp: new Date().toISOString()
+  }));
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL]', JSON.stringify({
+    type: 'unhandledRejection',
+    reason: String(reason),
+    timestamp: new Date().toISOString()
+  }));
+});
+
 export default app;
