@@ -13,6 +13,37 @@ if (!app) {
 // Request-level isolation middleware - prevent race conditions
 const requestMutexes = new Map();
 
+// Health check endpoints for load balancer integration
+app.get('/health', (req, res) => {
+  // Liveness probe - responds immediately, no dependency checks
+  res.status(200).json({
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    requestId: randomUUID()
+  });
+});
+
+app.get('/ready', async (req, res) => {
+  // Readiness probe - verifies service readiness before accepting traffic
+  try {
+    const checks = {
+      uptime: process.uptime() > 0,
+      memoryUsage: process.memoryUsage().heapUsed < process.memoryUsage().heapTotal * 0.95,
+      timestamp: new Date().toISOString()
+    };
+    const ready = Object.values(checks).every(v => v === true);
+    res.status(ready ? 200 : 503).json({
+      status: ready ? 'ready' : 'not_ready',
+      ...checks
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'not_ready',
+      error: 'Readiness check failed'
+    });
+  }
+});
+
 app.use((req, res, next) => {
   const requestId = randomUUID();
   req.requestId = requestId;
