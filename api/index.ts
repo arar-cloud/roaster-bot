@@ -17,10 +17,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-// Request validation wrapper
+// Request validation wrapper with proper null/undefined handling
 function validateRequest(req, res, next) {
   try {
-    if (!req.body || typeof req.body !== 'object') {
+    if (!req || !req.body || typeof req.body !== 'object') {
       return res.status(400).json({ error: 'Invalid request body' });
     }
     next();
@@ -32,12 +32,16 @@ function validateRequest(req, res, next) {
 
 app.use(validateRequest);
 
-// Fixed mobile API endpoints with proper format handling
+// Fixed mobile API endpoints with proper format handling and null checks
 function processData(data) {
+  if (!data) {
+    throw new Error('Data cannot be null or undefined');
+  }
   if (typeof data === 'string') {
     try {
       return JSON.parse(data);
     } catch (e) {
+      console.warn('Failed to parse data as JSON:', e.message);
       return data;
     }
   }
