@@ -269,24 +269,40 @@ app.makeExternalCall = async (url, options = {}) => {
   }
 };
 
-// Request correlation ID middleware for distributed tracing
+// Request correlation ID middleware for distributed tracing with structured logging
 app.use((req, res, next) => {
   const correlationId = req.headers['x-correlation-id'] || randomUUID();
+  const traceId = req.headers['x-trace-id'] || randomUUID();
   req.id = correlationId;
+  req.traceId = traceId;
   res.setHeader('x-correlation-id', correlationId);
+  res.setHeader('x-trace-id', traceId);
+  res.setHeader('x-request-id', req.requestId);
   
-  // Structured logging helper with JSON formatting
-  req.log = {
-    info: (msg, meta = {}) => console.log(JSON.stringify({ level: 'info', correlationId, msg, ...meta, timestamp: new Date().toISOString() })),
-    error: (msg, meta = {}) => console.error(JSON.stringify({ level: 'error', correlationId, msg, ...meta, timestamp: new Date().toISOString() })),
-    warn: (msg, meta = {}) => console.warn(JSON.stringify({ level: 'warn', correlationId, msg, ...meta, timestamp: new Date().toISOString() }))
+  const requestStart = Date.now();
+  const logContext = {
+    correlationId,
+    traceId,
+    requestId: req.requestId,
+    method: req.method,
+    path: req.path,
+    ip: req.ip,
+    userAgent: req.get('user-agent')
   };
   
-  req.log.info('request_received', { method: req.method, path: req.path, ip: req.ip });
+  // Structured logging helper with JSON formatting and correlation context
+  req.log = {
+    info: (msg, meta = {}) => console.log(JSON.stringify({ level: 'info', ...logContext, msg, ...meta, timestamp: new Date().toISOString() })),
+    error: (msg, meta = {}) => console.error(JSON.stringify({ level: 'error', ...logContext, msg, ...meta, timestamp: new Date().toISOString() })),
+    warn: (msg, meta = {}) => console.warn(JSON.stringify({ level: 'warn', ...logContext, msg, ...meta, timestamp: new Date().toISOString() }))
+  };
+  
+  console.log(JSON.stringify({ level: 'info', event: 'REQUEST_START', ...logContext, timestamp: new Date().toISOString() }));
   
   const originalJson = res.json.bind(res);
   res.json = function(data) {
-    req.log.info('response_sent', { statusCode: res.statusCode });
+    const duration = Date.now() - requestStart;
+    console.log(JSON.stringify({ level: 'info', event: 'REQUEST_END', ...logContext, statusCode: res.statusCode, duration, timestamp: new Date().toISOString() }));
     return originalJson(data);
   };
   
