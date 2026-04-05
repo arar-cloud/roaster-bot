@@ -1,4 +1,5 @@
 import app from '../src/index.js';
+import { randomUUID } from 'crypto';
 
 // Validate app module is properly initialized
 if (!app) {
@@ -6,6 +7,30 @@ if (!app) {
   console.error(`[INIT-ERROR] ${errorMsg}`);
   throw new Error(errorMsg);
 }
+
+// Request correlation ID middleware for distributed tracing
+app.use((req, res, next) => {
+  const correlationId = req.headers['x-correlation-id'] || randomUUID();
+  req.id = correlationId;
+  res.setHeader('x-correlation-id', correlationId);
+  
+  // Structured logging helper
+  const originalLog = console.log;
+  const originalError = console.error;
+  const originalWarn = console.warn;
+  
+  console.log = (...args) => originalLog(`[${correlationId}]`, ...args);
+  console.error = (...args) => originalError(`[${correlationId}]`, ...args);
+  console.warn = (...args) => originalWarn(`[${correlationId}]`, ...args);
+  
+  res.on('finish', () => {
+    console.log = originalLog;
+    console.error = originalError;
+    console.warn = originalWarn;
+  });
+  
+  next();
+});
 
 // Comprehensive error handling middleware
 app.use((err, req, res, next) => {
