@@ -176,6 +176,82 @@ class BoundedQueue {
 
 const backgroundJobQueue = new BoundedQueue(parseInt(process.env.JOB_QUEUE_MAX_SIZE || '1000', 10), 'reject');
 
+// Health check state tracking
+let isReady = false;
+let activeConnections = new Set();
+let isShuttingDown = false;
+
+// Liveness probe: indicates whether the process is running
+app.get('/health/live', (req, res) => {
+  const correlationId = req.id || 'unknown';
+  console.log(`Liveness probe received [${correlationId}]`);
+  res.status(200).json({ 
+    status: 'alive', 
+    timestamp: new Date().toISOString(),
+    pid: process.pid,
+    correlationId
+  });
+});
+
+// Readiness probe: indicates whether the service is ready to accept requests
+app.get('/health/ready', (req, res) => {
+  const correlationId = req.id || 'unknown';
+  if (!isReady) {
+    console.warn(`Readiness probe failed: service not ready [${correlationId}]`);
+    return res.status(503).json({ 
+      status: 'not-ready',
+      reason: 'Service initializing',
+      correlationId
+    });
+  }
+  console.log(`Readiness probe succeeded [${correlationId}]`);
+  res.status(200).json({ 
+    status: 'ready',
+    activeConnections: activeConnections.size,
+    queueSize: backgroundJobQueue.size(),
+    timestamp: new Date().toISOString(),
+    correlationId
+  });
+});
+
+// Graceful shutdown handler
+function gracefulShutdown(signal) {
+  console.log(`[SHUTDOWN] Received signal: ${signal}`);
+  if (isShuttingDown) {
+    console.log('[SHUTDOWN] Already shutting down, ignoring signal');
+    return;
+  }
+  
+  isShuttingDown = true;
+  console.log('[SHUTDOWN] Starting graceful shutdown...');
+  
+  // Stop accepting new requests
+  app.set('isShuttingDown', true);
+  
+  // Drain active connections with timeout
+  const drainTimeout = parseInt(process.env.SHUTDOWN_DRAIN_TIMEOUT_MS || '30000', 10);
+  const drainStartTime = Date.now();
+  
+  const drainInterval = setInterval(() => {
+    const elapsed = Date.now() - drainStartTime;
+    const remaining = activeConnections.size;
+    console.log(`[SHUTDOWN] Draining: ${remaining} active connections, elapsed: ${elapsed}ms`);
+    
+    if (remaining === 0 || elapsed > drainTimeout) {
+      clearInterval(drainInterval);
+      if (remaining > 0) {
+        console.warn(`[SHUTDOWN] Force closing ${remaining} remaining connections after ${drainTimeout}ms timeout`);
+        activeConnections.forEach(conn => conn.destroy());
+      }
+      console.log('[SHUTDOWN] Shutdown complete');
+      process.exit(0);
+    }
+  }, 1000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Request validation wrapper with proper null/undefined handling
 function validateRequest(req, res, next) {
   try {
