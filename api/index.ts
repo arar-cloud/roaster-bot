@@ -103,6 +103,23 @@ const ErrorCodes = {
   INTERNAL_ERROR: { code: 'INTERNAL_ERROR', status: 500 }
 };
 
+// Async request wrapper to catch unhandled promise rejections in handlers
+function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch((err) => {
+      const correlationId = req.id || 'unknown';
+      console.error(`[${correlationId}] Unhandled promise rejection in async handler:`, err.message);
+      next(err);
+    });
+  };
+}
+
+// Global unhandled promise rejection handler
+process.on('unhandledRejection', (reason, promise) => {
+  const correlationId = reason?.correlationId || 'unknown';
+  console.error(`[${correlationId}] Unhandled promise rejection:`, reason);
+});
+
 // Comprehensive error handling middleware
 app.use((err, req, res, next) => {
   console.error('API Error:', err.message, err.stack);
@@ -325,7 +342,7 @@ function processData(data) {
   return data;
 }
 
-app.post('/api/mobile/endpoint', validateRequest, async (req, res) => {
+app.post('/api/mobile/endpoint', validateRequest, asyncHandler(async (req, res) => {
   try {
     const { userId, data } = req.body;
     
