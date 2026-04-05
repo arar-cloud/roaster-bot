@@ -129,6 +129,53 @@ async function withMutexLock(req, asyncFn) {
   }
 }
 
+// Bounded queue with backpressure and overflow rejection
+class BoundedQueue {
+  constructor(maxSize = 1000, overflowStrategy = 'reject') {
+    this.queue = [];
+    this.maxSize = maxSize;
+    this.overflowStrategy = overflowStrategy; // 'reject' or 'drop-oldest'
+    this.waiters = [];
+  }
+  
+  async enqueue(item) {
+    if (this.queue.length >= this.maxSize) {
+      if (this.overflowStrategy === 'reject') {
+        const err = new Error(`Queue is full (size: ${this.maxSize}). Job rejected to prevent memory exhaustion.`);
+        err.statusCode = 429;
+        throw err;
+      } else if (this.overflowStrategy === 'drop-oldest') {
+        this.queue.shift();
+        console.warn(`Queue full. Dropped oldest item. Current size: ${this.queue.length}/${this.maxSize}`);
+      }
+    }
+    
+    this.queue.push(item);
+    this.notifyWaiters();
+  }
+  
+  dequeue() {
+    return this.queue.shift();
+  }
+  
+  size() {
+    return this.queue.length;
+  }
+  
+  isFull() {
+    return this.queue.length >= this.maxSize;
+  }
+  
+  notifyWaiters() {
+    while (this.waiters.length > 0 && this.queue.length > 0) {
+      const resolver = this.waiters.shift();
+      resolver();
+    }
+  }
+}
+
+const backgroundJobQueue = new BoundedQueue(parseInt(process.env.JOB_QUEUE_MAX_SIZE || '1000', 10), 'reject');
+
 // Request validation wrapper with proper null/undefined handling
 function validateRequest(req, res, next) {
   try {
