@@ -3,6 +3,46 @@ import { randomUUID } from 'crypto';
 import http from 'http';
 import https from 'https';
 
+// Configure connection pooling and resource limits
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 30000,
+  keepAliveMsecs: 30000,
+  freeSocketTimeout: 90000
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 30000,
+  keepAliveMsecs: 30000,
+  freeSocketTimeout: 90000
+});
+
+// Attach agents to app for downstream requests
+app.set('httpAgent', httpAgent);
+app.set('httpsAgent', httpsAgent);
+
+// Track active connections for monitoring
+let activeConnections = 0;
+const MAX_ACTIVE_CONNECTIONS = 1000;
+
+app.use((req, res, next) => {
+  activeConnections++;
+  if (activeConnections > MAX_ACTIVE_CONNECTIONS) {
+    activeConnections--;
+    const err = new Error('Service overloaded');
+    err.statusCode = 503;
+    err.code = 'SERVICE_OVERLOADED';
+    return next(err);
+  }
+  res.on('finish', () => activeConnections--);
+  next();
+});
+
 // Validate app module is properly initialized
 if (!app) {
   const errorMsg = 'Failed to initialize Express app from src/index.js - app module is null or undefined';
