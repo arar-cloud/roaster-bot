@@ -2,7 +2,206 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+
+// Panic recovery middleware - wrap async handlers with try-catch
+const asyncHandler = (fn: (req: Request, res: Response, next: Function) => Promise<any>) => 
+  (req: Request, res: Response, next: Function) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+
+// Graceful shutdown manager
+class GracefulShutdownManager {
+  private isShuttingDown = false;
+  
+  constructor(server: any) {
+    this.setupSignalHandlers(server);
+  }
+  
+  private setupSignalHandlers(server: any) {
+    const signals = ['SIGTERM', 'SIGINT'];
+    signals.forEach(signal => {
+      process.on(signal, async () => {
+        console.log(`${signal} received, starting graceful shutdown`);
+        this.isShuttingDown = true;
+        
+        server.close(() => {
+          console.log('Server closed');
+          process.exit(0);
+        });
+        
+        // Force exit after 30 seconds
+        setTimeout(() => {
+          console.error('Forced shutdown after timeout');
+          process.exit(1);
+        }, 30000);
+      });
+    });
+  }
+  
+  isShutdown() { return this.isShuttingDown; }
+}
 import { CopilotClient } from '@github/copilot-sdk';
+
+// Configuration validation at startup
+function validateConfiguration() {
+  const requiredEnvVars = ['OPENAI_API_KEY', 'GITHUB_TOKEN'];
+  const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  
+  if (missingVars.length > 0) {
+    throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
+  }
+  
+  // Validate API key format (at least 20 chars, no spaces)
+  if (process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY.length < 20) {
+    throw new Error('OPENAI_API_KEY appears invalid (too short)');
+  }
+  if (process.env.GITHUB_TOKEN && process.env.GITHUB_TOKEN.length < 10) {
+    throw new Error('GITHUB_TOKEN appears invalid (too short)');
+  }
+  
+  // Validate port if set
+  const port = process.env.PORT;
+  if (port && (isNaN(parseInt(port)) || parseInt(port) <= 0 || parseInt(port) > 65535)) {
+    throw new Error('PORT must be a valid port number (1-65535)');
+  }
+  
+  return true;
+}
+
+// Validate configuration at startup
+try {
+  validateConfiguration();
+} catch (error) {
+  console.error('Configuration validation failed:', error.message);
+  process.exit(1);
+}
+
+// Job Queue with retry logic and exponential backoff
+class JobQueue {
+  private queue: any[] = [];
+  private deadLetterQueue: any[] = [];
+  private processing = false;
+  private maxRetries = 3;
+  private baseBackoffMs = 1000;
+  
+  constructor(maxRetries = 3, baseBackoffMs = 1000) {
+    this.maxRetries = maxRetries;
+    this.baseBackoffMs = baseBackoffMs;
+  }
+  
+  enqueue(job) {
+    if (!job || typeof job.handler !== 'function') {
+      throw new Error('Job must have a handler function');
+    }
+    this.queue.push({
+      ...job,
+      retryCount: 0,
+      createdAt: Date.now(),
+      lastAttemptAt: null
+    });
+  }
+  
+  private calculateBackoff(retryCount) {
+    return this.baseBackoffMs * Math.pow(2, retryCount) + Math.random() * 1000;
+  }
+  
+  async processQueue() {
+    if (this.processing || this.queue.length === 0) return;
+    this.processing = true;
+    
+    while (this.queue.length > 0) {
+      const job = this.queue[0];
+      const now = Date.now();
+      
+      // Check if we should retry this job based on backoff
+      if (job.lastAttemptAt) {
+        const backoffTime = this.calculateBackoff(job.retryCount);
+        if (now - job.lastAttemptAt < backoffTime) {
+          break; // Wait for backoff period
+        }
+      }
+      
+      try {
+        job.lastAttemptAt = now;
+        await job.handler();
+        this.queue.shift(); // Remove successful job
+      } catch (error) {
+        job.retryCount++;
+        if (job.retryCount >= this.maxRetries) {
+          this.queue.shift();
+          this.deadLetterQueue.push({
+            ...job,
+            failedAt: now,
+            error: error.message
+          });
+          console.error(`Job moved to dead-letter queue after ${this.maxRetries} retries:`, error.message);
+        } else {
+          console.warn(`Job failed, retry ${job.retryCount}/${this.maxRetries}:`, error.message);
+        }
+      }
+    }
+    
+    this.processing = false;
+  }
+  
+  getQueueSize() { return this.queue.length; }
+  getDeadLetterSize() { return this.deadLetterQueue.length; }
+}
+
+const jobQueue = new JobQueue(3, 1000);
+
+// Process jobs periodically
+setInterval(() => jobQueue.processQueue(), 5000);
+
+// State reconciliation for consistency checks
+class StateReconciliation {
+  private consistencyCheckIntervalMs = 30000;
+  private checksEnabled = true;
+  
+  constructor() {
+    if (process.env.NODE_ENV !== 'test') {
+      this.startConsistencyChecks();
+    }
+  }
+  
+  private startConsistencyChecks() {
+    setInterval(() => {
+      if (this.checksEnabled) {
+        this.runConsistencyChecks();
+      }
+    }, this.consistencyCheckIntervalMs);
+  }
+  
+  private runConsistencyChecks() {
+    try {
+      // Validate core state invariants
+      if (jobQueue.getQueueSize() < 0) {
+        console.error('STATE_ERROR: Job queue size is negative');
+      }
+      if (jobQueue.getDeadLetterSize() < 0) {
+        console.error('STATE_ERROR: Dead-letter queue size is negative');
+      }
+    } catch (error) {
+      console.error('Consistency check failed:', error.message);
+    }
+  }
+  
+  async reconciliate() {
+    try {
+      // Reconciliation logic for detected inconsistencies
+      if (jobQueue.getDeadLetterSize() > 100) {
+        console.warn('Dead-letter queue growing: consider investigating job failures');
+      }
+    } catch (error) {
+      console.error('Reconciliation failed:', error.message);
+    }
+  }
+  
+  disableChecks() { this.checksEnabled = false; }
+  enableChecks() { this.checksEnabled = true; }
+}
+
+const stateReconciliation = new StateReconciliation();
 
 // Immutable state management for client library
 class ImmutableState {
@@ -198,7 +397,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, asyncHandler(async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
