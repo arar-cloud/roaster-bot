@@ -13,6 +13,45 @@ if (!app) {
 // Request-level isolation middleware - prevent race conditions
 const requestMutexes = new Map();
 
+// Request validation and sanitization middleware
+const validateRequest = (req, res, next) => {
+  try {
+    // Validate content-type for POST/PUT requests
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      const contentType = req.get('content-type');
+      if (!contentType) {
+        const err = new Error('Missing Content-Type header');
+        err.statusCode = 400;
+        err.code = 'MISSING_CONTENT_TYPE';
+        return next(err);
+      }
+      if (!contentType.includes('application/json')) {
+        const err = new Error('Content-Type must be application/json');
+        err.statusCode = 415;
+        err.code = 'UNSUPPORTED_MEDIA_TYPE';
+        return next(err);
+      }
+    }
+    
+    // Sanitize request parameters
+    if (req.query) {
+      Object.keys(req.query).forEach(key => {
+        const value = req.query[key];
+        if (typeof value === 'string') {
+          // Remove potential XSS vectors
+          req.query[key] = value.replace(/[<>"']/g, '');
+        }
+      });
+    }
+    
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+
+app.use(validateRequest);
+
 // Health check endpoints for load balancer integration
 app.get('/health', (req, res) => {
   // Liveness probe - responds immediately, no dependency checks
