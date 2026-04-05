@@ -8,14 +8,41 @@ if (!app) {
   throw new Error(errorMsg);
 }
 
+// Request-level isolation middleware - prevent race conditions
+const requestMutexes = new Map();
+
+app.use((req, res, next) => {
+  const requestId = randomUUID();
+  req.requestId = requestId;
+  req.requestMutex = {}; // Per-request mutex lock holder
+  req.acquireLock = async (key) => {
+    if (!requestMutexes.has(key)) {
+      requestMutexes.set(key, { locked: false, queue: [] });
+    }
+    const lockEntry = requestMutexes.get(key);
+    if (lockEntry.locked) {
+      await new Promise(resolve => lockEntry.queue.push(resolve));
+    }
+    lockEntry.locked = true;
+    return () => {
+      lockEntry.locked = false;
+      const next = lockEntry.queue.shift();
+      if (next) next();
+    };
+  };
+  next();
+});
+
 // Request validation middleware - prevent malformed requests early
 app.use((req, res, next) => {
   // Validate content-type for POST/PUT/PATCH
   if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
     const contentType = req.headers['content-type'];
     if (!contentType?.includes('application/json')) {
+      req.log.warn('invalid_content_type', { contentType });
       return res.status(400).json({
-        error: 'Invalid Content-Type. Expected application/json'
+        error: 'Invalid Content-Type. Expected application/json',
+        correlationId: req.correlationId
       });
     }
   }
