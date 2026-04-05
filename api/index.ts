@@ -311,6 +311,98 @@ function gracefulShutdown(signal) {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Exponential backoff retry strategy
+async function retryWithExponentialBackoff(
+  operation,
+  maxRetries = 3,
+  initialDelayMs = 100,
+  maxDelayMs = 30000,
+  correlationId = 'unknown'
+) {
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[${correlationId}] Attempt ${attempt + 1}/${maxRetries + 1}`);
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      
+      if (attempt === maxRetries) {
+        console.error(`[${correlationId}] All ${maxRetries + 1} retries exhausted`, err.message);
+        throw err;
+      }
+      
+      const backoffMs = Math.min(
+        initialDelayMs * Math.pow(2, attempt),
+        maxDelayMs
+      );
+      
+      console.warn(`[${correlationId}] Retry attempt ${attempt + 1} failed. Waiting ${backoffMs}ms before retry...`);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+  
+  throw lastError;
+}
+
+// Circuit breaker pattern for external service reliability
+class CircuitBreaker {
+  constructor(name, failureThreshold = 5, resetTimeoutMs = 60000) {
+    this.name = name;
+    this.failureThreshold = failureThreshold;
+    this.resetTimeoutMs = resetTimeoutMs;
+    this.failureCount = 0;
+    this.lastFailureTime = null;
+    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+  }
+  
+  async execute(operation, correlationId = 'unknown') {
+    if (this.state === 'OPEN') {
+      const timeSinceLastFailure = Date.now() - this.lastFailureTime;
+      
+      if (timeSinceLastFailure > this.resetTimeoutMs) {
+        console.log(`[${correlationId}] Circuit breaker [${this.name}] attempting to recover (HALF_OPEN)`);
+        this.state = 'HALF_OPEN';
+      } else {
+        const err = new Error(`Circuit breaker [${this.name}] is OPEN. Service unavailable.`);
+        err.statusCode = 503;
+        throw err;
+      }
+    }
+    
+    try {
+      const result = await operation();
+      this.onSuccess();
+      return result;
+    } catch (err) {
+      this.onFailure(correlationId);
+      throw err;
+    }
+  }
+  
+  onSuccess() {
+    if (this.state === 'HALF_OPEN') {
+      console.log(`[CircuitBreaker] Circuit breaker [${this.name}] recovered (CLOSED)`);
+    }
+    this.failureCount = 0;
+    this.state = 'CLOSED';
+  }
+  
+  onFailure(correlationId) {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    console.warn(`[${correlationId}] Circuit breaker [${this.name}] failure ${this.failureCount}/${this.failureThreshold}`);
+    
+    if (this.failureCount >= this.failureThreshold) {
+      console.error(`[${correlationId}] Circuit breaker [${this.name}] opened after ${this.failureCount} failures`);
+      this.state = 'OPEN';
+    }
+  }
+}
+
+const externalServiceCircuitBreaker = new CircuitBreaker('external-api', 5, 60000);
+
 // Request validation wrapper with proper null/undefined handling
 function validateRequest(req, res, next) {
   try {
