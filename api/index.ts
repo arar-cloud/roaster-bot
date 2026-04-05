@@ -359,13 +359,18 @@ app.post('/api/mobile/endpoint', validateRequest, asyncHandler(async (req, res) 
       });
     }
     
-    // Consistent response format for mobile
-    const response = {
-      status: 'success',
-      data: processData(data),
-      timestamp: new Date().toISOString(),
-      version: '1.0'
-    };
+    // Consistent response format for mobile with transaction retry
+    const response = await executeWithTransactionRetry(
+      async () => ({
+        status: 'success',
+        data: processData(data),
+        timestamp: new Date().toISOString(),
+        version: '1.0'
+      }),
+      3,
+      100,
+      req.id
+    );
     
     res.status(200).json(response);
   } catch (error) {
@@ -377,6 +382,49 @@ app.post('/api/mobile/endpoint', validateRequest, asyncHandler(async (req, res) 
     });
   }
 });
+
+// Database connection pool configuration
+const dbPoolConfig = {
+  min: parseInt(process.env.DB_POOL_MIN || '5', 10),
+  max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+  acquireTimeoutMillis: parseInt(process.env.DB_ACQUIRE_TIMEOUT_MS || '30000', 10),
+  idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || '30000', 10),
+  reapIntervalMillis: parseInt(process.env.DB_REAP_INTERVAL_MS || '1000', 10),
+  connectionTimeoutMillis: parseInt(process.env.DB_CONNECTION_TIMEOUT_MS || '10000', 10)
+};
+
+console.log('[DB-POOL] Configured with:', dbPoolConfig);
+
+// Transaction retry wrapper with exponential backoff
+async function executeWithTransactionRetry(
+  operation,
+  maxRetries = 3,
+  initialDelayMs = 100,
+  correlationId = 'unknown'
+) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      console.log(`[DB-RETRY] Attempt ${attempt}/${maxRetries} for operation [${correlationId}]`);
+      return await operation();
+    } catch (err) {
+      lastError = err;
+      const isTransient = err.message.includes('ECONNREFUSED') || 
+                         err.message.includes('timeout') ||
+                         err.code === 'ETIMEDOUT';
+      
+      if (!isTransient || attempt === maxRetries) {
+        console.error(`[DB-RETRY] Operation failed permanently [${correlationId}]:`, err.message);
+        throw err;
+      }
+      
+      const delayMs = initialDelayMs * Math.pow(2, attempt - 1);
+      console.warn(`[DB-RETRY] Transient error detected. Retrying in ${delayMs}ms [${correlationId}]:`, err.message);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
 
 // Log successful initialization
 console.log('[INIT-SUCCESS] API module initialized successfully');
