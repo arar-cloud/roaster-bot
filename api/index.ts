@@ -42,6 +42,57 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Request-level isolation and mutex pattern for concurrent request handling
+const requestContextMap = new WeakMap();
+const requestMutexMap = new Map();
+
+function acquireMutex(requestId) {
+  if (!requestMutexMap.has(requestId)) {
+    requestMutexMap.set(requestId, Promise.resolve());
+  }
+  return requestMutexMap.get(requestId);
+}
+
+function releaseMutex(requestId, nextPromise) {
+  requestMutexMap.set(requestId, nextPromise);
+}
+
+// Request context isolation middleware
+app.use((req, res, next) => {
+  const requestContext = {
+    id: req.id,
+    startTime: Date.now(),
+    state: {},
+    mutex: Promise.resolve()
+  };
+  requestContextMap.set(req, requestContext);
+  
+  res.on('finish', () => {
+    requestMutexMap.delete(req.id);
+    requestContextMap.delete(req);
+  });
+  
+  next();
+});
+
+// Async operation wrapper to enforce mutex protection
+async function withMutexLock(req, asyncFn) {
+  const context = requestContextMap.get(req);
+  if (!context) throw new Error('Request context not found');
+  
+  const currentMutex = context.mutex;
+  let resolveMutex;
+  const nextMutex = new Promise(resolve => { resolveMutex = resolve; });
+  context.mutex = nextMutex;
+  
+  try {
+    await currentMutex;
+    return await asyncFn();
+  } finally {
+    resolveMutex();
+  }
+}
+
 // Request validation wrapper with proper null/undefined handling
 function validateRequest(req, res, next) {
   try {
