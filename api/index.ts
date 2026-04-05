@@ -48,6 +48,24 @@ app.use((req, res, next) => {
   const requestId = randomUUID();
   req.requestId = requestId;
   req.requestMutex = {}; // Per-request mutex lock holder
+  
+  // Request timeout enforcement
+  const DEFAULT_TIMEOUT = 30000; // 30 seconds
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      const err = new Error('Request timeout');
+      err.statusCode = 408;
+      err.code = 'REQUEST_TIMEOUT';
+      next(err);
+    }
+  }, DEFAULT_TIMEOUT);
+  
+  res.on('finish', () => clearTimeout(timeout));
+  res.on('close', () => clearTimeout(timeout));
+  
+  // Track request deadline
+  req.deadline = Date.now() + DEFAULT_TIMEOUT;
+  req.isDeadlineExceeded = () => Date.now() > req.deadline;
   req.acquireLock = async (key) => {
     if (!requestMutexes.has(key)) {
       requestMutexes.set(key, { locked: false, queue: [] });
