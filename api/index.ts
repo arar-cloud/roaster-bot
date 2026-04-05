@@ -32,13 +32,49 @@ app.use((req, res, next) => {
   next();
 });
 
+// External API call timeout wrapper with graceful termination
+const DEFAULT_TIMEOUT_MS = parseInt(process.env.API_TIMEOUT_MS || '30000', 10);
+const EXTERNAL_API_TIMEOUT_MS = parseInt(process.env.EXTERNAL_API_TIMEOUT_MS || '10000', 10);
+
+function createTimeoutPromise(timeoutMs) {
+  return new Promise((_, reject) => 
+    setTimeout(() => reject(new Error(`Request timeout after ${timeoutMs}ms`)), timeoutMs)
+  );
+}
+
+async function callExternalApiWithTimeout(fetchFn, timeoutMs = EXTERNAL_API_TIMEOUT_MS) {
+  try {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+      const result = await Promise.race([
+        fetchFn(controller.signal),
+        createTimeoutPromise(timeoutMs)
+      ]);
+      clearTimeout(timeoutHandle);
+      return result;
+    } catch (err) {
+      clearTimeout(timeoutHandle);
+      controller.abort();
+      throw err;
+    }
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      throw new Error(`External API call aborted: timeout after ${timeoutMs}ms`);
+    }
+    throw err;
+  }
+}
+
 // Comprehensive error handling middleware
 app.use((err, req, res, next) => {
   console.error('API Error:', err.message, err.stack);
-  const statusCode = err.statusCode || 500;
+  const statusCode = err.statusCode || (err.message.includes('timeout') ? 504 : 500);
   res.status(statusCode).json({ 
     error: err.message || 'Internal Server Error',
-    details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
+    correlationId: req.id
   });
 });
 
