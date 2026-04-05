@@ -32,6 +32,48 @@ function validateRequest(req, res, next) {
 
 app.use(validateRequest);
 
+// Fixed mobile API endpoints with proper format handling
+function processData(data) {
+  if (typeof data === 'string') {
+    try {
+      return JSON.parse(data);
+    } catch (e) {
+      return data;
+    }
+  }
+  return data;
+}
+
+app.post('/api/mobile/endpoint', validateRequest, async (req, res) => {
+  try {
+    const { userId, data } = req.body;
+    
+    if (!userId || !data) {
+      return res.status(400).json({ 
+        error: 'Missing required fields', 
+        required: ['userId', 'data'] 
+      });
+    }
+    
+    // Consistent response format for mobile
+    const response = {
+      status: 'success',
+      data: processData(data),
+      timestamp: new Date().toISOString(),
+      version: '1.0'
+    };
+    
+    res.status(200).json(response);
+  } catch (error) {
+    console.error('Mobile endpoint error:', error);
+    res.status(500).json({ 
+      status: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Log successful initialization
 console.log('[INIT-SUCCESS] API module initialized successfully');
 
