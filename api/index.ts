@@ -26,6 +26,68 @@ const httpsAgent = new https.Agent({
 app.set('httpAgent', httpAgent);
 app.set('httpsAgent', httpsAgent);
 
+// Circuit breaker pattern for external service calls
+class CircuitBreaker {
+  constructor(name, threshold = 5, timeout = 60000) {
+    this.name = name;
+    this.failureCount = 0;
+    this.threshold = threshold;
+    this.timeout = timeout;
+    this.lastFailureTime = null;
+    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+  }
+  
+  async execute(fn) {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime > this.timeout) {
+        this.state = 'HALF_OPEN';
+      } else {
+        throw new Error(`Circuit breaker OPEN for ${this.name}`);
+      }
+    }
+    
+    try {
+      const result = await fn();
+      if (this.state === 'HALF_OPEN') {
+        this.state = 'CLOSED';
+        this.failureCount = 0;
+      }
+      return result;
+    } catch (error) {
+      this.failureCount++;
+      this.lastFailureTime = Date.now();
+      if (this.failureCount >= this.threshold) {
+        this.state = 'OPEN';
+      }
+      throw error;
+    }
+  }
+}
+
+// Exponential backoff retry utility
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 100) {
+  let lastError;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < maxRetries - 1) {
+        const delay = baseDelay * Math.pow(2, attempt);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
+// Attach utilities to request context
+app.use((req, res, next) => {
+  req.retryWithBackoff = retryWithBackoff;
+  req.CircuitBreaker = CircuitBreaker;
+  next();
+});
+
 // Track active connections for monitoring
 let activeConnections = 0;
 const MAX_ACTIVE_CONNECTIONS = 1000;
