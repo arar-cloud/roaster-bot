@@ -29,18 +29,24 @@ app.set('httpsAgent', httpsAgent);
 // Circuit breaker pattern for external service calls
 class CircuitBreaker {
   constructor(name, threshold = 5, timeout = 60000) {
+    if (!name) throw new Error('CircuitBreaker requires name');
+    if (threshold <= 0) throw new Error('CircuitBreaker threshold must be positive');
+    if (timeout <= 0) throw new Error('CircuitBreaker timeout must be positive');
     this.name = name;
     this.failureCount = 0;
     this.threshold = threshold;
     this.timeout = timeout;
     this.lastFailureTime = null;
     this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.nextRetryTime = null;
+    this.successCount = 0;
   }
   
   async execute(fn) {
     if (this.state === 'OPEN') {
       if (Date.now() - this.lastFailureTime > this.timeout) {
         this.state = 'HALF_OPEN';
+        this.successCount = 0;
       } else {
         throw new Error(`Circuit breaker OPEN for ${this.name}`);
       }
@@ -49,15 +55,23 @@ class CircuitBreaker {
     try {
       const result = await fn();
       if (this.state === 'HALF_OPEN') {
-        this.state = 'CLOSED';
-        this.failureCount = 0;
+        this.successCount++;
+        if (this.successCount >= 2) {
+          this.state = 'CLOSED';
+          this.failureCount = 0;
+          this.successCount = 0;
+        }
+      } else if (this.state === 'CLOSED') {
+        this.failureCount = Math.max(0, this.failureCount - 1);
       }
+      this.lastFailureTime = null;
       return result;
     } catch (error) {
       this.failureCount++;
       this.lastFailureTime = Date.now();
       if (this.failureCount >= this.threshold) {
         this.state = 'OPEN';
+        this.nextRetryTime = Date.now() + this.timeout;
       }
       throw error;
     }
