@@ -67,14 +67,56 @@ async function callExternalApiWithTimeout(fetchFn, timeoutMs = EXTERNAL_API_TIME
   }
 }
 
+// Standardized error response schema
+class ApiError extends Error {
+  constructor(message, statusCode = 500, code = 'INTERNAL_ERROR', details = null) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.details = details;
+    this.timestamp = new Date().toISOString();
+  }
+  
+  toJSON(correlationId = 'unknown') {
+    return {
+      error: {
+        message: this.message,
+        code: this.code,
+        statusCode: this.statusCode,
+        timestamp: this.timestamp,
+        correlationId,
+        details: process.env.NODE_ENV === 'development' ? this.details : undefined
+      }
+    };
+  }
+}
+
+// Common error codes and status codes
+const ErrorCodes = {
+  VALIDATION_ERROR: { code: 'VALIDATION_ERROR', status: 400 },
+  UNAUTHORIZED: { code: 'UNAUTHORIZED', status: 401 },
+  FORBIDDEN: { code: 'FORBIDDEN', status: 403 },
+  NOT_FOUND: { code: 'NOT_FOUND', status: 404 },
+  CONFLICT: { code: 'CONFLICT', status: 409 },
+  RATE_LIMITED: { code: 'RATE_LIMITED', status: 429 },
+  TIMEOUT: { code: 'TIMEOUT', status: 504 },
+  INTERNAL_ERROR: { code: 'INTERNAL_ERROR', status: 500 }
+};
+
 // Comprehensive error handling middleware
 app.use((err, req, res, next) => {
   console.error('API Error:', err.message, err.stack);
   const statusCode = err.statusCode || (err.message.includes('timeout') ? 504 : 500);
+  const errorCode = err.code || 'INTERNAL_ERROR';
   res.status(statusCode).json({ 
-    error: err.message || 'Internal Server Error',
-    details: process.env.NODE_ENV === 'development' ? err.stack : undefined,
-    correlationId: req.id
+    error: {
+      message: err.message || 'Internal Server Error',
+      code: errorCode,
+      statusCode: statusCode,
+      timestamp: new Date().toISOString(),
+      correlationId: req.id,
+      details: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    }
   });
 });
 
@@ -289,8 +331,14 @@ app.post('/api/mobile/endpoint', validateRequest, async (req, res) => {
     
     if (!userId || !data) {
       return res.status(400).json({ 
-        error: 'Missing required fields', 
-        required: ['userId', 'data'] 
+        error: {
+          message: 'Missing required fields',
+          code: ErrorCodes.VALIDATION_ERROR.code,
+          statusCode: ErrorCodes.VALIDATION_ERROR.status,
+          required: ['userId', 'data'],
+          timestamp: new Date().toISOString(),
+          correlationId: req.id
+        }
       });
     }
     
