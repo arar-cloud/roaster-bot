@@ -130,6 +130,69 @@ function getCorrelationId(req: Request): string {
 const idempotencyKeyMap = new Map<string, { result: any; timestamp: number }>();
 const IDEMPOTENCY_CACHE_TTL_MS = 3600000; // 1 hour
 
+// Circuit breaker pattern
+enum CircuitBreakerState {
+  CLOSED = 'CLOSED',
+  OPEN = 'OPEN',
+  HALF_OPEN = 'HALF_OPEN',
+}
+
+class CircuitBreaker {
+  private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
+  private failureCount = 0;
+  private lastFailureTime = 0;
+  private successCount = 0;
+  
+  constructor(
+    private readonly failureThreshold: number = 5,
+    private readonly resetTimeoutMs: number = 60000,
+    private readonly halfOpenRequests: number = 2
+  ) {}
+  
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === CircuitBreakerState.OPEN) {
+      if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
+        this.state = CircuitBreakerState.HALF_OPEN;
+        this.successCount = 0;
+      } else {
+        throw new Error('Circuit breaker is OPEN');
+      }
+    }
+    
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+  
+  private onSuccess(): void {
+    this.failureCount = 0;
+    if (this.state === CircuitBreakerState.HALF_OPEN) {
+      this.successCount++;
+      if (this.successCount >= this.halfOpenRequests) {
+        this.state = CircuitBreakerState.CLOSED;
+        this.successCount = 0;
+      }
+    }
+  }
+  
+  private onFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = CircuitBreakerState.OPEN;
+    }
+  }
+  
+  getState(): CircuitBreakerState {
+    return this.state;
+  }
+}
+
 function idempotencyMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Only apply to mutation methods
   if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
