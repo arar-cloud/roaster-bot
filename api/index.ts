@@ -90,6 +90,38 @@ class RetryHandler {
   }
 }
 
+// State machine for retry and circuit breaker logic
+enum RetryState {
+  IDLE = 'IDLE',
+  RETRYING = 'RETRYING',
+  BACKOFF = 'BACKOFF',
+  CIRCUIT_OPEN = 'CIRCUIT_OPEN',
+  CIRCUIT_HALF_OPEN = 'CIRCUIT_HALF_OPEN',
+  FAILED = 'FAILED',
+}
+
+// State machine validator
+class StateMachineValidator {
+  private validTransitions: Record<RetryState, RetryState[]> = {
+    [RetryState.IDLE]: [RetryState.RETRYING, RetryState.CIRCUIT_OPEN],
+    [RetryState.RETRYING]: [RetryState.BACKOFF, RetryState.FAILED, RetryState.IDLE],
+    [RetryState.BACKOFF]: [RetryState.RETRYING, RetryState.FAILED],
+    [RetryState.CIRCUIT_OPEN]: [RetryState.CIRCUIT_HALF_OPEN],
+    [RetryState.CIRCUIT_HALF_OPEN]: [RetryState.IDLE, RetryState.CIRCUIT_OPEN],
+    [RetryState.FAILED]: [RetryState.IDLE],
+  };
+  
+  isValidTransition(from: RetryState, to: RetryState): boolean {
+    return this.validTransitions[from]?.includes(to) ?? false;
+  }
+  
+  validateTransition(from: RetryState, to: RetryState): void {
+    if (!this.isValidTransition(from, to)) {
+      throw new Error(`Invalid state transition: ${from} -> ${to}`);
+    }
+  }
+}
+
 
 // Request validation middleware
 const validateRequest = (req, res, next) => {
