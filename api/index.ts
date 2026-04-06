@@ -26,6 +26,51 @@ const httpsAgent = new https.Agent({
 app.set('httpAgent', httpAgent);
 app.set('httpsAgent', httpsAgent);
 
+// Idempotency key tracking for mutation endpoints
+class IdempotencyKeyStore {
+  constructor(ttl = 3600000) {
+    this.store = new Map();
+    this.ttl = ttl;
+    this.cleanupInterval = setInterval(() => this.cleanup(), ttl);
+  }
+
+  set(key, response, statusCode) {
+    this.store.set(key, {
+      response,
+      statusCode,
+      timestamp: Date.now(),
+      ttl: this.ttl
+    });
+  }
+
+  get(key) {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry;
+  }
+
+  cleanup() {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (now - entry.timestamp > entry.ttl) {
+        this.store.delete(key);
+      }
+    }
+  }
+
+  destroy() {
+    clearInterval(this.cleanupInterval);
+    this.store.clear();
+  }
+}
+
+const idempotencyStore = new IdempotencyKeyStore();
+app.set('idempotencyStore', idempotencyStore);
+
 // Initialize connection pool
 const dbPool = new ConnectionPool(25, 30000, 'SELECT 1');
 app.set('dbPool', dbPool);
