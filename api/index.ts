@@ -26,6 +26,53 @@ const httpsAgent = new https.Agent({
 app.set('httpAgent', httpAgent);
 app.set('httpsAgent', httpsAgent);
 
+// Initialize connection pool
+const dbPool = new ConnectionPool(25, 30000, 'SELECT 1');
+app.set('dbPool', dbPool);
+
+// Graceful shutdown handlers
+let isShuttingDown = false;
+const inFlightRequests = new Set();
+
+const gracefulShutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[${new Date().toISOString()}] Received ${signal}, initiating graceful shutdown...`);
+  
+  // Stop accepting new requests
+  if (server) {
+    server.close(() => {
+      console.log('[Shutdown] HTTP server closed');
+    });
+  }
+  
+  // Wait for in-flight requests (max 30 seconds)
+  const shutdownTimeout = setTimeout(() => {
+    console.warn(`[Shutdown] Force terminating ${inFlightRequests.size} in-flight requests after timeout`);
+    process.exit(1);
+  }, 30000);
+  
+  // Drain connection pool
+  try {
+    await dbPool.drain();
+    console.log('[Shutdown] Connection pool drained');
+  } catch (e) {
+    console.error('[Shutdown] Error draining pool:', e.message);
+  }
+  
+  // Wait for requests or timeout
+  while (inFlightRequests.size > 0) {
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  
+  clearTimeout(shutdownTimeout);
+  console.log('[Shutdown] Graceful shutdown complete');
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // Circuit breaker pattern for external service calls
 // Database Connection Pool with validation
 class ConnectionPool {
