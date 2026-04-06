@@ -7,6 +7,64 @@ import https from 'https';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+// Retry configuration for exponential backoff
+interface RetryConfig {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  backoffMultiplier?: number;
+}
+
+class RetryableError extends Error {
+  constructor(message: string, public isRetryable: boolean) {
+    super(message);
+    this.name = 'RetryableError';
+  }
+}
+
+// Exponential backoff with jitter
+function getBackoffDelay(attempt: number, initialDelayMs: number, maxDelayMs: number, multiplier: number): number {
+  const baseDelay = Math.min(initialDelayMs * Math.pow(multiplier, attempt), maxDelayMs);
+  const jitter = Math.random() * baseDelay * 0.1; // 10% jitter
+  return baseDelay + jitter;
+}
+
+// Wrapper for retryable operations
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  config: RetryConfig = {}
+): Promise<T> {
+  const maxRetries = config.maxRetries ?? 3;
+  const initialDelayMs = config.initialDelayMs ?? 100;
+  const maxDelayMs = config.maxDelayMs ?? 5000;
+  const backoffMultiplier = config.backoffMultiplier ?? 2;
+
+  let lastError: Error = new Error('Unknown error');
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const isRetryable = error instanceof RetryableError && error.isRetryable ||
+                         error instanceof Error && (
+                           error.message.includes('ECONNRESET') ||
+                           error.message.includes('ETIMEDOUT') ||
+                           error.message.includes('ENOTFOUND')
+                         );
+      
+      if (!isRetryable || attempt === maxRetries) {
+        throw lastError;
+      }
+      
+      const delayMs = getBackoffDelay(attempt, initialDelayMs, maxDelayMs, backoffMultiplier);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  
+  throw lastError;
+}
+
 // Timeout configuration for external HTTP calls
 const HTTP_TIMEOUT_MS = 30000; // 30 seconds
 const SOCKET_TIMEOUT_MS = 60000; // 60 seconds
