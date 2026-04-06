@@ -1,3 +1,25 @@
+// Rate limiting configuration
+const limiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skip: (req: Request) => {
+    // Skip rate limiting for health checks
+    return req.path === '/health' || req.path === '/ready';
+  },
+  onLimitReached: (req: Request, res: Response, options) => {
+    console.warn(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'RATE_LIMIT_EXCEEDED',
+      ip: req.ip,
+      correlationId: getCorrelationId(req),
+      path: req.path,
+    }));
+  },
+});
+
 import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -354,13 +376,66 @@ const logError = (requestId, error, context = {}) => {
   return errorLog;
 };
 
-// Error handling middleware
+// Error categorization
+enum ErrorCategory {
+  VALIDATION_ERROR = 'VALIDATION_ERROR',
+  CLIENT_ERROR = 'CLIENT_ERROR',
+  SERVER_ERROR = 'SERVER_ERROR',
+  EXTERNAL_SERVICE_ERROR = 'EXTERNAL_SERVICE_ERROR',
+  TIMEOUT_ERROR = 'TIMEOUT_ERROR',
+}
+
+class StructuredError extends Error {
+  constructor(
+    public category: ErrorCategory,
+    public statusCode: number,
+    message: string,
+    public retryable: boolean = false,
+    public details?: Record<string, any>
+  ) {
+    super(message);
+    this.name = 'StructuredError';
+  }
+}
+
+// Error handling middleware with categorization
 function errorHandlerMiddleware(err: any, req: any, res: any, next: any): void {
   const requestId = req.id || 'unknown';
-  logError(requestId, err, { path: req.path, method: req.method });
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
+  const correlationId = getCorrelationId(req);
+  let category = ErrorCategory.SERVER_ERROR;
+  let statusCode = 500;
+  let retryable = false;
+  let message = 'Internal server error';
+  let details: Record<string, any> | undefined;
+
+  if (err instanceof StructuredError) {
+    category = err.category;
+    statusCode = err.statusCode;
+    retryable = err.retryable;
+    message = err.message;
+    details = err.details;
+  } else if (err.message?.includes('validation') || err.message?.includes('Invalid')) {
+    category = ErrorCategory.VALIDATION_ERROR;
+    statusCode = 400;
+    message = 'Validation error';
+  } else if (err.message?.includes('ECONNRESET') || err.message?.includes('ETIMEDOUT') || err.message?.includes('timeout')) {
+    category = ErrorCategory.TIMEOUT_ERROR;
+    statusCode = 504;
+    retryable = true;
+  } else if (err.message?.includes('ENOTFOUND') || err.message?.includes('external')) {
+    category = ErrorCategory.EXTERNAL_SERVICE_ERROR;
+    statusCode = 502;
+    retryable = true;
+  }
+
+  logError(requestId, err, { path: req.path, method: req.method, category, correlationId });
+  res.status(statusCode).json({
+    error: message,
     requestId,
+    correlationId,
+    category,
+    retryable,
+    ...(details && { details }),
   });
 }
 
@@ -459,7 +534,7 @@ app.get('/api/example', async (req: Request, res: Response, next: NextFunction) 
     //     timeout: HTTP_TIMEOUT_MS,
     //   }).then(r => r.json());
     // });
-    
+
     res.json({ status: 'ok', message: 'Example endpoint' });
   } catch (error) {
     const isRetryable = error instanceof Error && (
