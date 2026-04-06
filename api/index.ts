@@ -27,6 +27,95 @@ app.set('httpAgent', httpAgent);
 app.set('httpsAgent', httpsAgent);
 
 // Circuit breaker pattern for external service calls
+// Database Connection Pool with validation
+class ConnectionPool {
+  constructor(maxConnections = 25, idleTimeout = 30000, validationQuery = null) {
+    this.maxConnections = maxConnections;
+    this.idleTimeout = idleTimeout;
+    this.validationQuery = validationQuery;
+    this.connections = [];
+    this.activeConnections = new Set();
+    this.waitQueue = [];
+    this.lastValidated = new Map();
+    this.validationInterval = setInterval(() => this.validateIdleConnections(), 60000);
+  }
+
+  async getConnection() {
+    if (this.connections.length > 0) {
+      const conn = this.connections.pop();
+      const lastValidMs = Date.now() - (this.lastValidated.get(conn) || 0);
+      if (lastValidMs < this.idleTimeout && await this.validateConnection(conn)) {
+        this.activeConnections.add(conn);
+        return conn;
+      } else {
+        await this.closeConnection(conn);
+      }
+    }
+    if (this.activeConnections.size < this.maxConnections) {
+      const conn = { id: randomUUID(), createdAt: Date.now() };
+      this.activeConnections.add(conn);
+      return conn;
+    }
+    return new Promise(resolve => this.waitQueue.push(resolve));
+  }
+
+  async releaseConnection(conn) {
+    if (conn && this.activeConnections.has(conn)) {
+      this.activeConnections.delete(conn);
+      this.lastValidated.set(conn, Date.now());
+      this.connections.push(conn);
+      const waiter = this.waitQueue.shift();
+      if (waiter) waiter(conn);
+    }
+  }
+
+  async validateConnection(conn) {
+    try {
+      if (this.validationQuery) {
+        // Simulated validation
+        return true;
+      }
+      return conn && conn.id;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async validateIdleConnections() {
+    const staleThreshold = Date.now() - this.idleTimeout;
+    const toRemove = [];
+    for (const conn of this.connections) {
+      const lastVal = this.lastValidated.get(conn) || conn.createdAt || 0;
+      if (lastVal < staleThreshold) {
+        toRemove.push(conn);
+      }
+    }
+    for (const conn of toRemove) {
+      const idx = this.connections.indexOf(conn);
+      if (idx >= 0) this.connections.splice(idx, 1);
+      await this.closeConnection(conn);
+    }
+  }
+
+  async closeConnection(conn) {
+    this.activeConnections.delete(conn);
+    this.lastValidated.delete(conn);
+  }
+
+  async drain() {
+    clearInterval(this.validationInterval);
+    const drainPromises = Array.from(this.activeConnections).map(conn => this.closeConnection(conn));
+    for (const conn of this.connections) {
+      drainPromises.push(this.closeConnection(conn));
+    }
+    this.connections = [];
+    this.activeConnections.clear();
+    this.waitQueue = [];
+    await Promise.all(drainPromises);
+  }
+}
+
+// Circuit breaker pattern for external service calls
 class CircuitBreaker {
   constructor(name, threshold = 5, timeout = 60000) {
     if (!name) throw new Error('CircuitBreaker requires name');
