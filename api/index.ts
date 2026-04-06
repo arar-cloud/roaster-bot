@@ -30,6 +30,67 @@ const httpsAgent = new https.Agent({
   maxFreeSockets: 10,
 });
 
+// Retry logic with exponential backoff and jitter
+class RetryHandler {
+  private maxRetries: number = 3;
+  private initialDelayMs: number = 100;
+  private maxDelayMs: number = 10000;
+  
+  async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    context: { logger: Logger; requestId: string }
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        context.logger.info('Executing operation', { attempt: attempt + 1, maxRetries: this.maxRetries });
+        return await Promise.race([
+          operation(),
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error('Operation timeout')), REQUEST_TIMEOUT_MS)
+          )
+        ]);
+      } catch (error) {
+        lastError = error as Error;
+        const isTransient = this.isTransientError(lastError);
+        
+        if (isTransient && attempt < this.maxRetries - 1) {
+          const delay = this.calculateBackoff(attempt);
+          context.logger.warn('Transient error, retrying', {
+            attempt: attempt + 1,
+            error: lastError.message,
+            delayMs: delay
+          });
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          context.logger.error('Operation failed', lastError, {
+            attempt: attempt + 1,
+            isTransient,
+            finalAttempt: attempt === this.maxRetries - 1
+          });
+          throw error;
+        }
+      }
+    }
+    
+    throw lastError || new Error('Max retries exceeded');
+  }
+  
+  private isTransientError(error: Error): boolean {
+    const transientPatterns = ['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', '503', '502', '504', 'ECONNRESET'];
+    return transientPatterns.some(pattern => error.message.includes(pattern));
+  }
+  
+  private calculateBackoff(attempt: number): number {
+    const exponentialDelay = this.initialDelayMs * Math.pow(2, attempt);
+    const jitter = Math.random() * exponentialDelay * 0.1; // 10% jitter
+    const delay = Math.min(exponentialDelay + jitter, this.maxDelayMs);
+    return Math.floor(delay);
+  }
+}
+
+
 // Request validation middleware
 const validateRequest = (req, res, next) => {
   try {
