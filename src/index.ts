@@ -152,9 +152,21 @@ class CircuitBreaker {
   private lastFailureTime: number = 0;
   private config: CircuitBreakerConfig;
   private transitionLog: Array<{from: RetryState; to: RetryState; timestamp: number}> = [];
+  private metrics: MetricsCollector;
+  private idempotency: IdempotencyManager;
 
   constructor(config: CircuitBreakerConfig) {
     this.config = config;
+    this.metrics = new MetricsCollector();
+    this.idempotency = new IdempotencyManager();
+  }
+
+  getMetrics(): Metrics {
+    return this.metrics.getMetrics();
+  }
+
+  getIdempotencyManager(): IdempotencyManager {
+    return this.idempotency;
   }
 
   private isValidTransition(from: RetryState, to: RetryState): boolean {
@@ -170,7 +182,7 @@ class CircuitBreaker {
   }
 
   private setState(newState: RetryState): void {
-    if (!this.isValidTransition(this.setStat(wState)) {
+    if (!this.isValidTransition(this.state, newState)) {
       throw new Error(`Invalid state transition: ${this.state} -> ${newState}`);
     }
     this.transitionLog.push({
@@ -221,6 +233,67 @@ class CircuitBreaker {
     );
     return delay + Math.random() * 1000; // Add jitter
   }
+
+  async executeWithMetrics<T>(
+    operation: () => Promise<T>,
+    context?: string,
+    idempotencyKey?: string
+  ): Promise<T> {
+    const startTime = Date.now();
+
+    if (idempotencyKey && this.idempotency.hasRequest(idempotencyKey)) {
+      const cached = this.idempotency.getResult(idempotencyKey);
+      this.metrics.recordIdempotentRequest();
+      if (cached?.status === 'success') {
+        return cached.result as T;
+      } else if (cached?.status === 'failure') {
+        throw new Error(`Cached failure for request ${idempotencyKey}`);
+      }
+    }
+
+    let attempt = 0;
+    let lastError: Error | null = null;
+
+    while (attempt < this.config.maxRetries) {
+      try {
+        if (!this.canAttempt()) {
+          this.metrics.recordCircuitBreakerTrip();
+          throw new Error(`Circuit breaker is ${this.state}`);
+        }
+        const result = await operation();
+        this.recordSuccess();
+        const latency = Date.now() - startTime;
+        this.metrics.recordRequest(latency, true);
+        if (idempotencyKey) {
+          this.idempotency.recordResult(idempotencyKey, result, 'success');
+        }
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        this.recordFailure();
+        if (this.failureCount >= this.config.failureThreshold) {
+          this.metrics.recordCircuitBreakerTrip();
+          if (idempotencyKey) {
+            this.idempotency.recordResult(idempotencyKey, lastError, 'failure');
+          }
+          throw lastError;
+        }
+        if (attempt < this.config.maxRetries - 1) {
+          const delay = this.getBackoffDelay(attempt);
+          this.metrics.recordRetry();
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+        attempt++;
+      }
+    }
+
+    const latency = Date.now() - startTime;
+    this.metrics.recordRequest(latency, false);
+    if (idempotencyKey) {
+      this.idempotency.recordResult(idempotencyKey, lastError, 'failure');
+    }
+    throw lastError || new Error('Operation failed');
+  }
 }
 
 const defaultCircuitBreakerConfig: CircuitBreakerConfig = {
@@ -232,6 +305,7 @@ const defaultCircuitBreakerConfig: CircuitBreakerConfig = {
 };
 
 const circuitBreaker = new CircuitBreaker(defaultCircuitBreakerConfig);
+let metricsCollector: MetricsCollector;
 
 // Idempotency handling
 interface IdempotencyRequest {
@@ -299,6 +373,9 @@ class IdempotencyManager {
 }
 
 const idempotencyManager = new IdempotencyManager();
+
+// Initialize metrics collector reference
+metricsCollector = new MetricsCollector();
 
 // Metrics collection for observability
 interface Metric {
@@ -378,6 +455,9 @@ declare global {
     }
   }
 }
+
+let circuitBreaker: CircuitBreaker;
+let metricsCollector: MetricsCollector;
 
 const app = express();
 const port = process.env.PORT || 3000;
