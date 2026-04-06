@@ -95,7 +95,37 @@ const rateLimitMiddleware = (req, res, next) => {
   next();
 };
 
+// Error logging utility
+const logError = (requestId, error, context = {}) => {
+  const timestamp = new Date().toISOString();
+  const errorLog = {
+    timestamp,
+    requestId,
+    error: error.message,
+    stack: error.stack,
+    context,
+  };
+  console.error('[ERROR]', JSON.stringify(errorLog));
+  return errorLog;
+};
+
+// Request tracking middleware
+const requestTracking = (req, res, next) => {
+  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  req.id = requestId;
+  res.set('X-Request-ID', requestId);
+  const startTime = Date.now();
+  
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    console.log(`[REQUEST] ${requestId} ${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+  });
+  
+  next();
+};
+
 app.use(rateLimitMiddleware);
+app.use(requestTracking);
 
 // Request/response size limit middleware
 const MAX_REQUEST_BODY_SIZE = '10mb';
