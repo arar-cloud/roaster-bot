@@ -73,6 +73,66 @@ const gracefulShutdown = async (signal) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Middleware to track in-flight requests
+app.use((req, res, next) => {
+  const reqId = randomUUID();
+  req.id = reqId;
+  const trackingId = Symbol('tracking');
+  inFlightRequests.add(trackingId);
+  res.on('finish', () => inFlightRequests.delete(trackingId));
+  res.on('close', () => inFlightRequests.delete(trackingId));
+  next();
+});
+
+// Health check endpoint - used by load balancers for basic availability
+app.get('/health', (req, res) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ status: 'shutting_down', timestamp: new Date().toISOString() });
+  }
+  res.json({
+    status: 'alive',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    pid: process.pid
+  });
+});
+
+// Readiness endpoint - validates dependencies are ready
+app.get('/ready', async (req, res) => {
+  if (isShuttingDown) {
+    return res.status(503).json({ status: 'not_ready', reason: 'shutting_down' });
+  }
+  try {
+    // Validate connection pool is operational
+    const conn = await dbPool.getConnection();
+    if (!conn) {
+      return res.status(503).json({ status: 'not_ready', reason: 'connection_pool_exhausted' });
+    }
+    await dbPool.releaseConnection(conn);
+    
+    // Validate circuit breaker has capacity
+    const breaker = app.get('circuitBreaker');
+    if (breaker && breaker.state === 'open') {
+      return res.status(503).json({ status: 'not_ready', reason: 'circuit_breaker_open' });
+    }
+    
+    res.json({
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      dependencies: {
+        database: 'connected',
+        circuitBreaker: breaker ? breaker.state : 'not_initialized'
+      }
+    });
+  } catch (e) {
+    res.status(503).json({
+      status: 'not_ready',
+      reason: 'dependency_check_failed',
+      error: e.message
+    });
+  }
+});
+
 // Circuit breaker pattern for external service calls
 // Database Connection Pool with validation
 class ConnectionPool {
