@@ -10,7 +10,7 @@ enum RetryState {
   RETRYING = 'RETRYING',
   BACKOFF = 'BACKOFF',
   CIRCUIT_OPEN = 'CIRCUIT_OPEN',
-  CIRCUIT_HALF_OPEN = 'CIRCUIT_HALF_OPEN',
+  CIRCUIT_HALF_OPEN = 'CIRCUIT_HALF_OPEN)',
   FAILED = 'FAILED',
 }
 
@@ -22,14 +22,163 @@ interface CircuitBreakerConfig {
   resetTimeoutMs: number;
 }
 
+interface IdempotencyEntry {
+  requestId: string;
+  result: unknown;
+  timestamp: number;
+  status: 'success' | 'failure';
+}
+
+interface Metrics {
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  totalRetries: number;
+  circuitBreakerTrips: number;
+  totalLatencyMs: number;
+  minLatencyMs: number;
+  maxLatencyMs: number;
+  idempotentRequests: number;
+}
+
+class MetricsCollector {
+  private metrics: Metrics = {
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    totalRetries: 0,
+    circuitBreakerTrips: 0,
+    totalLatencyMs: 0,
+    minLatencyMs: Infinity,
+    maxLatencyMs: 0,
+    idempotentRequests: 0,
+  };
+
+  recordRequest(latencyMs: number, success: boolean): void {
+    this.metrics.totalRequests++;
+    if (success) {
+      this.metrics.successfulRequests++;
+    } else {
+      this.metrics.failedRequests++;
+    }
+    this.metrics.totalLatencyMs += latencyMs;
+    this.metrics.minLatencyMs = Math.min(this.metrics.minLatencyMs, latencyMs);
+    this.metrics.maxLatencyMs = Math.max(this.metrics.maxLatencyMs, latencyMs);
+  }
+
+  recordRetry(): void {
+    this.metrics.totalRetries++;
+  }
+
+  recordCircuitBreakerTrip(): void {
+    this.metrics.circuitBreakerTrips++;
+  }
+
+  recordIdempotentRequest(): void {
+    this.metrics.idempotentRequests++;
+  }
+
+  getMetrics(): Metrics {
+    return {
+      ...this.metrics,
+      averageLatencyMs: this.metrics.totalRequests > 0 
+        ? this.metrics.totalLatencyMs / this.metrics.totalRequests 
+        : 0,
+      successRate: this.metrics.totalRequests > 0 
+        ? (this.metrics.successfulRequests / this.metrics.totalRequests * 100).toFixed(2) + '%'
+        : '0%',
+    } as any;
+  }
+
+  reset(): void {
+    this.metrics = {
+      totalRequests: 0,
+      successfulRequests: 0,
+      failedRequests: 0,
+      totalRetries: 0,
+      circuitBreakerTrips: 0,
+      totalLatencyMs: 0,
+      minLatencyMs: Infinity,
+      maxLatencyMs: 0,
+      idempotentRequests: 0,
+    };
+  }
+}
+
+class IdempotencyManager {
+  private cache: Map<string, IdempotencyEntry> = new Map();
+  private readonly ttlMs: number = 3600000; // 1 hour
+
+  generateRequestId(): string {
+    return crypto.randomUUID();
+  }
+
+  hasRequest(requestId: string): boolean {
+    const entry = this.cache.get(requestId);
+    if (!entry) return false;
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(requestId);
+      return false;
+    }
+    return true;
+  }
+
+  getResult(requestId: string): IdempotencyEntry | undefined {
+    return this.cache.get(requestId);
+  }
+
+  recordResult(requestId: string, result: unknown, status: 'success' | 'failure'): void {
+    this.cache.set(requestId, {
+      requestId,
+      result,
+      timestamp: Date.now(),
+      status,
+    });
+  }
+
+  cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > this.ttlMs) {
+        this.cache.delete(key);
+      }
+    }
+  }
+}
+
 class CircuitBreaker {
   private state: RetryState = RetryState.IDLE;
   private failureCount: number = 0;
   private lastFailureTime: number = 0;
   private config: CircuitBreakerConfig;
+  private transitionLog: Array<{from: RetryState; to: RetryState; timestamp: number}> = [];
 
   constructor(config: CircuitBreakerConfig) {
     this.config = config;
+  }
+
+  private isValidTransition(from: RetryState, to: RetryState): boolean {
+    const validTransitions: Record<RetryState, RetryState[]> = {
+      [RetryState.IDLE]: [RetryState.RETRYING, RetryState.CIRCUIT_OPEN)],
+      [RetryState.RETRYING]: [RetryState.IDLE, RetryState.BACKOFF, RetryState.CIRCUIT_OPEN, RetryState.FAILED],
+      [RetryState.BACKOFF]: [RetryState.RETRYING, RetryState.CIRCUIT_OPEN],
+      [RetryState.CIRCUIT_OPEN]: [RetryState.CIRCUIT_HALF_OPEN],
+      [RetryState.CIRCUIT_HALF_OPEN]: [RetryState.IDLE, RetryState.CIRCUIT_OPEN],
+      [RetryState.FAILED]: [RetryState.IDLE],
+    };
+    return validTransitions[from]?.includes(to) ?? false;
+  }
+
+  private setState(newState: RetryState): void {
+    if (!this.isValidTransition(this.setStat(wState)) {
+      throw new Error(`Invalid state transition: ${this.state} -> ${newState}`);
+    }
+    this.transitionLog.push({
+      from: this.state,
+      to: newState,
+      timestamp: Date.now(),
+    });
+    this.state = newState;
   }
 
   canAttempt(): boolean {
@@ -238,7 +387,7 @@ const stabilityMiddleware = (req: any, res: any, next: any) => {
   const startTime = Date.now();
   const method = req.method;
   const path = req.path;
-  
+
   // Check circuit breaker state
   if (!circuitBreaker.canAttempt()) {
     metricsCollector.recordFailure(method + path, 'circuit_open');
@@ -365,12 +514,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
