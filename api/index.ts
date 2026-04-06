@@ -170,6 +170,61 @@ const rateLimitMiddleware = (req, res, next) => {
   next();
 };
 
+// Idempotency cache entry interface
+interface IdempotencyEntry {
+  requestId: string;
+  result: unknown;
+  timestamp: number;
+  status: 'success' | 'failure';
+  error?: string;
+}
+
+// Idempotency key management for deduplication
+class IdempotencyManager {
+  private cache = new Map<string, IdempotencyEntry>();
+  private cacheMaxAge = 3600000; // 1 hour
+  
+  isProcessing(idempotencyKey: string): boolean {
+    const entry = this.cache.get(idempotencyKey);
+    if (!entry) return false;
+    
+    const isStale = Date.now() - entry.timestamp > this.cacheMaxAge;
+    if (isStale) {
+      this.cache.delete(idempotencyKey);
+      return false;
+    }
+    
+    return true;
+  }
+  
+  getResult(idempotencyKey: string): IdempotencyEntry | null {
+    const entry = this.cache.get(idempotencyKey);
+    if (!entry) return null;
+    
+    const isStale = Date.now() - entry.timestamp > this.cacheMaxAge;
+    if (isStale) {
+      this.cache.delete(idempotencyKey);
+      return null;
+    }
+    
+    return entry;
+  }
+  
+  recordRequest(idempotencyKey: string, requestId: string, result: unknown, status: 'success' | 'failure', error?: string): void {
+    this.cache.set(idempotencyKey, {
+      requestId,
+      result,
+      timestamp: Date.now(),
+      status,
+      error,
+    });
+  }
+  
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
 // Structured logging utility
 class Logger {
   private requestId: string;
@@ -199,6 +254,53 @@ class Logger {
     }));
   }
 }
+
+// Global idempotency manager instance
+const idempotencyManager = new IdempotencyManager();
+
+// Extract idempotency key from request headers
+const getIdempotencyKey = (req: any): string | null => {
+  return req.get('Idempotency-Key') || req.get('X-Idempotency-Key') || null;
+};
+
+// Idempotency middleware - prevents duplicate request processing
+const idempotencyMiddleware = (req: any, res: any, next: any) => {
+  const idempotencyKey = getIdempotencyKey(req);
+  
+  // Only apply idempotency to state-changing operations
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) || !idempotencyKey) {
+    return next();
+  }
+  
+  // Check if request is already being processed
+  if (idempotencyManager.isProcessing(idempotencyKey)) {
+    const cachedResult = idempotencyManager.getResult(idempotencyKey);
+    if (cachedResult) {
+      const statusCode = cachedResult.status === 'success' ? 200 : 500;
+      return res.status(statusCode).json({
+        duplicate: true,
+        result: cachedResult.result,
+        error: cachedResult.error,
+      });
+    }
+  }
+  
+  // Store original res.json to intercept responses
+  const originalJson = res.json.bind(res);
+  res.json = function(data: any) {
+    const status = res.statusCode >= 400 ? 'failure' : 'success';
+    idempotencyManager.recordRequest(
+      idempotencyKey,
+      req.id || 'unknown',
+      data,
+      status,
+      status === 'failure' ? data.error : undefined
+    );
+    return originalJson(data);
+  };
+  
+  next();
+};
 
 // Error logging utility with structured format
 const logError = (requestId, error, context = {}) => {
