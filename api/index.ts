@@ -208,6 +208,42 @@ const withTransaction = async (transactionFn, context = {}) => {
   throw lastError || new Error('Transaction failed after all retries');
 };
 
+// Transaction Manager - provides consistent transaction semantics with retry logic
+class TransactionManager {
+  private maxRetries = 3;
+  private retryDelayMs = 100;
+  
+  async execute<T>(
+    operation: () => Promise<T>,
+    context: { logger: Logger; requestId: string }
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < this.maxRetries; attempt++) {
+      try {
+        context.logger.info('Starting transaction', { attempt: attempt + 1 });
+        const result = await operation();
+        context.logger.info('Transaction completed successfully');
+        return result;
+      } catch (error) {
+        lastError = error as Error;
+        const isDeadlock = (lastError.message || '').includes('deadlock') || (lastError.message || '').includes('DEADLOCK');
+        
+        if (isDeadlock && attempt < this.maxRetries - 1) {
+          const delayMs = this.retryDelayMs * Math.pow(2, attempt);
+          context.logger.info('Deadlock detected, retrying', { attempt: attempt + 1, delayMs });
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          context.logger.error('Transaction failed', lastError as Error, { attempt: attempt + 1, isDeadlock });
+          throw error;
+        }
+      }
+    }
+    
+    throw lastError || new Error('Transaction failed after all retries');
+  }
+}
+
 // Consistency verification
 const verifyConsistency = (data, schema) => {
   try {
@@ -233,7 +269,7 @@ const verifyConsistency = (data, schema) => {
   }
 };
 
-// Async error wrapper for route handlers
+// Async error wrapper for route handlers with transaction context
 const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch((error) => {
     const errorLog = logError(req.id, error, {
@@ -261,11 +297,13 @@ const asyncHandler = (fn) => (req, res, next) => {
     }
     
     // Consistent error response with transaction rollback handling
+    // In case of deadlock or transaction error, client should retry
     if (!res.headersSent) {
       res.status(statusCode).json({
         error: message,
         requestId: req.id,
         timestamp: new Date().toISOString(),
+        retryable: statusCode >= 500,
       });
     }
   });
