@@ -418,6 +418,63 @@ function gracefulShutdown(signal: string): void {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// Example service integrations (template for external API calls)
+const externalServiceCircuitBreakers = new Map<string, CircuitBreaker>();
+
+function getOrCreateCircuitBreaker(serviceName: string): CircuitBreaker {
+  if (!externalServiceCircuitBreakers.has(serviceName)) {
+    externalServiceCircuitBreakers.set(serviceName, new CircuitBreaker(
+      5,      // failureThreshold
+      60000,  // resetTimeoutMs
+      2       // halfOpenRequests
+    ));
+  }
+  return externalServiceCircuitBreakers.get(serviceName)!;
+}
+
+// Example: Wrap external service calls with retry + circuit breaker
+async function callExternalService<T>(
+  serviceName: string,
+  fn: () => Promise<T>
+): Promise<T> {
+  const breaker = getOrCreateCircuitBreaker(serviceName);
+  return breaker.execute(() =>
+    withRetry(fn, {
+      maxRetries: 3,
+      initialDelayMs: 100,
+      maxDelayMs: 5000,
+      backoffMultiplier: 2,
+    })
+  );
+}
+
+// Example endpoint with error handling
+app.get('/api/example', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Example of how to use retry wrapper with circuit breaker
+    // const result = await callExternalService('external-api', () => {
+    //   return fetch('https://api.example.com/endpoint', {
+    //     httpAgent,
+    //     httpsAgent,
+    //     timeout: HTTP_TIMEOUT_MS,
+    //   }).then(r => r.json());
+    // });
+    
+    res.json({ status: 'ok', message: 'Example endpoint' });
+  } catch (error) {
+    const isRetryable = error instanceof Error && (
+      error.message.includes('Circuit breaker') ||
+      error.message.includes('ECONNRESET')
+    );
+    next(new StructuredError(
+      isRetryable ? ErrorCategory.EXTERNAL_SERVICE_ERROR : ErrorCategory.SERVER_ERROR,
+      isRetryable ? 503 : 500,
+      error instanceof Error ? error.message : 'Unknown error',
+      isRetryable
+    ));
+  }
+});
+
 // Database transaction utility with retry logic
 const MAX_TRANSACTION_RETRIES = 3;
 const TRANSACTION_RETRY_DELAY_MS = 100;
