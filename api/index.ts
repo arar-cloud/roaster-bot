@@ -6,6 +6,39 @@ const IDEMPOTENCY_TTL_MS = 3600000; // 1 hour
 // Idempotency key cache: Map<idempotencyKey, { response, timestamp }>
 const idempotencyCache = new Map<string, { response: any; timestamp: number }>();
 
+const sanitizeInput = (obj: any): any => {
+  if (typeof obj === 'string') {
+    return obj.trim().slice(0, 10000); // Limit string length
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeInput).slice(0, 1000); // Limit array size
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const sanitized: any = {};
+    Object.keys(obj).slice(0, 100).forEach(key => {
+      sanitized[key] = sanitizeInput(obj[key]);
+    });
+    return sanitized;
+  }
+  return obj;
+};
+
+const validationMiddleware = (req: Request, res: Response, next: Function) => {
+  try {
+    if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+      // Validate body is object
+      if (typeof req.body !== 'object' || Array.isArray(req.body)) {
+        return res.status(400).json({ error: 'Request body must be a JSON object' });
+      }
+      // Sanitize input
+      req.body = sanitizeInput(req.body);
+    }
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid request format' });
+  }
+  next();
+};
+
 const idempotencyMiddleware = (req: Request, res: Response, next: Function) => {
   const idempotencyKey = req.headers['idempotency-key'] as string;
   const correlationId = getCorrelationId(req);
