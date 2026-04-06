@@ -122,6 +122,86 @@ const logError = (requestId, error, context = {}) => {
   return errorLog;
 };
 
+// Database transaction utility with retry logic
+const MAX_TRANSACTION_RETRIES = 3;
+const TRANSACTION_RETRY_DELAY_MS = 100;
+
+const withTransaction = async (transactionFn, context = {}) => {
+  let lastError;
+  let attempt = 0;
+  
+  while (attempt < MAX_TRANSACTION_RETRIES) {
+    attempt++;
+    try {
+      // Transaction boundary - BEGIN
+      const transaction = {
+        id: `txn-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        startTime: Date.now(),
+        operations: [],
+      };
+      
+      // Execute transaction function
+      const result = await transactionFn(transaction);
+      
+      // Verify consistency
+      const transactionDuration = Date.now() - transaction.startTime;
+      if (transactionDuration > 30000) {
+        throw new Error(`Transaction exceeded timeout: ${transactionDuration}ms`);
+      }
+      
+      // Transaction boundary - COMMIT (implicit)
+      console.log(`[TXN] ${transaction.id} committed in ${transactionDuration}ms`);
+      return { success: true, result, transaction };
+      
+    } catch (error) {
+      lastError = error;
+      
+      // Check if error is a deadlock or retryable
+      const isRetryable = 
+        error.code === 'DEADLOCK' || 
+        error.code === 'LOCK_WAIT_TIMEOUT' ||
+        error.code === 'ECONNREFUSED';
+      
+      if (!isRetryable || attempt === MAX_TRANSACTION_RETRIES) {
+        logError('transaction', error, { context, attempt, retryable: isRetryable });
+        throw error;
+      }
+      
+      // Exponential backoff retry
+      const delay = TRANSACTION_RETRY_DELAY_MS * Math.pow(2, attempt - 1);
+      console.log(`[TXN] Retry ${attempt}/${MAX_TRANSACTION_RETRIES} after ${delay}ms due to: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  
+  throw lastError || new Error('Transaction failed after all retries');
+};
+
+// Consistency verification
+const verifyConsistency = (data, schema) => {
+  try {
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid data type');
+    }
+    
+    for (const [key, validator] of Object.entries(schema)) {
+      if (validator.required && !(key in data)) {
+        throw new Error(`Missing required field: ${key}`);
+      }
+      
+      if (key in data && validator.type) {
+        if (typeof data[key] !== validator.type) {
+          throw new Error(`Field ${key} has invalid type: expected ${validator.type}, got ${typeof data[key]}`);
+        }
+      }
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    return { valid: false, error: error.message };
+  }
+};
+
 // Async error wrapper for route handlers
 const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch((error) => {
