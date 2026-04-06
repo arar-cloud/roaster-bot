@@ -43,6 +43,37 @@ const rateLimitMiddleware = (req, res, next) => {
 
 app.use(rateLimitMiddleware);
 
+// Request/response size limit middleware
+const MAX_REQUEST_BODY_SIZE = '10mb';
+const MAX_RESPONSE_CHUNK_SIZE = 1048576; // 1MB per chunk
+
+app.use(express.json({ limit: MAX_REQUEST_BODY_SIZE }));
+app.use(express.urlencoded({ limit: MAX_REQUEST_BODY_SIZE, extended: true }));
+
+const sizeCheckMiddleware = (req, res, next) => {
+  const originalWrite = res.write;
+  const originalEnd = res.end;
+  let chunkCount = 0;
+  
+  res.write = function(...args) {
+    chunkCount++;
+    if (chunkCount * MAX_RESPONSE_CHUNK_SIZE > 52428800) { // 50MB total limit
+      res.statusCode = 413;
+      res.end(JSON.stringify({ error: 'Response Payload Too Large' }));
+      return false;
+    }
+    return originalWrite.apply(res, args);
+  };
+  
+  res.end = function(...args) {
+    return originalEnd.apply(res, args);
+  };
+  
+  next();
+};
+
+app.use(sizeCheckMiddleware);
+
 // Import actual app from src
 const actualApp = (await import('../src/index.js')).default;
 if (actualApp) {
