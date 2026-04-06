@@ -3,9 +3,15 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
+
+// Graceful shutdown state
+let isShuttingDown = false;
+let activeConnections = 0;
+let server: any = null;
 
 // Retry configuration for exponential backoff
 interface RetryConfig {
@@ -346,6 +352,70 @@ const logError = (requestId, error, context = {}) => {
   console.error('[ERROR]', JSON.stringify(errorLog));
   return errorLog;
 };
+
+// Error handling middleware
+function errorHandlerMiddleware(err: any, req: any, res: any, next: any): void {
+  const requestId = req.id || 'unknown';
+  logError(requestId, err, { path: req.path, method: req.method });
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+    requestId,
+  });
+}
+
+// Connection tracking middleware
+function connectionTrackingMiddleware(req: any, res: any, next: any): void {
+  if (!isShuttingDown) {
+    activeConnections++;
+    res.on('finish', () => {
+      activeConnections--;
+    });
+  }
+  next();
+}
+
+// Graceful shutdown handler
+function gracefulShutdown(signal: string): void {
+  console.log(`${signal} received. Starting graceful shutdown...`);
+  isShuttingDown = true;
+  
+  const shutdownTimeout = 30000;
+  const checkInterval = 1000;
+  let elapsed = 0;
+  
+  const checkComplete = setInterval(() => {
+    elapsed += checkInterval;
+    console.log(`[Shutdown] Active connections: ${activeConnections}, elapsed: ${elapsed}ms`);
+    
+    if (activeConnections === 0 || elapsed >= shutdownTimeout) {
+      clearInterval(checkComplete);
+      console.log(`[Shutdown] Closing server after ${elapsed}ms with ${activeConnections} remaining connections`);
+      if (server) {
+        server.close(() => {
+          console.log('Server closed');
+          process.exit(0);
+        });
+      } else {
+        process.exit(0);
+      }
+    }
+  }, checkInterval);
+  
+  // Force shutdown if timeout exceeded
+  setTimeout(() => {
+    console.log(`[Shutdown] Force closing after ${shutdownTimeout}ms`);
+    clearInterval(checkComplete);
+    if (server) {
+      server.close(() => process.exit(1));
+    } else {
+      process.exit(1);
+    }
+  }, shutdownTimeout);
+}
+
+// Register graceful shutdown handlers
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Database transaction utility with retry logic
 const MAX_TRANSACTION_RETRIES = 3;
