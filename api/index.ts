@@ -129,9 +129,16 @@ const requestTracking = (req, res, next) => {
   res.set('X-Request-ID', requestId);
   const startTime = Date.now();
   
+  activeConnections.add(res);
+  
   res.on('finish', () => {
+    activeConnections.delete(res);
     const duration = Date.now() - startTime;
     console.log(`[REQUEST] ${requestId} ${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+  });
+  
+  res.on('error', () => {
+    activeConnections.delete(res);
   });
   
   next();
@@ -176,5 +183,49 @@ const actualApp = (await import('../src/index.js')).default;
 if (actualApp) {
   app.use(actualApp);
 }
+
+const PORT = process.env.PORT || 3000;
+let server;
+let isShuttingDown = false;
+const activeConnections = new Set();
+
+const gracefulShutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log(`[SHUTDOWN] Received ${signal}, starting graceful shutdown...`);
+  
+  if (server) {
+    server.close(async () => {
+      console.log('[SHUTDOWN] HTTP server closed');
+      
+      const shutdownTimeout = 30000;
+      const shutdownDeadline = Date.now() + shutdownTimeout;
+      
+      while (activeConnections.size > 0 && Date.now() < shutdownDeadline) {
+        console.log(`[SHUTDOWN] Waiting for ${activeConnections.size} in-flight requests...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      if (activeConnections.size > 0) {
+        console.warn(`[SHUTDOWN] Force closing ${activeConnections.size} remaining connections`);
+      }
+      
+      process.exit(activeConnections.size > 0 ? 1 : 0);
+    });
+  }
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+server = app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});
+
+server.on('connection', (conn) => {
+  activeConnections.add(conn);
+  conn.on('close', () => activeConnections.delete(conn));
+});
 
 export default app;
