@@ -183,6 +183,7 @@ const app = express();
 // Graceful shutdown state
 let isShuttingDown = false;
 let activeConnections = 0;
+let activeRequests = 0;
 let server: any = null;
 
 // Retry configuration for exponential backoff
