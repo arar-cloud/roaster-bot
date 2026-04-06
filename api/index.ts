@@ -7,6 +7,28 @@ import https from 'https';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+// Timeout configuration for external HTTP calls
+const HTTP_TIMEOUT_MS = 30000; // 30 seconds
+const SOCKET_TIMEOUT_MS = 60000; // 60 seconds
+const CONNECT_TIMEOUT_MS = 10000; // 10 seconds
+
+// Configure HTTP/HTTPS agents with timeout
+const httpAgent = new http.Agent({
+  timeout: SOCKET_TIMEOUT_MS,
+  keepAlive: true,
+  keepAliveMsecs: 1000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+});
+
+const httpsAgent = new https.Agent({
+  timeout: SOCKET_TIMEOUT_MS,
+  keepAlive: true,
+  keepAliveMsecs: 1000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+});
+
 // Rate limiting middleware - token bucket algorithm
 const rateLimitStore = new Map();
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
