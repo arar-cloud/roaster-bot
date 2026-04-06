@@ -1,3 +1,5 @@
+import express, { Express } from 'express';
+
 // Timeout configuration
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '30000');
 const EXTERNAL_CALL_TIMEOUT_MS = parseInt(process.env.EXTERNAL_CALL_TIMEOUT_MS || '10000');
@@ -5,6 +7,65 @@ const IDEMPOTENCY_TTL_MS = 3600000; // 1 hour
 
 // Idempotency key cache: Map<idempotencyKey, { response, timestamp }>
 const idempotencyCache = new Map<string, { response: any; timestamp: number }>();
+
+// Graceful shutdown state
+let isShuttingDown = false;
+let activeRequests = 0;
+
+// Health check endpoint
+const setupHealthCheck = (app: Express): void => {
+  app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+  app.get('/ready', (req, res) => {
+    if (isShuttingDown) {
+      res.status(503).json({ ready: false, reason: 'shutting_down' });
+    } else {
+      res.status(200).json({ ready: true });
+    }
+  });
+};
+
+// Request tracking middleware
+const trackRequests = (req: any, res: any, next: any) => {
+  if (isShuttingDown) {
+    res.status(503).json({ error: 'Server is shutting down' });
+    return;
+  }
+  activeRequests++;
+  res.on('finish', () => {
+    activeRequests--;
+  });
+  next();
+};
+
+// Graceful shutdown handler
+const setupGracefulShutdown = (app: Express, server: any): void => {
+  const shutdown = async (signal: string) => {
+    console.log(`${signal} received, starting graceful shutdown...`);
+    isShuttingDown = true;
+    
+    // Stop accepting new requests
+    server.close(() => {
+      console.log('Server closed');
+      process.exit(0);
+    });
+    
+    // Wait for active requests with timeout
+    let waitTime = 0;
+    const maxWaitTime = 30000;
+    const checkInterval = setInterval(() => {
+      if (activeRequests === 0 || waitTime >= maxWaitTime) {
+        clearInterval(checkInterval);
+        process.exit(activeRequests > 0 ? 1 : 0);
+      }
+      waitTime += 100;
+    }, 100);
+  };
+  
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+};
 
 const sanitizeInput = (obj: any): any => {
   if (typeof obj === 'string') {
