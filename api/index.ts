@@ -1,3 +1,20 @@
+// Timeout configuration
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '30000');
+const EXTERNAL_CALL_TIMEOUT_MS = parseInt(process.env.EXTERNAL_CALL_TIMEOUT_MS || '10000');
+
+// Timeout middleware
+const timeoutMiddleware = (req: Request, res: Response, next: Function) => {
+  const timeoutId = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(408).json({ error: 'Request timeout' });
+    }
+  }, REQUEST_TIMEOUT_MS);
+  
+  res.on('finish', () => clearTimeout(timeoutId));
+  res.on('close', () => clearTimeout(timeoutId));
+  next();
+};
+
 // Rate limiting configuration
 const limiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
