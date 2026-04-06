@@ -126,6 +126,54 @@ function getCorrelationId(req: Request): string {
   return requestContextMap.get(req)?.correlationId || 'unknown';
 }
 
+// Idempotency key tracking
+const idempotencyKeyMap = new Map<string, { result: any; timestamp: number }>();
+const IDEMPOTENCY_CACHE_TTL_MS = 3600000; // 1 hour
+
+function idempotencyMiddleware(req: Request, res: Response, next: NextFunction): void {
+  // Only apply to mutation methods
+  if (!['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    return next();
+  }
+  
+  const idempotencyKey = req.headers['idempotency-key'] as string;
+  if (!idempotencyKey) {
+    return next();
+  }
+  
+  // Check for duplicate request
+  const cached = idempotencyKeyMap.get(idempotencyKey);
+  if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_CACHE_TTL_MS) {
+    res.set('Idempotency-Replay', 'true');
+    return res.status(200).json(cached.result);
+  }
+  
+  // Intercept response to cache result
+  const originalSend = res.send;
+  res.send = function(data: any) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      try {
+        const result = typeof data === 'string' ? JSON.parse(data) : data;
+        idempotencyKeyMap.set(idempotencyKey, { result, timestamp: Date.now() });
+        // Cleanup old entries
+        if (idempotencyKeyMap.size > 1000) {
+          const now = Date.now();
+          for (const [key, value] of idempotencyKeyMap.entries()) {
+            if (now - value.timestamp > IDEMPOTENCY_CACHE_TTL_MS) {
+              idempotencyKeyMap.delete(key);
+            }
+          }
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+    return originalSend.call(this, data);
+  };
+  
+  next();
+}
+
 // Configure HTTP/HTTPS agents with timeout
 const httpAgent = new http.Agent({
   timeout: SOCKET_TIMEOUT_MS,
