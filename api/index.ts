@@ -29,6 +29,36 @@ const httpsAgent = new https.Agent({
   maxFreeSockets: 10,
 });
 
+// Request validation middleware
+const validateRequest = (req, res, next) => {
+  try {
+    // Sanitize request headers to prevent injection
+    const maxHeaderSize = 8192;
+    const headerString = JSON.stringify(req.headers);
+    if (headerString.length > maxHeaderSize) {
+      return res.status(400).json({ error: 'Headers exceed maximum size' });
+    }
+    
+    // Validate Content-Type for POST/PUT requests
+    if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+      const contentType = req.get('Content-Type') || '';
+      if (!contentType.includes('application/json') && req.body && Object.keys(req.body).length > 0) {
+        return res.status(415).json({ error: 'Unsupported Media Type' });
+      }
+    }
+    
+    // Validate request body size
+    const maxBodySize = 1048576; // 1MB
+    if (req.headers['content-length'] && parseInt(req.headers['content-length']) > maxBodySize) {
+      return res.status(413).json({ error: 'Payload too large' });
+    }
+    
+    next();
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid request', details: error.message });
+  }
+};
+
 // Rate limiting middleware - token bucket algorithm
 const rateLimitStore = new Map();
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
