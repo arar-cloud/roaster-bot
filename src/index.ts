@@ -257,6 +257,7 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+let shutdownManager: GracefulShutdownManager | null = null;
 
 // In-memory cache with TTL and early refresh mechanism
 interface CacheEntry {
@@ -324,8 +325,51 @@ async function getCachedOrFetch(
   return existing.value;
 }
 
+// Adaptive rate limiting with backpressure handling
+class AdaptiveRateLimiter {
+  private baseLimit = 100;
+  private currentLimit = 100;
+  private windowMs = 15 * 60 * 1000;
+  private saturationThreshold = 0.8;
+  private minLimit = 10;
+  private maxLimit = 500;
+  
+  constructor() {
+    this.monitorQueueSaturation();
+  }
+  
+  private monitorQueueSaturation() {
+    setInterval(() => {
+      const queueSize = jobQueue.getQueueSize();
+      const maxQueueSize = 1000;
+      const saturationLevel = queueSize / maxQueueSize;
+      
+      if (saturationLevel > this.saturationThreshold) {
+        this.currentLimit = Math.max(
+          this.minLimit,
+          Math.floor(this.baseLimit * (1 - saturationLevel))
+        );
+        console.warn(`Queue saturation: ${(saturationLevel * 100).toFixed(1)}%, rate limit reduced to ${this.currentLimit}`);
+      } else if (saturationLevel < 0.5 && this.currentLimit < this.baseLimit) {
+        this.currentLimit = Math.min(this.maxLimit, this.baseLimit);
+      }
+    }, 5000);
+  }
+  
+  async handle(req: Request, res: Response, next: Function) {
+    if (jobQueue.getQueueSize() > this.currentLimit * 2) {
+      return res.status(503).json({ error: 'Service overloaded, please retry later' });
+    }
+    next();
+  }
+  
+  getCurrentLimit() { return this.currentLimit; }
+}
+
+const adaptiveRateLimiter = new AdaptiveRateLimiter();
+
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
@@ -397,7 +441,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, asyncHandler(async (req: Request, res: Response) => {
+app.post('/agent', limiter, (req, res, next) => adaptiveRateLimiter.handle(req, res, next), asyncHandler(async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
