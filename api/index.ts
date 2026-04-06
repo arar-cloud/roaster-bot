@@ -348,6 +348,147 @@ const logError = (requestId, error, context = {}) => {
   return errorLog;
 };
 
+// Metrics interface for circuit breaker tracking
+interface Metrics {
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  retriedRequests: number;
+  averageLatencyMs: number;
+  circuitBreakerOpenCount: number;
+  lastErrorTimestamp?: number;
+  lastError?: string;
+}
+
+// Configuration interface for circuit breaker
+interface CircuitBreakerConfig {
+  failureThreshold: number;
+  successThreshold: number;
+  timeout: number;
+  resetTimeout: number;
+}
+
+// Circuit breaker with idempotency and state machine validation
+class CircuitBreaker {
+  private state: RetryState = RetryState.IDLE;
+  private failureCount: number = 0;
+  private successCount: number = 0;
+  private lastFailureTime: number = 0;
+  private config: CircuitBreakerConfig;
+  private metrics: Metrics = {
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    retriedRequests: 0,
+    averageLatencyMs: 0,
+    circuitBreakerOpenCount: 0,
+  };
+  private stateValidator = new StateMachineValidator();
+  private idempotencyManager = new IdempotencyManager();
+  
+  constructor(config: CircuitBreakerConfig) {
+    this.config = config;
+  }
+  
+  async execute<T>(
+    operation: () => Promise<T>,
+    idempotencyKey?: string
+  ): Promise<T> {
+    this.metrics.totalRequests++;
+    const startTime = Date.now();
+    
+    // Check for duplicate requests via idempotency key
+    if (idempotencyKey) {
+      const cachedResult = this.idempotencyManager.getResult(idempotencyKey);
+      if (cachedResult) {
+        if (cachedResult.status === 'success') {
+          return cachedResult.result as T;
+        } else {
+          throw new Error(cachedResult.error || 'Cached failure');
+        }
+      }
+    }
+    
+    // Validate state transition before execution
+    try {
+      const nextState = this.state === RetryState.IDLE ? RetryState.RETRYING : this.state;
+      this.stateValidator.validateTransition(this.state, nextState);
+      this.state = nextState;
+    } catch (error) {
+      throw new Error(`State transition validation failed: ${error.message}`);
+    }
+    
+    try {
+      // Execute operation with timeout
+      const result = await Promise.race([
+        operation(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error('Circuit breaker operation timeout')), this.config.timeout)
+        )
+      ]);
+      
+      this.metrics.successfulRequests++;
+      this.successCount++;
+      this.failureCount = 0;
+      
+      // Record idempotent result
+      if (idempotencyKey) {
+        this.idempotencyManager.recordRequest(
+          idempotencyKey,
+          'request-id',
+          result,
+          'success'
+        );
+      }
+      
+      // Transition to IDLE on success
+      if (this.state === RetryState.CIRCUIT_HALF_OPEN) {
+        this.stateValidator.validateTransition(this.state, RetryState.IDLE);
+        this.state = RetryState.IDLE;
+      }
+      
+      const latency = Date.now() - startTime;
+      this.metrics.averageLatencyMs = (this.metrics.averageLatencyMs + latency) / 2;
+      
+      return result;
+    } catch (error) {
+      this.metrics.failedRequests++;
+      this.failureCount++;
+      this.lastFailureTime = Date.now();
+      this.metrics.lastErrorTimestamp = this.lastFailureTime;
+      this.metrics.lastError = (error as Error).message;
+      
+      // Record failed request
+      if (idempotencyKey) {
+        this.idempotencyManager.recordRequest(
+          idempotencyKey,
+          'request-id',
+          null,
+          'failure',
+          (error as Error).message
+        );
+      }
+      
+      // Check if circuit should open
+      if (this.failureCount >= this.config.failureThreshold) {
+        this.stateValidator.validateTransition(this.state, RetryState.CIRCUIT_OPEN);
+        this.state = RetryState.CIRCUIT_OPEN;
+        this.metrics.circuitBreakerOpenCount++;
+      }
+      
+      throw error;
+    }
+  }
+  
+  getMetrics(): Metrics {
+    return { ...this.metrics };
+  }
+  
+  getState(): RetryState {
+    return this.state;
+  }
+}
+
 // Database transaction utility with retry logic
 const MAX_TRANSACTION_RETRIES = 3;
 const TRANSACTION_RETRY_DELAY_MS = 100;
