@@ -122,6 +122,44 @@ const logError = (requestId, error, context = {}) => {
   return errorLog;
 };
 
+// Async error wrapper for route handlers
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch((error) => {
+    const errorLog = logError(req.id, error, {
+      method: req.method,
+      path: req.path,
+      clientIp: req.ip,
+    });
+    
+    // Determine status code based on error type
+    let statusCode = 500;
+    let message = 'Internal server error';
+    
+    if (error.statusCode) {
+      statusCode = error.statusCode;
+      message = error.message;
+    } else if (error.code === 'ENOTFOUND') {
+      statusCode = 503;
+      message = 'Service temporarily unavailable';
+    } else if (error.code === 'ETIMEDOUT' || error.code === 'ESOCKETTIMEDOUT') {
+      statusCode = 504;
+      message = 'Gateway timeout';
+    } else if (error.code === 'ECONNREFUSED') {
+      statusCode = 503;
+      message = 'Service unavailable';
+    }
+    
+    // Consistent error response with transaction rollback handling
+    if (!res.headersSent) {
+      res.status(statusCode).json({
+        error: message,
+        requestId: req.id,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+};
+
 // Request tracking middleware
 const requestTracking = (req, res, next) => {
   const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
