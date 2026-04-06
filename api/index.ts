@@ -59,35 +59,48 @@ const validateRequest = (req, res, next) => {
   }
 };
 
-// Rate limiting middleware - token bucket algorithm
+// Rate limiting middleware - token bucket algorithm with backpressure handling
 const rateLimitStore = new Map();
+const requestQueue = [];
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
 const RATE_LIMIT_MAX_REQUESTS = 100;
+const MAX_QUEUE_SIZE = 500;
+const QUEUE_TIMEOUT_MS = 30000;
 
 const rateLimitMiddleware = (req, res, next) => {
   const clientIp = req.ip || req.connection.remoteAddress || 'unknown';
   const now = Date.now();
   
   if (!rateLimitStore.has(clientIp)) {
-    rateLimitStore.set(clientIp, { count: 0, resetTime: now + RATE_LIMIT_WINDOW_MS });
+    rateLimitStore.set(clientIp, { count: 0, resetTime: now + RATE_LIMIT_WINDOW_MS, queued: 0 });
   }
   
   const clientData = rateLimitStore.get(clientIp);
   
   if (now >= clientData.resetTime) {
     clientData.count = 0;
+    clientData.queued = 0;
     clientData.resetTime = now + RATE_LIMIT_WINDOW_MS;
   }
   
   clientData.count++;
   
   if (clientData.count > RATE_LIMIT_MAX_REQUESTS) {
-    const retryAfter = Math.ceil((clientData.resetTime - now) / 1000);
-    return res.status(429).set('Retry-After', retryAfter.toString()).json({
-      error: 'Too Many Requests',
-      retryAfter,
-      message: 'Rate limit exceeded. Please retry after ' + retryAfter + ' seconds.'
-    });
+    // Backpressure: queue the request if space available, otherwise reject
+    if (requestQueue.length >= MAX_QUEUE_SIZE) {
+      logError(req.id || 'unknown', new Error('Queue overflow'), { clientIp, queueSize: requestQueue.length });
+      return res.status(503).json({ error: 'Service temporarily unavailable', retryAfter: 60 });
+    }
+    clientData.queued++;
+    const queuedRequest = { req, res, next, timestamp: now };
+    requestQueue.push(queuedRequest);
+    const timeoutHandle = setTimeout(() => {
+      const idx = requestQueue.indexOf(queuedRequest);
+      if (idx !== -1) requestQueue.splice(idx, 1);
+      if (!res.headersSent) res.status(408).json({ error: 'Request timeout in queue' });
+    }, QUEUE_TIMEOUT_MS);
+    queuedRequest.timeoutHandle = timeoutHandle;
+    return;
   }
   
   res.set('X-RateLimit-Limit', RATE_LIMIT_MAX_REQUESTS.toString());
