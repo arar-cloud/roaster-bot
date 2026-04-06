@@ -4,6 +4,53 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Circuit breaker state management
+interface CircuitBreakerState {
+  state: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  failureCount: number;
+  lastFailureTime: number;
+  successCount: number;
+}
+
+const circuitBreakerState: CircuitBreakerState = {
+  state: 'CLOSED',
+  failureCount: 0,
+  lastFailureTime: 0,
+  successCount: 0
+};
+
+const FAILURE_THRESHOLD = 5;
+const RESET_TIMEOUT_MS = 60000;
+
+const isCircuitOpen = (): boolean => {
+  if (circuitBreakerState.state === 'OPEN') {
+    const timeSinceLastFailure = Date.now() - circuitBreakerState.lastFailureTime;
+    if (timeSinceLastFailure > RESET_TIMEOUT_MS) {
+      circuitBreakerState.state = 'HALF_OPEN';
+      circuitBreakerState.successCount = 0;
+      return false;
+    }
+    return true;
+  }
+  return false;
+};
+
+const recordFailure = (): void => {
+  circuitBreakerState.failureCount++;
+  circuitBreakerState.lastFailureTime = Date.now();
+  if (circuitBreakerState.failureCount >= FAILURE_THRESHOLD) {
+    circuitBreakerState.state = 'OPEN';
+  }
+};
+
+const recordSuccess = (): void => {
+  circuitBreakerState.successCount++;
+  if (circuitBreakerState.state === 'HALF_OPEN' && circuitBreakerState.successCount >= 3) {
+    circuitBreakerState.state = 'CLOSED';
+    circuitBreakerState.failureCount = 0;
+  }
+};
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -12,6 +59,28 @@ declare global {
     }
   }
 }
+
+const callWithCircuitBreaker = async <T>(
+  fn: () => Promise<T>,
+  timeoutMs: number = 10000
+): Promise<T> => {
+  if (isCircuitOpen()) {
+    throw new Error('Circuit breaker is OPEN');
+  }
+
+  try {
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('External call timeout')), timeoutMs)
+    );
+    
+    const result = await Promise.race([fn(), timeoutPromise]);
+    recordSuccess();
+    return result;
+  } catch (error) {
+    recordFailure();
+    throw error;
+  }
+};
 
 const app = express();
 const port = process.env.PORT || 3000;
