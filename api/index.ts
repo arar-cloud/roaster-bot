@@ -1,8 +1,9 @@
-import express from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import http from 'http';
 import https from 'https';
+import crypto from 'crypto';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -108,7 +109,37 @@ const rateLimitMiddleware = (req, res, next) => {
   next();
 };
 
-// Error logging utility
+// Structured logging utility
+class Logger {
+  private requestId: string;
+  
+  constructor(requestId: string = crypto.randomUUID()) {
+    this.requestId = requestId;
+  }
+  
+  info(message: string, metadata?: Record<string, unknown>) {
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      requestId: this.requestId,
+      level: 'INFO',
+      message,
+      ...metadata
+    }));
+  }
+  
+  error(message: string, error?: Error, metadata?: Record<string, unknown>) {
+    console.error(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      requestId: this.requestId,
+      level: 'ERROR',
+      message,
+      stack: error?.stack || undefined,
+      ...metadata
+    }));
+  }
+}
+
+// Error logging utility with structured format
 const logError = (requestId, error, context = {}) => {
   const timestamp = new Date().toISOString();
   const errorLog = {
