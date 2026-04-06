@@ -84,6 +84,19 @@ const sanitizeInput = (obj: any): any => {
   return obj;
 };
 
+// Initialize API server with middleware and handlers
+export const initializeServer = (app: Express) => {
+  // Apply middleware stack
+  app.use(trackRequests);
+  setupHealthCheck(app);
+  return app;
+};
+
+// Export graceful shutdown setup
+export const attachGracefulShutdown = (app: Express, server: any) => {
+  setupGracefulShutdown(app, server);
+};
+
 // Circuit breaker state
 const circuitBreakerState = {
   externalApi: { failures: 0, lastFailureTime: 0, isOpen: false },
