@@ -1,6 +1,37 @@
 // Timeout configuration
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '30000');
 const EXTERNAL_CALL_TIMEOUT_MS = parseInt(process.env.EXTERNAL_CALL_TIMEOUT_MS || '10000');
+const IDEMPOTENCY_TTL_MS = 3600000; // 1 hour
+
+// Idempotency key cache: Map<idempotencyKey, { response, timestamp }>
+const idempotencyCache = new Map<string, { response: any; timestamp: number }>();
+
+const idempotencyMiddleware = (req: Request, res: Response, next: Function) => {
+  const idempotencyKey = req.headers['idempotency-key'] as string;
+  const correlationId = getCorrelationId(req);
+  
+  if (idempotencyKey && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const cached = idempotencyCache.get(idempotencyKey);
+    if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
+      console.log(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'IDEMPOTENCY_CACHE_HIT',
+        idempotencyKey,
+        correlationId,
+      }));
+      return res.status(200).json(cached.response);
+    }
+    
+    const originalJson = res.json.bind(res);
+    res.json = (body: any) => {
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        idempotencyCache.set(idempotencyKey, { response: body, timestamp: Date.now() });
+      }
+      return originalJson(body);
+    };
+  }
+  next();
+};
 
 // Timeout middleware
 const timeoutMiddleware = (req: Request, res: Response, next: Function) => {
