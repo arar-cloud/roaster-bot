@@ -70,6 +70,62 @@ const HTTP_TIMEOUT_MS = 30000; // 30 seconds
 const SOCKET_TIMEOUT_MS = 60000; // 60 seconds
 const CONNECT_TIMEOUT_MS = 10000; // 10 seconds
 
+// Structured logging with correlation IDs
+interface RequestContext {
+  correlationId: string;
+  startTime: number;
+}
+
+const requestContextMap = new WeakMap<Request, RequestContext>();
+
+function generateCorrelationId(): string {
+  return crypto.randomUUID();
+}
+
+function correlationIdMiddleware(req: Request, res: Response, next: NextFunction): void {
+  const correlationId = req.headers['x-correlation-id'] as string || generateCorrelationId();
+  const context: RequestContext = {
+    correlationId,
+    startTime: Date.now(),
+  };
+  
+  requestContextMap.set(req, context);
+  res.setHeader('x-correlation-id', correlationId);
+  
+  // Log request start
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    correlationId,
+    method: req.method,
+    path: req.path,
+    type: 'REQUEST_START',
+  };
+  console.log(JSON.stringify(logEntry));
+  
+  // Log response on finish
+  const originalSend = res.send;
+  res.send = function(data: any) {
+    const duration = Date.now() - context.startTime;
+    const logExit = {
+      timestamp: new Date().toISOString(),
+      correlationId,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: duration,
+      type: 'REQUEST_END',
+    };
+    console.log(JSON.stringify(logExit));
+    return originalSend.call(this, data);
+  };
+  
+  next();
+}
+
+function getCorrelationId(req: Request): string {
+  return requestContextMap.get(req)?.correlationId || 'unknown';
+}
+
 // Configure HTTP/HTTPS agents with timeout
 const httpAgent = new http.Agent({
   timeout: SOCKET_TIMEOUT_MS,
