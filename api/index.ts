@@ -23,6 +23,74 @@ const sanitizeInput = (obj: any): any => {
   return obj;
 };
 
+// Circuit breaker state
+const circuitBreakerState = {
+  externalApi: { failures: 0, lastFailureTime: 0, isOpen: false },
+};
+
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const CIRCUIT_BREAKER_RESET_MS = 60000; // 1 minute
+
+const recordCircuitBreakerSuccess = (service: string) => {
+  if (circuitBreakerState[service as keyof typeof circuitBreakerState]) {
+    circuitBreakerState[service as keyof typeof circuitBreakerState].failures = 0;
+    circuitBreakerState[service as keyof typeof circuitBreakerState].isOpen = false;
+  }
+};
+
+const recordCircuitBreakerFailure = (service: string) => {
+  const state = circuitBreakerState[service as keyof typeof circuitBreakerState];
+  if (state) {
+    state.failures++;
+    state.lastFailureTime = Date.now();
+    if (state.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+      state.isOpen = true;
+      console.error(JSON.stringify({
+        timestamp: new Date().toISOString(),
+        type: 'CIRCUIT_BREAKER_OPENED',
+        service,
+      }));
+    }
+  }
+};
+
+const isCircuitBreakerOpen = (service: string): boolean => {
+  const state = circuitBreakerState[service as keyof typeof circuitBreakerState];
+  if (!state) return false;
+  if (state.isOpen && Date.now() - state.lastFailureTime > CIRCUIT_BREAKER_RESET_MS) {
+    state.isOpen = false;
+    state.failures = 0;
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      type: 'CIRCUIT_BREAKER_RESET',
+      service,
+    }));
+  }
+  return state.isOpen;
+};
+
+const retryWithBackoff = async (
+  fn: () => Promise<any>,
+  maxRetries: number = 3,
+  service: string = 'externalApi'
+): Promise<any> => {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      if (isCircuitBreakerOpen(service)) {
+        throw new Error(`Circuit breaker open for ${service}`);
+      }
+      const result = await fn();
+      recordCircuitBreakerSuccess(service);
+      return result;
+    } catch (error) {
+      recordCircuitBreakerFailure(service);
+      if (attempt === maxRetries - 1) throw error;
+      const backoffMs = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+};
+
 const validationMiddleware = (req: Request, res: Response, next: Function) => {
   try {
     if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
