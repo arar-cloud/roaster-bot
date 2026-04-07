@@ -227,6 +227,44 @@ const dataCache = new DataCache(60000);
 // Stability hardening: module reliability baseline
 
 // ============================================
+// Rate Limiting and Backpressure Middleware
+// ============================================
+import rateLimit from 'express-rate-limit';
+import { Request, Response, NextFunction } from 'express';
+
+const globalRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/health',
+});
+
+const apiRateLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000,
+  max: 30,
+  message: 'API rate limit exceeded',
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+function backpressureMiddleware(req: Request, res: Response, next: NextFunction) {
+  const memUsage = process.memoryUsage();
+  const memUsagePercent = (memUsage.heapUsed / memUsage.heapTotal) * 100;
+  
+  if (memUsagePercent > 90) {
+    res.setHeader('Retry-After', '30');
+    return res.status(503).json({
+      status: 'degraded',
+      message: 'Server under load, please retry later',
+      retryAfter: 30
+    });
+  }
+  next();
+}
+
+// ============================================
 // Correlation ID Middleware (Distributed Tracing)
 // ============================================
 import { v4 as uuidv4 } from 'uuid';
@@ -409,6 +447,12 @@ function correlationIdMiddleware(req: any, res: any, next: any) {
   res.setHeader('x-correlation-id', correlationId);
   next();
 }
+
+// Apply rate limiting and backpressure middleware
+app.use(globalRateLimiter);
+app.use(backpressureMiddleware);
+app.use(correlationIdMiddleware);
+app.use('/api/', apiRateLimiter);
 
 // ============================================
 // Health Check and Dependency Status
