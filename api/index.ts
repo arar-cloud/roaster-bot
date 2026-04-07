@@ -55,6 +55,54 @@ class ConnectionPool {
 
 const connectionPool = new ConnectionPool(10, 30000);
 
+// ============================================
+// Batch Query Loader (Issue #9f23648d29)
+// ============================================
+// Prevents N+1 query patterns by batching similar queries
+class BatchQueryLoader {
+  private pending: Map<string, any[]> = new Map();
+  private batchTimeout: NodeJS.Timeout | null = null;
+  private readonly batchWindowMs: number;
+
+  constructor(batchWindowMs = 10) {
+    this.batchWindowMs = batchWindowMs;
+  }
+
+  async load(key: string, id: any, loader: (ids: any[]) => Promise<Map<any, any>>) {
+    if (!this.pending.has(key)) {
+      this.pending.set(key, []);
+    }
+    this.pending.get(key)!.push(id);
+
+    return new Promise((resolve) => {
+      if (!this.batchTimeout) {
+        this.batchTimeout = setTimeout(() => this.executeBatch(key, loader), this.batchWindowMs);
+      }
+      const checkResult = () => {
+        const results = (loader as any).results;
+        if (results && results.has(id)) {
+          resolve(results.get(id));
+        } else {
+          setTimeout(checkResult, 1);
+        }
+      };
+      checkResult();
+    });
+  }
+
+  private async executeBatch(key: string, loader: (ids: any[]) => Promise<Map<any, any>>) {
+    const ids = this.pending.get(key) || [];
+    this.pending.delete(key);
+    this.batchTimeout = null;
+
+    if (ids.length === 0) return;
+    const results = await loader(ids);
+    (loader as any).results = results;
+  }
+}
+
+const batchQueryLoader = new BatchQueryLoader(10);
+
 // Stability hardening: module reliability baseline
 
 // 1. Structured logging and correlation IDs
