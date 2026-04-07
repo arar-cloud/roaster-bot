@@ -103,6 +103,63 @@ class BatchQueryLoader {
 
 const batchQueryLoader = new BatchQueryLoader(10);
 
+// ============================================
+// In-Memory Cache Layer (Issue #a774a5619b)
+// ============================================
+// Reduces redundant queries by caching frequently accessed data
+class DataCache {
+  private cache: Map<string, { value: any; expiresAt: number }> = new Map();
+  private readonly defaultTTLMs: number;
+
+  constructor(defaultTTLMs = 60000) {
+    this.defaultTTLMs = defaultTTLMs;
+    setInterval(() => this.cleanup(), 30000);
+  }
+
+  get(key: string): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  set(key: string, value: any, ttlMs?: number) {
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + (ttlMs || this.defaultTTLMs),
+    });
+  }
+
+  invalidate(pattern?: string) {
+    if (!pattern) {
+      this.cache.clear();
+      return;
+    }
+    const regex = new RegExp(pattern);
+    for (const key of this.cache.keys()) {
+      if (regex.test(key)) this.cache.delete(key);
+    }
+  }
+
+  private cleanup() {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  getStats() {
+    return { size: this.cache.size };
+  }
+}
+
+const dataCache = new DataCache(60000);
+
 // Stability hardening: module reliability baseline
 
 // 1. Structured logging and correlation IDs
@@ -115,11 +172,13 @@ const logger = {
 // 2. Request context and correlation ID generation
 const generateCorrelationId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-// Attach connection pool to request for use in handlers
+// Attach connection pool and cache to request for use in handlers
 const requestContextMiddleware = (req, res, next) => {
   req.correlationId = req.headers['x-correlation-id'] || generateCorrelationId();
   res.setHeader('x-correlation-id', req.correlationId);
   req.connectionPool = connectionPool;
+  req.dataCache = dataCache;
+  req.batchQueryLoader = batchQueryLoader;
   req.logger = (level, msg, err) => logger[level](msg, err, req.correlationId);
   next();
 };
