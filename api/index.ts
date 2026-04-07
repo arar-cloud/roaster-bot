@@ -296,6 +296,111 @@ app.retryWithBackoff = retryWithBackoff;
 app.CircuitBreaker = CircuitBreaker;
 app.RetryableError = RetryableError;
 
+// 10. Input validation and sanitization
+const validateRequestBody = (schema) => {
+  return (req, res, next) => {
+    try {
+      // Check if body exists and is object
+      if (!req.body) {
+        req.body = {};
+      }
+      if (typeof req.body !== 'object' || Array.isArray(req.body)) {
+        logger.warn('Invalid request body type', req.correlationId);
+        return res.status(400).json({
+          error: 'Invalid request body',
+          details: 'Request body must be a JSON object',
+          correlationId: req.correlationId
+        });
+      }
+
+      // Validate required fields
+      const missingFields = [];
+      for (const field of schema.required || []) {
+        if (!(field in req.body) || req.body[field] === null || req.body[field] === undefined) {
+          missingFields.push(field);
+        }
+      }
+
+      if (missingFields.length > 0) {
+        logger.warn(`Missing required fields: ${missingFields.join(', ')}`, req.correlationId);
+        return res.status(400).json({
+          error: 'Validation failed',
+          missing_fields: missingFields,
+          correlationId: req.correlationId
+        });
+      }
+
+      // Validate field types
+      for (const [field, fieldSchema] of Object.entries(schema.fields || {})) {
+        if (!(field in req.body)) continue;
+        
+        const value = req.body[field];
+        const expectedType = fieldSchema.type;
+        const actualType = Array.isArray(value) ? 'array' : typeof value;
+
+        if (actualType !== expectedType) {
+          logger.warn(`Field '${field}' has wrong type: expected ${expectedType}, got ${actualType}`, req.correlationId);
+          return res.status(400).json({
+            error: 'Validation failed',
+            field_errors: { [field]: `Expected ${expectedType}, got ${actualType}` },
+            correlationId: req.correlationId
+          });
+        }
+
+        // Additional validations
+        if (fieldSchema.minLength && value.length < fieldSchema.minLength) {
+          logger.warn(`Field '${field}' is too short`, req.correlationId);
+          return res.status(400).json({
+            error: 'Validation failed',
+            field_errors: { [field]: `Minimum length is ${fieldSchema.minLength}` },
+            correlationId: req.correlationId
+          });
+        }
+
+        if (fieldSchema.pattern && !new RegExp(fieldSchema.pattern).test(value)) {
+          logger.warn(`Field '${field}' does not match required pattern`, req.correlationId);
+          return res.status(400).json({
+            error: 'Validation failed',
+            field_errors: { [field]: 'Invalid format' },
+            correlationId: req.correlationId
+          });
+        }
+      }
+
+      next();
+    } catch (err) {
+      logger.error('Validation middleware error', err, req.correlationId);
+      res.status(500).json({
+        error: 'Internal validation error',
+        correlationId: req.correlationId
+      });
+    }
+  };
+};
+
+// 11. Safe dependency injection verification
+const verifyDependencies = () => {
+  const dependencies = {
+    'express': typeof app === 'object' && app.use !== undefined,
+    'openai': process.env.OPENAI_API_KEY !== undefined,
+    'github_copilot': process.env.GITHUB_TOKEN !== undefined,
+  };
+
+  const missing = Object.entries(dependencies)
+    .filter(([_, available]) => !available)
+    .map(([name, _]) => name);
+
+  if (missing.length > 0) {
+    logger.warn(`Missing dependencies: ${missing.join(', ')}`, 'STARTUP');
+  }
+
+  return dependencies;
+};
+
+// Make validation utilities available
+app.validateRequestBody = validateRequestBody;
+app.verifyDependencies = verifyDependencies;
+
 // 8. Circuit breaker and retry logic
 const circuitBreakerStates = new Map();
 
