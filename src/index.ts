@@ -101,6 +101,26 @@ function sendCached(res: Response, cacheKey: string | undefined, data: any, stat
   res.send(body);
 }
 
+// Stream large payloads to avoid CPU spike from synchronous JSON serialization
+function streamJSON(res: Response, data: any, statusCode = 200) {
+  res.status(statusCode);
+  res.set('Content-Type', 'application/json');
+  res.set('Transfer-Encoding', 'chunked');
+  
+  // For arrays, stream elements to reduce memory pressure
+  if (Array.isArray(data)) {
+    res.write('[');
+    data.forEach((item, idx) => {
+      if (idx > 0) res.write(',');
+      res.write(JSON.stringify(item));
+    });
+    res.write(']');
+  } else {
+    res.write(JSON.stringify(data));
+  }
+  res.end();
+}
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
