@@ -314,11 +314,50 @@ const sanitizeInput = (input) => {
   return input;
 };
 
+// 11. Request timeout and cancellation
+const DEFAULT_TIMEOUT_MS = 30000;
+
+const timeoutMiddleware = (timeoutMs = DEFAULT_TIMEOUT_MS) => (req, res, next) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    if (!res.headersSent) {
+      req.logger('warn', `Request timeout after ${timeoutMs}ms`);
+      controller.abort();
+      res.status(408).json({
+        error: 'Request Timeout',
+        timeout: timeoutMs,
+        correlationId: req.correlationId,
+      });
+    }
+  }, timeoutMs);
+  
+  req.controller = controller;
+  req.signal = controller.signal;
+  
+  res.on('finish', () => clearTimeout(timeoutId));
+  res.on('close', () => {
+    clearTimeout(timeoutId);
+    if (!controller.signal.aborted) controller.abort();
+  });
+  
+  next();
+};
+
+const withTimeout = async (req, promise, timeoutMs = DEFAULT_TIMEOUT_MS) => {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Operation timeout')), timeoutMs)
+    ),
+  ]);
+};
+
 // 5. Attach middleware to app
 app.use(requestContextMiddleware);
 app.use(requestCounterMiddleware);
 app.use(rateLimitMiddleware);
 app.use(idempotencyMiddleware);
+app.use(timeoutMiddleware());
 
 export { app, withErrorBoundary, logger, generateCorrelationId };
 export default app;
