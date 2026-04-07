@@ -9,9 +9,47 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      cacheKey?: string;
     }
   }
 }
+
+// ============================================
+// Response Caching Layer
+// ============================================
+class ResponseCache {
+  private cache: Map<string, { body: string; etag: string; timestamp: number }> = new Map();
+  private readonly ttl: number = 5 * 60 * 1000; // 5 minutes default
+
+  set(key: string, body: string) {
+    const etag = crypto.createHash('md5').update(body).digest('hex');
+    this.cache.set(key, { body, etag, timestamp: Date.now() });
+  }
+
+  get(key: string) {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+    if (Date.now() - cached.timestamp > this.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    return cached;
+  }
+
+  clear(pattern?: RegExp) {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (pattern.test(key)) {
+          this.cache.delete(key);
+        }
+      }
+    } else {
+      this.cache.clear();
+    }
+  }
+}
+
+const responseCache = new ResponseCache();
 
 const app = express();
 const port = process.env.PORT || 3000;
