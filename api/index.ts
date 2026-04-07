@@ -247,6 +247,108 @@ function createContextualLogger(correlationId: string) {
   };
 }
 
+// ============================================
+// Circuit Breaker Pattern
+// ============================================
+interface CircuitBreakerConfig {
+  failureThreshold: number;
+  successThreshold: number;
+  timeout: number;
+}
+
+class CircuitBreaker {
+  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+  private failureCount = 0;
+  private successCount = 0;
+  private lastFailureTime: number | null = null;
+  private config: CircuitBreakerConfig;
+
+  constructor(config: CircuitBreakerConfig) {
+    this.config = config;
+  }
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === 'OPEN') {
+      if (Date.now() - (this.lastFailureTime || 0) > this.config.timeout) {
+        this.state = 'HALF_OPEN';
+        this.successCount = 0;
+      } else {
+        throw new Error('Circuit breaker is OPEN');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess() {
+    this.failureCount = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.successCount++;
+      if (this.successCount >= this.config.successThreshold) {
+        this.state = 'CLOSED';
+      }
+    }
+  }
+
+  private onFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.config.failureThreshold) {
+      this.state = 'OPEN';
+    }
+  }
+
+  getState() {
+    return this.state;
+  }
+}
+
+// ============================================
+// Exponential Backoff Retry Logic
+// ============================================
+interface RetryConfig {
+  maxAttempts: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  backoffMultiplier: number;
+}
+
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  config: RetryConfig,
+  correlationId: string
+): Promise<T> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < config.maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < config.maxAttempts - 1) {
+        const delayMs = Math.min(
+          config.baseDelayMs * Math.pow(config.backoffMultiplier, attempt),
+          config.maxDelayMs
+        );
+        console.warn(
+          `[WARN] [${correlationId}] Retry attempt ${attempt + 1}/${config.maxAttempts} after ${delayMs}ms`,
+          lastError.message
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+
+  throw lastError || new Error('All retry attempts failed');
+}
+
 function correlationIdMiddleware(req: any, res: any, next: any) {
   const correlationId = req.headers['x-correlation-id'] as string || uuidv4();
   req.correlationId = correlationId;
@@ -315,9 +417,42 @@ const trackConnections = (req, res, next) => {
 // Cache invalidation for write operations
 const invalidateCacheOnWrite = (req, res, next) => {
   if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-    responseCache.invalidate(req.path.split('/')[1]);
+    dataCache.invalidate(req.path.split('/')[1]);
   }
   next();
+};
+
+// Create circuit breaker for external API calls
+const apiCircuitBreaker = new CircuitBreaker({
+  failureThreshold: 5,
+  successThreshold: 2,
+  timeout: 60000,
+});
+
+// Wrapper for resilient external API calls
+const withResilience = (handler) => async (req, res, next) => {
+  try {
+    await apiCircuitBreaker.execute(async () => {
+      return await retryWithBackoff(
+        () => handler(req, res, next),
+        {
+          maxAttempts: 3,
+          baseDelayMs: 100,
+          maxDelayMs: 5000,
+          backoffMultiplier: 2,
+        },
+        req.correlationId
+      );
+    });
+  } catch (err) {
+    req.logger('error', 'Resilience handler failed', err);
+    const circuitState = apiCircuitBreaker.getState();
+    res.status(err.statusCode || (circuitState === 'OPEN' ? 503 : 500)).json({
+      error: circuitState === 'OPEN' ? 'Service temporarily unavailable' : err.message,
+      correlationId: req.correlationId,
+      timestamp: new Date().toISOString(),
+    });
+  }
 };
 
 // 3. Error boundary wrapper for handlers
