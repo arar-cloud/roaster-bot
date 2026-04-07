@@ -40,31 +40,49 @@ class ConnectionPool {
   private readonly connectionTimeout: number;
 
   constructor(maxConnections = 10, connectionTimeout = 30000) {
-    this.maxConnections = maxConnections;
-    this.connectionTimeout = connectionTimeout;
+    this.maxConnections = parseInt(process.env.DB_POOL_SIZE || String(maxConnections), 10);
+    this.connectionTimeout = parseInt(process.env.DB_QUERY_TIMEOUT || String(connectionTimeout), 10);
   }
 
   async acquire() {
     if (this.connections.length > 0) {
       const conn = this.connections.pop();
       this.activeConnections.add(conn);
-      return conn;
+      return this.withTimeout(conn);
     }
     if (this.activeConnections.size < this.maxConnections) {
       const conn = { id: Math.random().toString(36).substr(2, 9), createdAt: Date.now() };
       this.activeConnections.add(conn);
-      return conn;
+      return this.withTimeout(conn);
     }
-    // Wait for available connection (simplified)
-    return new Promise((resolve) => {
+    // Wait for available connection with timeout to prevent hung requests
+    return new Promise((resolve, reject) => {
+      let waitTime = 0;
+      const maxWaitTime = this.connectionTimeout;
       const checkInterval = setInterval(() => {
+        waitTime += 50;
         if (this.connections.length > 0) {
           clearInterval(checkInterval);
           const conn = this.connections.pop();
           this.activeConnections.add(conn);
-          resolve(conn);
+          resolve(this.withTimeout(conn));
         }
-      }, 100);
+        if (waitTime >= maxWaitTime) {
+          clearInterval(checkInterval);
+          reject(new Error('Connection acquire timeout: no connections available within ' + maxWaitTime + 'ms'));
+        }
+      }, 50);
+    });
+  }
+
+  private withTimeout(conn: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.activeConnections.delete(conn);
+        this.connections.push(conn);
+        reject(new Error('Query timeout: exceeded ' + this.connectionTimeout + 'ms limit'));
+      }, this.connectionTimeout);
+      resolve({ ...conn, __timer: timer });
     });
   }
 
