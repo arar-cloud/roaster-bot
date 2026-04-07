@@ -54,6 +54,14 @@ const trackConnections = (req, res, next) => {
   next();
 };
 
+// Cache invalidation for write operations
+const invalidateCacheOnWrite = (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    responseCache.invalidate(req.path.split('/')[1]);
+  }
+  next();
+};
+
 // 3. Error boundary wrapper for handlers
 const withErrorBoundary = (handler) => async (req, res, next) => {
   try {
