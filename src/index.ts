@@ -67,6 +67,40 @@ app.use(express.json({
   }
 }));
 
+// Caching middleware for GET requests
+app.use((req: Request, res: Response, next) => {
+  if (req.method === 'GET') {
+    req.cacheKey = `${req.path}:${JSON.stringify(req.query)}`;
+    const cached = responseCache.get(req.cacheKey);
+    if (cached && req.headers['if-none-match'] === cached.etag) {
+      res.status(304).end();
+      return;
+    }
+    if (cached) {
+      res.set('ETag', cached.etag);
+      res.set('Cache-Control', 'public, max-age=300');
+      res.send(cached.body);
+      return;
+    }
+  }
+  next();
+});
+
+// Wrapper for cacheable responses
+function sendCached(res: Response, cacheKey: string | undefined, data: any, statusCode = 200) {
+  const body = JSON.stringify(data);
+  const etag = crypto.createHash('md5').update(body).digest('hex');
+  
+  if (cacheKey) {
+    responseCache.set(cacheKey, body);
+  }
+  
+  res.status(statusCode);
+  res.set('ETag', etag);
+  res.set('Cache-Control', 'public, max-age=300');
+  res.send(body);
+}
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
