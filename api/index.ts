@@ -226,6 +226,34 @@ const dataCache = new DataCache(60000);
 
 // Stability hardening: module reliability baseline
 
+// ============================================
+// Correlation ID Middleware (Distributed Tracing)
+// ============================================
+import { v4 as uuidv4 } from 'uuid';
+
+declare global {
+  namespace Express {
+    interface Request {
+      correlationId: string;
+    }
+  }
+}
+
+function createContextualLogger(correlationId: string) {
+  return {
+    error: (msg: string, err?: any) => console.error(`[ERROR] [${correlationId}] ${msg}:`, err?.message || err),
+    warn: (msg: string) => console.warn(`[WARN] [${correlationId}] ${msg}`),
+    info: (msg: string) => console.info(`[INFO] [${correlationId}] ${msg}`),
+  };
+}
+
+function correlationIdMiddleware(req: any, res: any, next: any) {
+  const correlationId = req.headers['x-correlation-id'] as string || uuidv4();
+  req.correlationId = correlationId;
+  res.setHeader('x-correlation-id', correlationId);
+  next();
+}
+
 // 1. Structured logging and correlation IDs
 const logger = {
   error: (msg, err, correlationId) => console.error(`[ERROR] [${correlationId}] ${msg}:`, err?.message || err),
@@ -237,6 +265,7 @@ const logger = {
 const generateCorrelationId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 // Attach connection pool and cache to request for use in handlers
+// Integrated with correlationIdMiddleware for end-to-end tracing
 const requestContextMiddleware = (req, res, next) => {
   req.correlationId = req.headers['x-correlation-id'] || generateCorrelationId();
   res.setHeader('x-correlation-id', req.correlationId);
@@ -244,6 +273,7 @@ const requestContextMiddleware = (req, res, next) => {
   req.dataCache = dataCache;
   req.batchQueryLoader = batchQueryLoader;
   req.logger = (level, msg, err) => logger[level](msg, err, req.correlationId);
+  req.contextLogger = createContextualLogger(req.correlationId);
   next();
 };
 
