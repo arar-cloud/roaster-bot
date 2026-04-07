@@ -252,6 +252,68 @@ const callWithCircuitBreaker = async (serviceName, fn, maxRetries = 3) => {
   }
 };
 
+// 9. Input validation and sanitization
+const validateRequest = (schema) => (req, res, next) => {
+  const errors = [];
+  
+  // Validate body
+  if (req.body) {
+    if (schema.body) {
+      for (const [key, rules] of Object.entries(schema.body)) {
+        const value = req.body[key];
+        if (rules.required && (value === undefined || value === null || value === '')) {
+          errors.push(`Missing required field: ${key}`);
+        }
+        if (value !== undefined && rules.type && typeof value !== rules.type) {
+          errors.push(`Invalid type for ${key}: expected ${rules.type}, got ${typeof value}`);
+        }
+        if (value !== undefined && rules.pattern && !rules.pattern.test(String(value))) {
+          errors.push(`Invalid format for ${key}`);
+        }
+        if (value !== undefined && rules.maxLength && String(value).length > rules.maxLength) {
+          errors.push(`${key} exceeds maximum length of ${rules.maxLength}`);
+        }
+      }
+    }
+  }
+  
+  // Validate query parameters
+  if (schema.query) {
+    for (const [key, rules] of Object.entries(schema.query)) {
+      const value = req.query[key];
+      if (rules.required && !value) {
+        errors.push(`Missing required query parameter: ${key}`);
+      }
+      if (value !== undefined && rules.pattern && !rules.pattern.test(String(value))) {
+        errors.push(`Invalid format for query parameter ${key}`);
+      }
+    }
+  }
+  
+  if (errors.length > 0) {
+    req.logger('warn', `Validation errors: ${errors.join(', ')}`);
+    res.status(400).json({
+      error: 'Validation failed',
+      details: errors,
+      correlationId: req.correlationId,
+    });
+    return;
+  }
+  
+  next();
+};
+
+// 10. Sanitization helper
+const sanitizeInput = (input) => {
+  if (typeof input === 'string') {
+    return input
+      .replace(/[<>"']/g, '')
+      .trim()
+      .slice(0, 10000); // max string length
+  }
+  return input;
+};
+
 // 5. Attach middleware to app
 app.use(requestContextMiddleware);
 app.use(requestCounterMiddleware);
