@@ -493,6 +493,81 @@ async function fetchWithTimeout<T>(
   return Promise.race([fn(), createTimeoutPromise<T>(timeoutMs)]);
 }
 
+// ============================================
+// Comprehensive Error Handling and Logging
+// ============================================
+class RequestError extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public statusCode?: number,
+    public details?: any
+  ) {
+    super(message);
+    this.name = 'RequestError';
+  }
+}
+
+function createErrorLogger(correlationId: string) {
+  return {
+    logRequestError: (endpoint: string, method: string, error: any, requestData?: any) => {
+      const errorInfo = {
+        correlationId,
+        endpoint,
+        method,
+        timestamp: new Date().toISOString(),
+        errorName: error?.name,
+        errorMessage: error?.message,
+        errorCode: error?.code,
+        statusCode: error?.statusCode,
+        requestData: requestData ? { ...requestData, secrets: '[REDACTED]' } : undefined,
+        stack: process.env.NODE_ENV === 'development' ? error?.stack : undefined
+      };
+      console.error(`[${correlationId}] Request Error:`, JSON.stringify(errorInfo));
+    },
+
+    logResponseError: (endpoint: string, statusCode: number, response?: any) => {
+      const errorInfo = {
+        correlationId,
+        endpoint,
+        statusCode,
+        timestamp: new Date().toISOString(),
+        response: response ? { ...response, secrets: '[REDACTED]' } : undefined
+      };
+      console.error(`[${correlationId}] Response Error:`, JSON.stringify(errorInfo));
+    },
+
+    logTimeout: (endpoint: string, timeoutMs: number) => {
+      console.error(`[${correlationId}] Timeout: Request to ${endpoint} exceeded ${timeoutMs}ms`);
+    },
+
+    logSuccess: (endpoint: string, method: string, latencyMs: number) => {
+      console.log(`[${correlationId}] Success: ${method} ${endpoint} (${latencyMs}ms)`);
+    }
+  };
+}
+
+function errorHandlingMiddleware(err: any, req: Request, res: Response, next: NextFunction) {
+  const logger = createErrorLogger(req.correlationId);
+  
+  if (err instanceof RequestError) {
+    logger.logRequestError(req.path, req.method, err, req.body);
+    return res.status(err.statusCode || 500).json({
+      error: err.code,
+      message: err.message,
+      correlationId: req.correlationId,
+      details: process.env.NODE_ENV === 'development' ? err.details : undefined
+    });
+  }
+
+  logger.logRequestError(req.path, req.method, err, req.body);
+  return res.status(500).json({
+    error: 'INTERNAL_ERROR',
+    message: err?.message || 'An unexpected error occurred',
+    correlationId: req.correlationId
+  });
+}
+
 // 1. Structured logging and correlation IDs
 const logger = {
   error: (msg, err, correlationId) => console.error(`[ERROR] [${correlationId}] ${msg}:`, err?.message || err),
