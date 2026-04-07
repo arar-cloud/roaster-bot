@@ -32,6 +32,21 @@ const parsePaginationParams = (req, res, next) => {
 let isReadyForTraffic = true;
 let activeConnections = new Set();
 
+// Query optimizer for N+1 elimination
+const queryOptimizer = {
+  batchLoad: async (ids, loader) => {
+    if (!ids || ids.length === 0) return [];
+    const uniqueIds = [...new Set(ids)];
+    const results = await loader(uniqueIds);
+    const idMap = new Map(uniqueIds.map((id, idx) => [id, results[idx]]));
+    return ids.map(id => idMap.get(id));
+  },
+  eagerLoadRelations: (parentEntity, relationKey, relationData) => {
+    parentEntity[relationKey] = relationData;
+    return parentEntity;
+  }
+};
+
 const trackConnections = (req, res, next) => {
   activeConnections.add(req);
   res.on('finish', () => activeConnections.delete(req));
