@@ -417,6 +417,58 @@ const logger = {
   info: (msg, correlationId) => console.info(`[INFO] [${correlationId}] ${msg}`),
 };
 
+// ============================================
+// Input Validation Schemas (Issue-b8834bda6e)
+// ============================================
+interface ValidationSchema {
+  validate(input: any): { valid: boolean; errors?: string[] };
+}
+
+class StringValidator implements ValidationSchema {
+  constructor(private minLength = 0, private maxLength = Infinity) {}
+  validate(input: any) {
+    const errors: string[] = [];
+    if (typeof input !== 'string') errors.push('Must be a string');
+    if (input.length < this.minLength) errors.push(`Min length ${this.minLength}`);
+    if (input.length > this.maxLength) errors.push(`Max length ${this.maxLength}`);
+    return { valid: errors.length === 0, errors };
+  }
+}
+
+class NumberValidator implements ValidationSchema {
+  constructor(private min = -Infinity, private max = Infinity) {}
+  validate(input: any) {
+    const errors: string[] = [];
+    if (typeof input !== 'number') errors.push('Must be a number');
+    if (input < this.min) errors.push(`Min value ${this.min}`);
+    if (input > this.max) errors.push(`Max value ${this.max}`);
+    return { valid: errors.length === 0, errors };
+  }
+}
+
+class QueryValidator implements ValidationSchema {
+  private validators: Record<string, ValidationSchema>;
+  constructor(schema: Record<string, ValidationSchema>) {
+    this.validators = schema;
+  }
+  validate(input: any) {
+    const errors: string[] = [];
+    for (const [key, validator] of Object.entries(this.validators)) {
+      const result = validator.validate(input[key]);
+      if (!result.valid) {
+        errors.push(`${key}: ${result.errors?.join(', ')}`);
+      }
+    }
+    return { valid: errors.length === 0, errors };
+  }
+}
+
+// Common validation schemas
+const paginationValidator = new QueryValidator({
+  limit: new NumberValidator(1, 100),
+  offset: new NumberValidator(0, Infinity),
+});
+
 // 2. Request context and correlation ID generation
 const generateCorrelationId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
