@@ -136,9 +136,65 @@ const cleanupIdempotencyCache = setInterval(() => {
   }
 }, IDEMPOTENCY_CACHE_TTL_MS / 2);
 
+// 7. Health checks and graceful shutdown
+let isShuttingDown = false;
+let activeRequests = 0;
+
+const requestCounterMiddleware = (req, res, next) => {
+  if (isShuttingDown && req.path !== '/health/ready') {
+    res.status(503).json({ error: 'Service shutting down', correlationId: req.correlationId });
+    return;
+  }
+  activeRequests += 1;
+  res.on('finish', () => {
+    activeRequests -= 1;
+  });
+  next();
+};
+
+app.get('/health/live', (req, res) => {
+  res.status(200).json({ status: 'alive', correlationId: req.correlationId });
+});
+
+app.get('/health/ready', (req, res) => {
+  const isReady = !isShuttingDown && activeRequests < 1000; // threshold
+  const statusCode = isReady ? 200 : 503;
+  res.status(statusCode).json({
+    status: isReady ? 'ready' : 'not_ready',
+    activeRequests,
+    shutdownInProgress: isShuttingDown,
+    correlationId: req.correlationId,
+  });
+});
+
+const gracefulShutdown = (signal) => {
+  logger.info(`${signal} received, starting graceful shutdown`);
+  isShuttingDown = true;
+  
+  // Give in-flight requests time to complete (max 30 seconds)
+  const shutdownTimeout = 30000;
+  const checkInterval = setInterval(() => {
+    if (activeRequests === 0) {
+      clearInterval(checkInterval);
+      logger.info('All in-flight requests completed, shutting down');
+      process.exit(0);
+    }
+  }, 1000);
+  
+  setTimeout(() => {
+    logger.warn(`Graceful shutdown timeout after ${shutdownTimeout}ms, forcing exit`);
+    process.exit(1);
+  }, shutdownTimeout);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
 // 5. Attach middleware to app
 app.use(requestContextMiddleware);
+app.use(requestCounterMiddleware);
 app.use(rateLimitMiddleware);
+app.use(idempotencyMiddleware);
 
 export { app, withErrorBoundary, logger, generateCorrelationId };
 export default app;
