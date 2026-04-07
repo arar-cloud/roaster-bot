@@ -1,5 +1,8 @@
 import app from '../src/index.js';
 
+// Export optimized infrastructure for handlers to leverage
+export { connectionPool, batchQueryLoader, dataCache };
+
 // ============================================
 // Connection Pool Management (Issue #83a2af25c2)
 // ============================================
