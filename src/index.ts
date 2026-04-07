@@ -4,6 +4,123 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// ============================================
+// Graceful Degradation Manager
+// ============================================
+class GracefulDegradationManager {
+  private failedServices: Map<string, { failedAt: number; retryAfter: number }> = new Map();
+  private readonly recoveryWindow: number = 60 * 1000; // 60 seconds
+
+  markServiceFailed(serviceName: string): void {
+    this.failedServices.set(serviceName, {
+      failedAt: Date.now(),
+      retryAfter: this.recoveryWindow
+    });
+  } finally {
+    logger.clearContext(requestId);
+  }
+
+  isServiceAvailable(serviceName: string): boolean {
+    const failure = this.failedServices.get(serviceName);
+    if (!failure) return true;
+
+    const timeSinceFail = Date.now() - failure.failedAt;
+    if (timeSinceFail > failure.retryAfter) {
+      this.failedServices.delete(serviceName);
+      return true;
+    }
+    return false;
+  }
+
+  getServiceStatus(): Record<string, boolean> {
+    const status: Record<string, boolean> = {};
+    for (const service of ['copilot', 'cache', 'analytics']) {
+      status[service] = this.isServiceAvailable(service);
+    }
+    return status;
+  }
+}
+
+const degradationManager = new GracefulDegradationManager();
+
+// ============================================
+// Connection Pool Configuration
+// ============================================
+class ConnectionPool {
+  private maxConnections: number = 10;
+  private activeConnections: number = 0;
+  private queuedRequests: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+  private queryTimeout: number = 30000; // 30 seconds
+  private retryAttempts: number = 3;
+  private retryDelay: number = 1000; // 1 second
+
+  constructor(maxConnections?: number, queryTimeout?: number) {
+    this.maxConnections = maxConnections || 10;
+    this.queryTimeout = queryTimeout || 30000;
+  }
+
+  async acquireConnection(): Promise<{ releaseConnection: () => void }> {
+    if (this.activeConnections < this.maxConnections) {
+      this.activeConnections++;
+      return {
+        releaseConnection: () => {
+          this.activeConnections--;
+          const queued = this.queuedRequests.shift();
+          if (queued) queued.resolve();
+        }
+      };
+    }
+
+    return new Promise((resolve, reject) => {
+      this.queuedRequests.push({
+        resolve: () => {
+          this.activeConnections++;
+          resolve({
+            releaseConnection: () => {
+              this.activeConnections--;
+              const queued = this.queuedRequests.shift();
+              if (queued) queued.resolve();
+            }
+          });
+        },
+        reject
+      });
+    });
+  }
+
+  async executeWithTimeout<T>(operation: () => Promise<T>): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < this.retryAttempts; attempt++) {
+      try {
+        const conn = await this.acquireConnection();
+        try {
+          return await Promise.race([
+            operation(),
+            new Promise<T>((_, reject) =>
+              setTimeout(() => reject(new Error('Query timeout')), this.queryTimeout)
+            )
+          ]);
+        } finally {
+          conn.releaseConnection();
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < this.retryAttempts - 1) {
+          await new Promise(resolve => setTimeout(resolve, this.retryDelay * (attempt + 1)));
+        }
+      }
+    }
+
+    throw lastError || new Error('Query failed after retries');
+  }
+}
+
+const connectionPool = new ConnectionPool(
+  parseInt(process.env.DB_MAX_CONNECTIONS || '10', 10),
+  parseInt(process.env.DB_QUERY_TIMEOUT || '30000', 10)
+);
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -13,6 +130,107 @@ declare global {
     }
   }
 }
+
+// ============================================
+// Idempotency Key Management
+// ============================================
+class IdempotencyManager {
+  private processedKeys: Map<string, { response: any; timestamp: number }> = new Map();
+  private readonly ttl: number = 24 * 60 * 60 * 1000; // 24 hours
+
+  generateKey(userId: string | null | undefined, operation: string, params: any): string {
+    const safeUserId = userId ?? 'anonymous';
+    const paramStr = JSON.stringify(params);
+    return crypto.createHash('sha256').update(`${safeUserId}:${operation}:${paramStr}`).digest('hex');
+  }
+
+  isProcessed(key: string): boolean {
+    const entry = this.processedKeys.get(key);
+    if (!entry) return false;
+
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.processedKeys.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  getResponse(key: string): any {
+    const entry = this.processedKeys.get(key);
+    return entry?.response ?? null;
+  }
+
+  markProcessed(key: string, response: any): void {
+    this.processedKeys.set(key, { response, timestamp: Date.now() });
+  }
+
+  cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.processedKeys.entries()) {
+      if (now - entry.timestamp > this.ttl) {
+        this.processedKeys.delete(key);
+      }
+    }
+  }
+}
+
+const idempotencyManager = new IdempotencyManager();
+setInterval(() => idempotencyManager.cleanup(), 60 * 60 * 1000); // Cleanup every hour
+
+// ============================================
+// Structured Logging
+// ============================================
+class StructuredLogger {
+  private requestContext: Map<string, any> = new Map();
+
+  setContext(requestId: string, context: any): void {
+    this.requestContext.set(requestId, context);
+  }
+
+  getContext(requestId: string): any {
+    return this.requestContext.get(requestId) || {};
+  }
+
+  log(requestId: string | null | undefined, level: string, message: string, data?: any): void {
+    const safeRequestId = requestId ?? 'unknown';
+    const context = this.getContext(safeRequestId);
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      level,
+      message,
+      requestId: safeRequestId,
+      userId: context.userId ?? null,
+      operationDuration: data?.duration ?? null,
+      errorName: data?.error?.name ?? null,
+      errorMessage: data?.error?.message ?? null,
+      ...data
+    };
+    console.log(JSON.stringify(logEntry));
+  }
+
+  debug(requestId: string | null | undefined, message: string, data?: any): void {
+    this.log(requestId, 'DEBUG', message, data);
+  }
+
+  info(requestId: string | null | undefined, message: string, data?: any): void {
+    this.log(requestId, 'INFO', message, data);
+  }
+
+  warn(requestId: string | null | undefined, message: string, data?: any): void {
+    this.log(requestId, 'WARN', message, data);
+  }
+
+  error(requestId: string | null | undefined, message: string, error?: Error | null | undefined, data?: any): void {
+    this.log(requestId, 'ERROR', message, { ...data, error });
+  }
+
+  clearContext(requestId: string): void {
+    this.requestContext.delete(requestId);
+  }
+}
+
+const logger = new StructuredLogger();
 
 // ============================================
 // Response Caching Layer
@@ -90,11 +308,11 @@ app.use((req: Request, res: Response, next) => {
 function sendCached(res: Response, cacheKey: string | undefined, data: any, statusCode = 200) {
   const body = JSON.stringify(data);
   const etag = crypto.createHash('md5').update(body).digest('hex');
-  
+
   if (cacheKey) {
     responseCache.set(cacheKey, body);
   }
-  
+
   res.status(statusCode);
   res.set('ETag', etag);
   res.set('Cache-Control', 'public, max-age=300');
@@ -106,7 +324,7 @@ function streamJSON(res: Response, data: any, statusCode = 200) {
   res.status(statusCode);
   res.set('Content-Type', 'application/json');
   res.set('Transfer-Encoding', 'chunked');
-  
+
   // For arrays, stream elements to reduce memory pressure
   if (Array.isArray(data)) {
     res.write('[');
@@ -132,6 +350,20 @@ app.get('/', (req, res) => {
       </body>
     </html>
   `);
+});
+
+app.get('/health', (req: Request, res: Response) => {
+  const requestId = crypto.randomUUID();
+  const serviceStatus = degradationManager.getServiceStatus();
+  const allHealthy = Object.values(serviceStatus).every(status => status === true);
+  const statusCode = allHealthy ? 200 : 503;
+  
+  logger.info(requestId, 'Health check', { serviceStatus, allHealthy });
+  res.status(statusCode).json({
+    status: allHealthy ? 'ok' : 'degraded',
+    services: serviceStatus,
+    timestamp: new Date().toISOString()
+  });
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
@@ -161,12 +393,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
