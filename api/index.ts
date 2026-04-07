@@ -190,6 +190,68 @@ const gracefulShutdown = (signal) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// 8. Circuit breaker and retry logic
+const circuitBreakerStates = new Map();
+
+const getCircuitBreaker = (serviceName) => {
+  if (!circuitBreakerStates.has(serviceName)) {
+    circuitBreakerStates.set(serviceName, {
+      state: 'closed', // closed, open, half-open
+      failures: 0,
+      successes: 0,
+      lastFailureTime: null,
+      threshold: 5,
+      resetTimeout: 60000,
+    });
+  }
+  return circuitBreakerStates.get(serviceName);
+};
+
+const callWithCircuitBreaker = async (serviceName, fn, maxRetries = 3) => {
+  const breaker = getCircuitBreaker(serviceName);
+  
+  if (breaker.state === 'open') {
+    const timeSinceFailure = Date.now() - (breaker.lastFailureTime || 0);
+    if (timeSinceFailure > breaker.resetTimeout) {
+      breaker.state = 'half-open';
+      breaker.successes = 0;
+    } else {
+      throw new Error(`Circuit breaker open for ${serviceName}`);
+    }
+  }
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const result = await fn();
+      
+      if (breaker.state === 'half-open') {
+        breaker.successes += 1;
+        if (breaker.successes >= 2) {
+          breaker.state = 'closed';
+          breaker.failures = 0;
+        }
+      } else {
+        breaker.failures = 0;
+      }
+      
+      return result;
+    } catch (err) {
+      if (attempt === maxRetries - 1) {
+        breaker.failures += 1;
+        breaker.lastFailureTime = Date.now();
+        
+        if (breaker.failures >= breaker.threshold) {
+          breaker.state = 'open';
+        }
+        throw err;
+      }
+      
+      const backoffMs = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+};
+
 // 5. Attach middleware to app
 app.use(requestContextMiddleware);
 app.use(requestCounterMiddleware);
