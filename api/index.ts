@@ -19,6 +19,15 @@ const requestContextMiddleware = (req, res, next) => {
   next();
 };
 
+// Pagination utility for large result sets
+const parsePaginationParams = (req, res, next) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  const cursor = req.query.cursor || null;
+  req.pagination = { limit, offset, cursor };
+  next();
+};
+
 // Health check state tracking for graceful shutdown
 let isReadyForTraffic = true;
 let activeConnections = new Set();
