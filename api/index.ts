@@ -201,6 +201,101 @@ const gracefulShutdown = (signal) => {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
+// 7. Retry logic with exponential backoff and jitter
+class RetryableError extends Error {
+  constructor(message, retryable = true) {
+    super(message);
+    this.retryable = retryable;
+  }
+}
+
+const calculateBackoff = (attempt, baseDelay = 100, maxDelay = 30000) => {
+  const exponentialDelay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+  const jitter = Math.random() * (exponentialDelay * 0.1); // 10% jitter
+  return exponentialDelay + jitter;
+};
+
+const retryWithBackoff = async (fn, maxAttempts = 3, correlationId = 'N/A') => {
+  let lastError;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      logger.info(`Attempt ${attempt + 1}/${maxAttempts}`, correlationId);
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const isRetryable = err instanceof RetryableError ? err.retryable : true;
+      
+      if (!isRetryable || attempt === maxAttempts - 1) {
+        throw err;
+      }
+      
+      const delay = calculateBackoff(attempt);
+      logger.warn(`Retry attempt ${attempt + 1} failed, waiting ${delay.toFixed(0)}ms before retry`, correlationId);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError;
+};
+
+// 8. Circuit breaker pattern
+class CircuitBreaker {
+  constructor(threshold = 5, timeout = 60000) {
+    this.failureCount = 0;
+    this.successCount = 0;
+    this.threshold = threshold;
+    this.timeout = timeout;
+    this.state = 'CLOSED'; // CLOSED, OPEN, HALF_OPEN
+    this.nextAttemptTime = null;
+  }
+
+  async call(fn, correlationId = 'N/A') {
+    if (this.state === 'OPEN') {
+      if (Date.now() < this.nextAttemptTime) {
+        const err = new Error('Circuit breaker is OPEN');
+        err.retryable = false;
+        throw err;
+      }
+      this.state = 'HALF_OPEN';
+      logger.info('Circuit breaker transitioned to HALF_OPEN', correlationId);
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess(correlationId);
+      return result;
+    } catch (err) {
+      this.onFailure(correlationId);
+      throw err;
+    }
+  }
+
+  onSuccess(correlationId) {
+    this.failureCount = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.state = 'CLOSED';
+      logger.info('Circuit breaker closed (recovered)', correlationId);
+    }
+  }
+
+  onFailure(correlationId) {
+    this.failureCount++;
+    if (this.failureCount >= this.threshold) {
+      this.state = 'OPEN';
+      this.nextAttemptTime = Date.now() + this.timeout;
+      logger.error(`Circuit breaker opened after ${this.failureCount} failures`, null, correlationId);
+    }
+  }
+}
+
+// 9. Export utilities for middleware and route handlers
+app.use(trackConnections);
+app.use(requestContextMiddleware);
+
+// Make utilities available to app
+app.retryWithBackoff = retryWithBackoff;
+app.CircuitBreaker = CircuitBreaker;
+app.RetryableError = RetryableError;
+
 // 8. Circuit breaker and retry logic
 const circuitBreakerStates = new Map();
 
