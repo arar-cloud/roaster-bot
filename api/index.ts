@@ -19,6 +19,17 @@ const requestContextMiddleware = (req, res, next) => {
   next();
 };
 
+// Health check state tracking for graceful shutdown
+let isReadyForTraffic = true;
+let activeConnections = new Set();
+
+const trackConnections = (req, res, next) => {
+  activeConnections.add(req);
+  res.on('finish', () => activeConnections.delete(req));
+  res.on('close', () => activeConnections.delete(req));
+  next();
+};
+
 // 3. Error boundary wrapper for handlers
 const withErrorBoundary = (handler) => async (req, res, next) => {
   try {
@@ -354,6 +365,7 @@ const withTimeout = async (req, promise, timeoutMs = DEFAULT_TIMEOUT_MS) => {
 
 // 5. Attach middleware to app
 app.use(requestContextMiddleware);
+app.use(trackConnections);
 app.use(requestCounterMiddleware);
 app.use(rateLimitMiddleware);
 app.use(idempotencyMiddleware);
