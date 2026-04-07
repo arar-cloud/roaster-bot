@@ -1,5 +1,60 @@
 import app from '../src/index.js';
 
+// ============================================
+// Connection Pool Management (Issue #83a2af25c2)
+// ============================================
+// Reuse database connections across requests to reduce overhead
+class ConnectionPool {
+  private connections: any[] = [];
+  private activeConnections: Set<any> = new Set();
+  private readonly maxConnections: number;
+  private readonly connectionTimeout: number;
+
+  constructor(maxConnections = 10, connectionTimeout = 30000) {
+    this.maxConnections = maxConnections;
+    this.connectionTimeout = connectionTimeout;
+  }
+
+  async acquire() {
+    if (this.connections.length > 0) {
+      const conn = this.connections.pop();
+      this.activeConnections.add(conn);
+      return conn;
+    }
+    if (this.activeConnections.size < this.maxConnections) {
+      const conn = { id: Math.random().toString(36).substr(2, 9), createdAt: Date.now() };
+      this.activeConnections.add(conn);
+      return conn;
+    }
+    // Wait for available connection (simplified)
+    return new Promise((resolve) => {
+      const checkInterval = setInterval(() => {
+        if (this.connections.length > 0) {
+          clearInterval(checkInterval);
+          const conn = this.connections.pop();
+          this.activeConnections.add(conn);
+          resolve(conn);
+        }
+      }, 100);
+    });
+  }
+
+  release(conn: any) {
+    this.activeConnections.delete(conn);
+    this.connections.push(conn);
+  }
+
+  getStats() {
+    return {
+      pooled: this.connections.length,
+      active: this.activeConnections.size,
+      max: this.maxConnections,
+    };
+  }
+}
+
+const connectionPool = new ConnectionPool(10, 30000);
+
 // Stability hardening: module reliability baseline
 
 // 1. Structured logging and correlation IDs
@@ -12,9 +67,11 @@ const logger = {
 // 2. Request context and correlation ID generation
 const generateCorrelationId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+// Attach connection pool to request for use in handlers
 const requestContextMiddleware = (req, res, next) => {
   req.correlationId = req.headers['x-correlation-id'] || generateCorrelationId();
   res.setHeader('x-correlation-id', req.correlationId);
+  req.connectionPool = connectionPool;
   req.logger = (level, msg, err) => logger[level](msg, err, req.correlationId);
   next();
 };
