@@ -401,6 +401,88 @@ const verifyDependencies = () => {
 app.validateRequestBody = validateRequestBody;
 app.verifyDependencies = verifyDependencies;
 
+// 12. Request/response telemetry logging
+const requestTelemetryMiddleware = (req, res, next) => {
+  const startTime = Date.now();
+  const originalJson = res.json;
+  const originalSend = res.send;
+
+  res.json = function(data) {
+    res.statusCode = res.statusCode || 200;
+    const duration = Date.now() - startTime;
+    logger.info(`${req.method} ${req.path} -> ${res.statusCode} (${duration}ms)`, req.correlationId);
+    return originalJson.call(this, data);
+  };
+
+  res.send = function(data) {
+    res.statusCode = res.statusCode || 200;
+    const duration = Date.now() - startTime;
+    logger.info(`${req.method} ${req.path} -> ${res.statusCode} (${duration}ms)`, req.correlationId);
+    return originalSend.call(this, data);
+  };
+
+  next();
+};
+
+// 13. Comprehensive error handler middleware
+const errorHandler = (err, req, res, next) => {
+  const correlationId = req?.correlationId || 'N/A';
+  const statusCode = err.statusCode || err.status || 500;
+  const errorId = `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Log full error context
+  const errorContext = {
+    errorId,
+    correlationId,
+    timestamp: new Date().toISOString(),
+    method: req?.method,
+    path: req?.path,
+    statusCode,
+    message: err.message,
+    stack: err.stack,
+    retryable: err.retryable !== false,
+    userAgent: req?.get('user-agent'),
+  };
+
+  logger.error(
+    `Request failed: ${err.message}`,
+    {
+      ...errorContext,
+      originalError: err,
+    },
+    correlationId
+  );
+
+  // Sanitize response to prevent information leakage
+  const isProduction = process.env.NODE_ENV === 'production';
+  const responseBody = {
+    error: err.message || 'Internal Server Error',
+    errorId,
+    correlationId,
+    statusCode,
+    timestamp: new Date().toISOString(),
+    ...(isProduction ? {} : { stack: err.stack }),
+  };
+
+  res.status(statusCode).json(responseBody);
+};
+
+// 14. Async error wrapper for route handlers
+const asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch((err) => {
+    logger.error('Async handler error', err, req.correlationId);
+    next(err);
+  });
+};
+
+// 15. Register middleware in correct order
+app.use(requestTelemetryMiddleware);
+app.use(errorHandler);
+
+// Export error handling utilities
+app.asyncHandler = asyncHandler;
+app.errorHandler = errorHandler;
+
 // 8. Circuit breaker and retry logic
 const circuitBreakerStates = new Map();
 
