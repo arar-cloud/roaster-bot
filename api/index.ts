@@ -4,6 +4,32 @@ import app from '../src/index.js';
 export { connectionPool, batchQueryLoader, dataCache };
 
 // ============================================
+// Pagination Helper
+// ============================================
+interface PaginationParams {
+  limit: number;
+  offset: number;
+  cursor?: string;
+}
+
+function parsePaginationParams(query: any): PaginationParams {
+  const limit = Math.min(parseInt(query.limit || '20', 10), 100);
+  const offset = parseInt(query.offset || '0', 10);
+  const cursor = query.cursor;
+  return { limit: Math.max(1, limit), offset: Math.max(0, offset), cursor };
+}
+
+function createPaginationMeta(limit: number, offset: number, total: number, nextCursor?: string) {
+  return {
+    limit,
+    offset,
+    total,
+    hasMore: offset + limit < total,
+    nextCursor: nextCursor || null
+  };
+}
+
+// ============================================
 // Connection Pool Management (Issue #83a2af25c2)
 // ============================================
 // Reuse database connections across requests to reduce overhead
