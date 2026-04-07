@@ -33,8 +33,60 @@ const withErrorBoundary = (handler) => async (req, res, next) => {
   }
 };
 
-// 4. Attach middleware to app
+// 4. Rate limiting and backpressure handler
+const rateLimitStore = new Map();
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 100; // per client per window
+const BACKPRESSURE_THRESHOLD = 0.8; // drain backlog if queue > 80%
+
+const getRateLimitKey = (req) => {
+  return req.headers['x-client-id'] || req.ip || req.socket.remoteAddress || 'unknown';
+};
+
+const rateLimitMiddleware = (req, res, next) => {
+  const clientKey = getRateLimitKey(req);
+  const now = Date.now();
+  
+  if (!rateLimitStore.has(clientKey)) {
+    rateLimitStore.set(clientKey, { tokens: RATE_LIMIT_MAX_REQUESTS, lastRefill: now });
+  }
+  
+  const bucket = rateLimitStore.get(clientKey);
+  const timePassed = now - bucket.lastRefill;
+  const tokensToAdd = (timePassed / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_MAX_REQUESTS;
+  
+  bucket.tokens = Math.min(RATE_LIMIT_MAX_REQUESTS, bucket.tokens + tokensToAdd);
+  bucket.lastRefill = now;
+  
+  const retryAfter = Math.ceil(RATE_LIMIT_WINDOW_MS / RATE_LIMIT_MAX_REQUESTS);
+  
+  if (bucket.tokens < 1) {
+    req.logger('warn', `Rate limit exceeded for client ${clientKey}`);
+    res.status(429).set('Retry-After', retryAfter).json({
+      error: 'Too Many Requests',
+      retryAfter,
+      correlationId: req.correlationId,
+    });
+    return;
+  }
+  
+  bucket.tokens -= 1;
+  res.setHeader('X-RateLimit-Remaining', Math.floor(bucket.tokens));
+  next();
+};
+
+const cleanupRateLimitStore = setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitStore.entries()) {
+    if (now - bucket.lastRefill > RATE_LIMIT_WINDOW_MS * 2) {
+      rateLimitStore.delete(key);
+    }
+  }
+}, RATE_LIMIT_WINDOW_MS);
+
+// 5. Attach middleware to app
 app.use(requestContextMiddleware);
+app.use(rateLimitMiddleware);
 
 export { app, withErrorBoundary, logger, generateCorrelationId };
 export default app;
