@@ -311,14 +311,96 @@ class CircuitBreaker {
   }
 }
 
+// 9. In-memory response caching layer with TTL and LRU eviction
+class ResponseCache {
+  constructor(maxSize = 1000) {
+    this.cache = new Map();
+    this.maxSize = maxSize;
+    this.timers = new Map();
+  }
+  
+  buildKey(method, path, queryParams) {
+    const sortedParams = Object.keys(queryParams || {})
+      .sort()
+      .map(k => `${k}=${queryParams[k]}`)
+      .join('&');
+    return `${method}:${path}${sortedParams ? '?' + sortedParams : ''}`;
+  }
+  
+  set(key, value, ttlSeconds = 60) {
+    // LRU eviction: remove oldest entry when cache is full
+    if (this.cache.size >= this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      this.cache.delete(oldestKey);
+      clearTimeout(this.timers.get(oldestKey));
+      this.timers.delete(oldestKey);
+    }
+    this.cache.set(key, value);
+    const timer = setTimeout(() => {
+      this.cache.delete(key);
+      this.timers.delete(key);
+    }, ttlSeconds * 1000);
+    this.timers.set(key, timer);
+  }
+  
+  get(key) {
+    return this.cache.get(key);
+  }
+  
+  invalidate(pattern) {
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+        clearTimeout(this.timers.get(key));
+        this.timers.delete(key);
+      }
+    }
+  }
+}
+
+const responseCache = new ResponseCache(1000);
+
+const cacheMiddleware = (req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  const cacheKey = responseCache.buildKey(req.method, req.path, req.query);
+  const cached = responseCache.get(cacheKey);
+  if (cached) {
+    res.setHeader('X-Cache', 'HIT');
+    return res.json(cached);
+  }
+  res.setHeader('X-Cache', 'MISS');
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode === 200) {
+      const ttl = req.path.includes('/static') ? 300 : 60;
+      responseCache.set(cacheKey, body, ttl);
+    }
+    return originalJson(body);
+  };
+  next();
+};
+
+const cacheInvalidationMiddleware = (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const basePattern = req.path.split('/').slice(0, -1).join('/');
+    responseCache.invalidate(basePattern);
+  }
+  next();
+};
+
 // 9. Export utilities for middleware and route handlers
 app.use(trackConnections);
 app.use(requestContextMiddleware);
+app.use(cacheMiddleware);
+app.use(cacheInvalidationMiddleware);
 
 // Make utilities available to app
 app.retryWithBackoff = retryWithBackoff;
 app.CircuitBreaker = CircuitBreaker;
 app.RetryableError = RetryableError;
+app.responseCache = responseCache;
 
 // 10. Input validation and sanitization
 const validateRequestBody = (schema) => {
