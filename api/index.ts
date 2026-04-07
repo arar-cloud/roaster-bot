@@ -84,6 +84,58 @@ const cleanupRateLimitStore = setInterval(() => {
   }
 }, RATE_LIMIT_WINDOW_MS);
 
+// 6. Idempotency key tracking
+const idempotencyCache = new Map();
+const IDEMPOTENCY_CACHE_TTL_MS = 3600000; // 1 hour
+
+const idempotencyMiddleware = (req, res, next) => {
+  const mutationMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
+  if (!mutationMethods.includes(req.method)) {
+    next();
+    return;
+  }
+  
+  const idempotencyKey = req.headers['idempotency-key'];
+  if (!idempotencyKey) {
+    req.logger('warn', 'Mutation request without idempotency key');
+    next();
+    return;
+  }
+  
+  const now = Date.now();
+  const cacheEntry = idempotencyCache.get(idempotencyKey);
+  
+  if (cacheEntry && now - cacheEntry.timestamp < IDEMPOTENCY_CACHE_TTL_MS) {
+    req.logger('info', `Idempotent retry detected for key ${idempotencyKey}`);
+    res.status(cacheEntry.statusCode).json(cacheEntry.response);
+    return;
+  }
+  
+  // Wrap response.json to capture and cache the response
+  const originalJson = res.json.bind(res);
+  res.json = (body) => {
+    const statusCode = res.statusCode;
+    idempotencyCache.set(idempotencyKey, {
+      statusCode,
+      response: body,
+      timestamp: Date.now(),
+    });
+    req.logger('info', `Cached idempotent response for key ${idempotencyKey}`);
+    return originalJson(body);
+  };
+  
+  next();
+};
+
+const cleanupIdempotencyCache = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of idempotencyCache.entries()) {
+    if (now - entry.timestamp > IDEMPOTENCY_CACHE_TTL_MS) {
+      idempotencyCache.delete(key);
+    }
+  }
+}, IDEMPOTENCY_CACHE_TTL_MS / 2);
+
 // 5. Attach middleware to app
 app.use(requestContextMiddleware);
 app.use(rateLimitMiddleware);
