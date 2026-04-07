@@ -4,10 +4,22 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
-// Structured logging utility
+// Structured logging utility with metrics collection
+interface RequestMetrics {
+  requestCount: number;
+  errorCount: number;
+  totalDuration: number;
+  averageDuration: number;
+}
+
+const metricsStore: Map<string, RequestMetrics> = new Map();
+
 const createLogger = (correlationId: string) => ({
-  info: (msg: string, context?: any) => console.log(JSON.stringify({level: 'INFO', msg, correlationId, context, timestamp: new Date().toISOString()})),
-  error: (msg: string, err?: any, context?: any) => console.error(JSON.stringify({level: 'ERROR', msg, error: err?.message || String(err), correlationId, context, timestamp: new Date().toISOString()})),
+  info: (msg: string, context?: any) => console.log(JSON.stringify({level: 'INFO', msg, correlationId, context, stack: err?.stack, timestamp: new Date().toISOString()}));
+    updateMetrics(correlationId, 'error');
+  },
+  error: (msg: string, err?: any, context?: any) => {
+    console.error(JSON.stringify({level: 'ERROR', msg, error: err?.message || String(err), correlationId, context, timestamp: new Date().toISOString()})),
   warn: (msg: string, context?: any) => console.warn(JSON.stringify({level: 'WARN', msg, correlationId, context, timestamp: new Date().toISOString()})),
   debug: (msg: string, context?: any) => console.log(JSON.stringify({level: 'DEBUG', msg, correlationId, context, timestamp: new Date().toISOString()})),
 });
@@ -21,6 +33,83 @@ declare global {
     }
   }
 }
+
+// Database connection pool with reconnection logic
+class DatabaseConnectionPool {
+  constructor(maxConnections = 10, resetTimeout = 30000) {
+    this.connections = [];
+    this.maxConnections = maxConnections;
+    this.activeConnections = 0;
+    this.resetTimeout = resetTimeout;
+    this.isHealthy = true;
+    this.lastHealthCheck = Date.now();
+    this.consecutiveFailures = 0;
+    this.maxRetries = 3;
+    this.retryDelayMs = 1000;
+  }
+
+  async getConnection(correlationId: string) {
+    if (!this.isHealthy && Date.now() - this.lastHealthCheck < this.resetTimeout) {
+      throw new Error('Database pool is unhealthy; circuit breaker active');
+    }
+
+    if (this.activeConnections >= this.maxConnections) {
+      throw new Error('Connection pool exhausted');
+    }
+
+    this.activeConnections++;
+    try {
+      const connection = await this._acquireWithRetry(correlationId);
+      return connection;
+    } catch (err) {
+      this.activeConnections--;
+      throw err;
+    }
+  }
+
+  async _acquireWithRetry(correlationId: string, attempt = 1) {
+    try {
+      // Simulate connection acquisition
+      return { id: Math.random(), correlationId };
+    } catch (err) {
+      if (attempt < this.maxRetries) {
+        const delay = Math.min(this.retryDelayMs * Math.pow(2, attempt - 1), 10000);
+        console.log(JSON.stringify({level: 'WARN', msg: `Connection retry ${attempt}/${this.maxRetries}`, delay, correlationId, timestamp: new Date().toISOString()}));
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this._acquireWithRetry(correlationId, attempt + 1);
+      }
+      this.consecutiveFailures++;
+      if (this.consecutiveFailures >= 3) {
+        this.isHealthy = false;
+        this.lastHealthCheck = Date.now();
+        console.error(JSON.stringify({level: 'ERROR', msg: 'Database pool marked unhealthy', error: err.message, correlationId, timestamp: new Date().toISOString()}));
+      }
+      throw err;
+    }
+  }
+
+  releaseConnection(connection: any) {
+    this.activeConnections--;
+    this.consecutiveFailures = 0; // Reset on successful operation
+    this.isHealthy = true;
+  }
+
+  async healthCheck(correlationId: string) {
+    try {
+      // Simulate health check
+      this.isHealthy = true;
+      this.lastHealthCheck = Date.now();
+      this.consecutiveFailures = 0;
+      return { status: 'healthy', activeConnections: this.activeConnections };
+    } catch (err) {
+      this.isHealthy = false;
+      console.error(JSON.stringify({level: 'ERROR', msg: 'Health check failed', error: err.message, correlationId, timestamp: new Date().toISOString()}));
+      return { status: 'unhealthy', error: err.message };
+    }
+  }
+}
+
+const dbPool = new DatabaseConnectionPool(10, 30000);
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -113,6 +202,20 @@ app.use((req: any, res, next) => {
   next();
 });
 
+// Health check endpoint for production monitoring
+app.get('/health', async (req: any, res) => {
+  const stats = poolManager.getPoolStats();
+  const isHealthy = stats.failureCount <= 5;
+  const healthStatus = {
+    status: isHealthy ? 'healthy' : 'degraded',
+    activeConnections: stats.activeConnections,
+    availableConnections: stats.availableConnections,
+    failureCount: stats.failureCount,
+    timestamp: new Date().toISOString()
+  };
+  res.status(isHealthy ? 200 : 503).json(healthStatus);
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -132,6 +235,22 @@ app.get('/', (req: any, res) => {
       </body>
     </html>
   `);
+});
+
+// Middleware to acquire database connection for downstream handlers
+app.use(async (req: any, res, next) => {
+  try {
+    req.connection = await poolManager.acquireConnection(req.correlationId);
+    res.on('finish', () => {
+      if (req.connection) {
+        poolManager.releaseConnection(req.connection.id, req.correlationId);
+      }
+    });
+    next();
+  } catch (err) {
+    req.logger?.error('Failed to acquire connection', err);
+    res.status(503).json({error: 'Service temporarily unavailable'});
+  }
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
@@ -161,12 +280,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
