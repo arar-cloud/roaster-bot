@@ -97,13 +97,15 @@ function parsePaginationParams(query: any): PaginationParams {
   return { limit: Math.max(1, limit), offset: Math.max(0, offset), cursor };
 }
 
-function createPaginationMeta(limit: number, offset: number, total: number, nextCursor?: string) {
+function createPaginationMeta(limit: number, offset: number, total: number, nextCursor?: string, correlationId?: string) {
   return {
     limit,
     offset,
     total,
     hasMore: offset + limit < total,
-    nextCursor: nextCursor || null
+    nextCursor: nextCursor || null,
+    correlation_id: correlationId,
+    timestamp: new Date().toISOString()
   };
 }
 
