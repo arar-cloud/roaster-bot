@@ -4,17 +4,89 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
-// Extend Express Request type properly
+// Structured logging utility
+const createLogger = (correlationId: string) => ({
+  info: (msg: string, context?: any) => console.log(JSON.stringify({level: 'INFO', msg, correlationId, context, timestamp: new Date().toISOString()})),
+  error: (msg: string, err?: any, context?: any) => console.error(JSON.stringify({level: 'ERROR', msg, error: err?.message || String(err), correlationId, context, timestamp: new Date().toISOString()})),
+  warn: (msg: string, context?: any) => console.warn(JSON.stringify({level: 'WARN', msg, correlationId, context, timestamp: new Date().toISOString()})),
+  debug: (msg: string, context?: any) => console.log(JSON.stringify({level: 'DEBUG', msg, correlationId, context, timestamp: new Date().toISOString()})),
+});
+
+// Extend Express Request with logger and correlation ID
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string;
+      logger?: ReturnType<typeof createLogger>;
+      correlationId?: string;
     }
   }
 }
 
 const app = express();
 const port = process.env.PORT || 3000;
+const generateCorrelationId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+// Database connection pool manager
+class ConnectionPoolManager {
+  private connections: any[] = [];
+  private activeConnections = new Set();
+  private failureCount = 0;
+  private lastFailureTime = 0;
+  private maxPoolSize = 10;
+  private reconnectBackoffMs = 1000;
+  private maxReconnectBackoffMs = 30000;
+
+  async acquireConnection(correlationId: string) {
+    const logger = createLogger(correlationId);
+    if (this.connections.length === 0 && this.activeConnections.size < this.maxPoolSize) {
+      try {
+        const conn = {id: `conn_${Date.now()}`, createdAt: Date.now(), isHealthy: true};
+        this.connections.push(conn);
+        logger.debug('Created new connection', {poolSize: this.connections.length});
+      } catch (err) {
+        logger.error('Failed to create connection', err);
+        this.recordFailure();
+        throw err;
+      }
+    }
+    if (this.connections.length === 0) {
+      logger.warn('Connection pool exhausted', {activeConnections: this.activeConnections.size, poolSize: this.maxPoolSize});
+      throw new Error('Connection pool exhausted');
+    }
+    const conn = this.connections.pop();
+    this.activeConnections.add(conn.id);
+    logger.debug('Acquired connection', {connectionId: conn.id, activeCount: this.activeConnections.size});
+    return conn;
+  }
+
+  releaseConnection(connId: string, correlationId: string) {
+    const logger = createLogger(correlationId);
+    this.activeConnections.delete(connId);
+    const conn = {id: connId, createdAt: Date.now(), isHealthy: true};
+    this.connections.push(conn);
+    logger.debug('Released connection', {connectionId: connId, poolSize: this.connections.length});
+  }
+
+  recordFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+  }
+
+  recordSuccess() {
+    this.failureCount = Math.max(0, this.failureCount - 1);
+  }
+
+  getPoolStats() {
+    return {
+      availableConnections: this.connections.length,
+      activeConnections: this.activeConnections.size,
+      failureCount: this.failureCount,
+      lastFailureTime: this.lastFailureTime,
+    };
+  }
+}
+
+const poolManager = new ConnectionPoolManager();
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -23,13 +95,33 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Correlation ID middleware: inject into all requests
+app.use((req: any, res, next) => {
+  req.correlationId = req.headers['x-correlation-id'] || generateCorrelationId();
+  req.logger = createLogger(req.correlationId);
+  res.setHeader('x-correlation-id', req.correlationId);
+  next();
+});
+
+// Connection pool health check middleware
+app.use((req: any, res, next) => {
+  const stats = poolManager.getPoolStats();
+  req.logger?.debug('Pool health check', stats);
+  if (stats.failureCount > 5) {
+    req.logger?.warn('Connection pool degraded', {failureCount: stats.failureCount});
+  }
+  next();
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
 
-app.get('/', (req, res) => {
+app.get('/', (req: any, res) => {
+  req.logger?.info('GET / request received');
+  req.logger?.debug('Rendering home page');
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
