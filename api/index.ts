@@ -359,5 +359,18 @@ app.use(rateLimitMiddleware);
 app.use(idempotencyMiddleware);
 app.use(timeoutMiddleware());
 
-export { app, withErrorBoundary, logger, generateCorrelationId };
+// Export all stability utilities
+export {
+  app,
+  withErrorBoundary,
+  logger,
+  generateCorrelationId,
+  rateLimitMiddleware,
+  idempotencyMiddleware,
+  timeoutMiddleware,
+  validateRequest,
+  sanitizeInput,
+  callWithCircuitBreaker,
+  getCircuitBreaker,
+};
 export default app;
