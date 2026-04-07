@@ -349,6 +349,60 @@ async function retryWithBackoff<T>(
   throw lastError || new Error('All retry attempts failed');
 }
 
+// ============================================
+// Request Deduplication and Idempotent Cache
+// ============================================
+interface IdempotentCacheEntry<T> {
+  result: T;
+  timestamp: number;
+}
+
+class IdempotentCache {
+  private cache: Map<string, IdempotentCacheEntry<any>> = new Map();
+  private readonly ttlMs: number;
+
+  constructor(ttlMs: number = 300000) {
+    this.ttlMs = ttlMs;
+    setInterval(() => this.cleanup(), 60000);
+  }
+
+  async executeOnce<T>(key: string, fn: () => Promise<T>, correlationId: string): Promise<T> {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.ttlMs) {
+      console.info(`[INFO] [${correlationId}] Returning cached idempotent result for key: ${key}`);
+      return cached.result as T;
+    }
+
+    try {
+      const result = await fn();
+      this.cache.set(key, { result, timestamp: Date.now() });
+      return result;
+    } catch (error) {
+      console.error(`[ERROR] [${correlationId}] Idempotent operation failed for key: ${key}`, error);
+      throw error;
+    }
+  }
+
+  private cleanup() {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > this.ttlMs) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  invalidate(key?: string) {
+    if (!key) {
+      this.cache.clear();
+    } else {
+      this.cache.delete(key);
+    }
+  }
+}
+
+const idempotentCache = new IdempotentCache(300000);
+
 function correlationIdMiddleware(req: any, res: any, next: any) {
   const correlationId = req.headers['x-correlation-id'] as string || uuidv4();
   req.correlationId = correlationId;
@@ -374,6 +428,7 @@ const requestContextMiddleware = (req, res, next) => {
   req.connectionPool = connectionPool;
   req.dataCache = dataCache;
   req.batchQueryLoader = batchQueryLoader;
+  req.idempotentCache = idempotentCache;
   req.logger = (level, msg, err) => logger[level](msg, err, req.correlationId);
   req.contextLogger = createContextualLogger(req.correlationId);
   next();
