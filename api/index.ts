@@ -455,6 +455,44 @@ class HealthMonitor {
 
 const healthMonitor = new HealthMonitor();
 
+// ============================================
+// HTTP Connection Pooling and Timeout Configuration
+// ============================================
+import http from 'http';
+import https from 'https';
+
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 30000,
+  keepAliveMsecs: 1000
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: 30000,
+  keepAliveMsecs: 1000
+});
+
+const REQUEST_TIMEOUT_MS = 30000; // 30 seconds global timeout
+const CONNECTION_TIMEOUT_MS = 10000; // 10 seconds connection timeout
+
+function createTimeoutPromise<T>(delayMs: number): Promise<T> {
+  return new Promise((_, reject) => {
+    setTimeout(() => reject(new Error(`Request timeout after ${delayMs}ms`)), delayMs);
+  });
+}
+
+async function fetchWithTimeout<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<T> {
+  return Promise.race([fn(), createTimeoutPromise<T>(timeoutMs)]);
+}
+
 // 1. Structured logging and correlation IDs
 const logger = {
   error: (msg, err, correlationId) => console.error(`[ERROR] [${correlationId}] ${msg}:`, err?.message || err),
