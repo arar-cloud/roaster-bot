@@ -4,18 +4,7 @@ import app from '../src/index.js';
 
 // 1. Structured logging and correlation IDs
 const logger = {
-  error: (msg, err, correlationId) => console.error(`[ERROR] [${correlationId}] ${msg}:`, err?.message || err),
-  warn: (msg, correlationId) => console.warn(`[WARN] [${correlationId}] ${msg}`),
-  info: (msg, correlationId) => console.info(`[INFO] [${correlationId}] ${msg}`),
-};
-
-// 2. Request context and correlation ID generation
-const generateCorrelationId = () => `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-const requestContextMiddleware = (req, res, next) => {
-  req.correlationId = req.headers['x-correlation-id'] || generateCorrelationId();
-  res.setHeader('x-correlation-id', req.correlationId);
-  req.logger = (level, msg, err) => logger[level](msg, err, req.correlationId);
+  error: (msg, err, correlationId) => console.error(el, msg, err) => logger[level](msg, err, req.correlationId);
   next();
 };
 
@@ -57,20 +46,20 @@ const getRateLimitKey = (req) => {
 const rateLimitMiddleware = (req, res, next) => {
   const clientKey = getRateLimitKey(req);
   const now = Date.now();
-  
+
   if (!rateLimitStore.has(clientKey)) {
     rateLimitStore.set(clientKey, { tokens: RATE_LIMIT_MAX_REQUESTS, lastRefill: now });
   }
-  
+
   const bucket = rateLimitStore.get(clientKey);
   const timePassed = now - bucket.lastRefill;
   const tokensToAdd = (timePassed / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_MAX_REQUESTS;
-  
+
   bucket.tokens = Math.min(RATE_LIMIT_MAX_REQUESTS, bucket.tokens + tokensToAdd);
   bucket.lastRefill = now;
-  
+
   const retryAfter = Math.ceil(RATE_LIMIT_WINDOW_MS / RATE_LIMIT_MAX_REQUESTS);
-  
+
   if (bucket.tokens < 1) {
     req.logger('warn', `Rate limit exceeded for client ${clientKey}`);
     res.status(429).set('Retry-After', retryAfter).json({
@@ -80,7 +69,7 @@ const rateLimitMiddleware = (req, res, next) => {
     });
     return;
   }
-  
+
   bucket.tokens -= 1;
   res.setHeader('X-RateLimit-Remaining', Math.floor(bucket.tokens));
   next();
@@ -105,23 +94,23 @@ const idempotencyMiddleware = (req, res, next) => {
     next();
     return;
   }
-  
+
   const idempotencyKey = req.headers['idempotency-key'];
   if (!idempotencyKey) {
     req.logger('warn', 'Mutation request without idempotency key');
     next();
     return;
   }
-  
+
   const now = Date.now();
   const cacheEntry = idempotencyCache.get(idempotencyKey);
-  
+
   if (cacheEntry && now - cacheEntry.timestamp < IDEMPOTENCY_CACHE_TTL_MS) {
     req.logger('info', `Idempotent retry detected for key ${idempotencyKey}`);
     res.status(cacheEntry.statusCode).json(cacheEntry.response);
     return;
   }
-  
+
   // Wrap response.json to capture and cache the response
   const originalJson = res.json.bind(res);
   res.json = (body) => {
@@ -134,7 +123,7 @@ const idempotencyMiddleware = (req, res, next) => {
     req.logger('info', `Cached idempotent response for key ${idempotencyKey}`);
     return originalJson(body);
   };
-  
+
   next();
 };
 
@@ -181,7 +170,7 @@ app.get('/health/ready', (req, res) => {
 const gracefulShutdown = (signal) => {
   logger.info(`${signal} received, starting graceful shutdown`);
   isShuttingDown = true;
-  
+
   // Give in-flight requests time to complete (max 30 seconds)
   const shutdownTimeout = 30000;
   const checkInterval = setInterval(() => {
@@ -191,7 +180,7 @@ const gracefulShutdown = (signal) => {
       process.exit(0);
     }
   }, 1000);
-  
+
   setTimeout(() => {
     logger.warn(`Graceful shutdown timeout after ${shutdownTimeout}ms, forcing exit`);
     process.exit(1);
@@ -224,11 +213,11 @@ const retryWithBackoff = async (fn, maxAttempts = 3, correlationId = 'N/A') => {
     } catch (err) {
       lastError = err;
       const isRetryable = err instanceof RetryableError ? err.retryable : true;
-      
+
       if (!isRetryable || attempt === maxAttempts - 1) {
         throw err;
       }
-      
+
       const delay = calculateBackoff(attempt);
       logger.warn(`Retry attempt ${attempt + 1} failed, waiting ${delay.toFixed(0)}ms before retry`, correlationId);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -333,7 +322,7 @@ const validateRequestBody = (schema) => {
       // Validate field types
       for (const [field, fieldSchema] of Object.entries(schema.fields || {})) {
         if (!(field in req.body)) continue;
-        
+
         const value = req.body[field];
         const expectedType = fieldSchema.type;
         const actualType = Array.isArray(value) ? 'array' : typeof value;
@@ -502,7 +491,7 @@ const getCircuitBreaker = (serviceName) => {
 
 const callWithCircuitBreaker = async (serviceName, fn, maxRetries = 3) => {
   const breaker = getCircuitBreaker(serviceName);
-  
+
   if (breaker.state === 'open') {
     const timeSinceFailure = Date.now() - (breaker.lastFailureTime || 0);
     if (timeSinceFailure > breaker.resetTimeout) {
@@ -512,11 +501,11 @@ const callWithCircuitBreaker = async (serviceName, fn, maxRetries = 3) => {
       throw new Error(`Circuit breaker open for ${serviceName}`);
     }
   }
-  
+
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       const result = await fn();
-      
+
       if (breaker.state === 'half-open') {
         breaker.successes += 1;
         if (breaker.successes >= 2) {
@@ -526,19 +515,19 @@ const callWithCircuitBreaker = async (serviceName, fn, maxRetries = 3) => {
       } else {
         breaker.failures = 0;
       }
-      
+
       return result;
     } catch (err) {
       if (attempt === maxRetries - 1) {
         breaker.failures += 1;
         breaker.lastFailureTime = Date.now();
-        
+
         if (breaker.failures >= breaker.threshold) {
           breaker.state = 'open';
         }
         throw err;
       }
-      
+
       const backoffMs = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
       await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
@@ -548,7 +537,7 @@ const callWithCircuitBreaker = async (serviceName, fn, maxRetries = 3) => {
 // 9. Input validation and sanitization
 const validateRequest = (schema) => (req, res, next) => {
   const errors = [];
-  
+
   // Validate body
   if (req.body) {
     if (schema.body) {
@@ -569,7 +558,7 @@ const validateRequest = (schema) => (req, res, next) => {
       }
     }
   }
-  
+
   // Validate query parameters
   if (schema.query) {
     for (const [key, rules] of Object.entries(schema.query)) {
@@ -582,7 +571,7 @@ const validateRequest = (schema) => (req, res, next) => {
       }
     }
   }
-  
+
   if (errors.length > 0) {
     req.logger('warn', `Validation errors: ${errors.join(', ')}`);
     res.status(400).json({
@@ -592,7 +581,7 @@ const validateRequest = (schema) => (req, res, next) => {
     });
     return;
   }
-  
+
   next();
 };
 
@@ -623,16 +612,16 @@ const timeoutMiddleware = (timeoutMs = DEFAULT_TIMEOUT_MS) => (req, res, next) =
       });
     }
   }, timeoutMs);
-  
+
   req.controller = controller;
   req.signal = controller.signal;
-  
+
   res.on('finish', () => clearTimeout(timeoutId));
   res.on('close', () => {
     clearTimeout(timeoutId);
     if (!controller.signal.aborted) controller.abort();
   });
-  
+
   next();
 };
 
