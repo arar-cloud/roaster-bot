@@ -31,6 +31,78 @@ export function paginationMiddleware(req: Request, res: Response, next: NextFunc
 }
 
 // ============================================
+// Query Result Caching & Memoization
+// ============================================
+export interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number;
+}
+
+export class QueryCache<T> {
+  private cache: Map<string, CacheEntry<T>> = new Map();
+  private ttl: number;
+
+  constructor(ttl: number = 300000) {
+    this.ttl = ttl;
+  }
+
+  private isExpired(entry: CacheEntry<T>): boolean {
+    return Date.now() - entry.timestamp > entry.ttl;
+  }
+
+  get(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (this.isExpired(entry)) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.data;
+  }
+
+  set(key: string, data: T, ttl?: number): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttl || this.ttl
+    });
+  }
+
+  invalidate(keyPattern?: RegExp): void {
+    if (!keyPattern) {
+      this.cache.clear();
+    } else {
+      for (const key of this.cache.keys()) {
+        if (keyPattern.test(key)) {
+          this.cache.delete(key);
+        }
+      }
+    }
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+}
+
+export function createQueryCache<T>(
+  queryFn: (params: any) => Promise<T>,
+  keyGenerator: (params: any) => string,
+  ttl: number = 300000
+): (params: any) => Promise<T> {
+  const cache = new QueryCache<T>(ttl);
+  return async (params: any) => {
+    const key = keyGenerator(params);
+    const cached = cache.get(key);
+    if (cached !== null) return cached;
+    const result = await queryFn(params);
+    cache.set(key, result, ttl);
+    return result;
+  };
+}
+
+// ============================================
 // N+1 Query Optimization: Batch Loading & Eager Loading
 // ============================================
 export function createBatchLoader<T, K>(
