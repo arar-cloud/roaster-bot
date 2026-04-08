@@ -9,6 +9,97 @@ export { correlationIdMiddleware, createContextualLogger };
 // Retry and Circuit Breaker Patterns
 export { CircuitBreaker, retryWithBackoff };
 
+// CircuitBreaker Implementation
+interface CircuitBreakerConfig {
+  failureThreshold: number;
+  successThreshold: number;
+  timeout: number;
+}
+
+class CircuitBreaker {
+  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED';
+  private failureCount = 0;
+  private successCount = 0;
+  private lastFailureTime = 0;
+  private config: CircuitBreakerConfig;
+
+  constructor(config: Partial<CircuitBreakerConfig> = {}) {
+    this.config = {
+      failureThreshold: config.failureThreshold || 5,
+      successThreshold: config.successThreshold || 2,
+      timeout: config.timeout || 60000,
+    };
+  }
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.lastFailureTime > this.config.timeout) {
+        this.state = 'HALF_OPEN';
+        this.successCount = 0;
+      } else {
+        throw new Error('CircuitBreaker is OPEN');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess(): void {
+    this.failureCount = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.successCount++;
+      if (this.successCount >= this.config.successThreshold) {
+        this.state = 'CLOSED';
+        this.successCount = 0;
+      }
+    }
+  }
+
+  private onFailure(): void {
+    this.lastFailureTime = Date.now();
+    this.failureCount++;
+    if (this.failureCount >= this.config.failureThreshold) {
+      this.state = 'OPEN';
+    }
+  }
+
+  getState(): string {
+    return this.state;
+  }
+}
+
+// Retry with Exponential Backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3,
+  initialDelayMs: number = 100,
+  maxDelayMs: number = 10000
+): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt < maxAttempts) {
+        const delayMs = Math.min(
+          initialDelayMs * Math.pow(2, attempt - 1),
+          maxDelayMs
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError || new Error('Retry exhausted');
+}
+
 // Request Deduplication and Caching
 export { IdempotentCache };
 
