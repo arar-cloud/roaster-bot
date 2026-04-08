@@ -1,10 +1,12 @@
 import app from '../src/index.js';
-import { createCacheMiddleware, correlationIdMiddleware } from './index.js';
+import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } from './index.js';
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 
 // Apply optimizations to Express app
 app.use(correlationIdMiddleware);
 app.use(createCacheMiddleware({ defaultTtl: 30000 }));
+app.use(createETagMiddleware());
 app.use(paginationMiddleware);
 
 // Re-export Express app for integration
@@ -38,6 +40,28 @@ export async function batchLoadRelated<T>(
   if (ids.length === 0) return new Map();
   const uniqueIds = [...new Set(ids)];
   return fetchFn(uniqueIds);
+}
+
+/**
+ * ETag middleware: Compute ETags and handle If-None-Match requests.
+ * Returns 304 Not Modified for unchanged resources, reducing bandwidth.
+ */
+export function createETagMiddleware() {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const originalJson = res.json;
+    res.json = function(body: any) {
+      const etagValue = crypto.createHash('md5').update(JSON.stringify(body)).digest('hex');
+      res.set('ETag', `"${etagValue}"`);
+      res.set('Cache-Control', 'public, max-age=300');
+      
+      const clientETag = req.get('If-None-Match');
+      if (clientETag === `"${etagValue}"`) {
+        return res.status(304).end();
+      }
+      return originalJson.call(this, body);
+    };
+    next();
+  };
 }
 
 export function paginationMiddleware(req: Request, res: Response, next: NextFunction) {
