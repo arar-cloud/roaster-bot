@@ -6,6 +6,28 @@ import app from '../src/index.js';
 // Distributed Tracing and Correlation IDs
 export { correlationIdMiddleware, createContextualLogger };
 
+function correlationIdMiddleware(req: any, res: any, next: any): void {
+  const correlationId = req.headers['x-correlation-id'] || 
+                        req.headers['x-trace-id'] || 
+                        require('crypto').randomUUID();
+  
+  req.correlationId = correlationId;
+  req.traceId = correlationId;
+  
+  res.setHeader('X-Correlation-Id', correlationId);
+  res.setHeader('X-Trace-Id', correlationId);
+  
+  const originalJson = res.json;
+  res.json = function(body: any) {
+    if (typeof body === 'object' && body !== null) {
+      body.correlationId = correlationId;
+    }
+    return originalJson.call(this, body);
+  };
+  
+  next();
+}
+
 // Retry and Circuit Breaker Patterns
 export { CircuitBreaker, retryWithBackoff };
 
