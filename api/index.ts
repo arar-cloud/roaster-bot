@@ -106,6 +106,71 @@ export { IdempotentCache };
 // Input Validation
 export { validateInput, createValidationMiddleware };
 
+interface ValidationSchema {
+  [key: string]: {
+    type: 'string' | 'number' | 'boolean' | 'array' | 'object';
+    required?: boolean;
+    pattern?: RegExp;
+    min?: number;
+    max?: number;
+    enum?: (string | number | boolean)[];
+  };
+}
+
+function validateInput(data: unknown, schema: ValidationSchema): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  if (typeof data !== 'object' || data === null) {
+    return { valid: false, errors: ['Input must be an object'] };
+  }
+  
+  const obj = data as Record<string, unknown>;
+  
+  for (const [field, rules] of Object.entries(schema)) {
+    const value = obj[field];
+    
+    if (rules.required && (value === undefined || value === null)) {
+      errors.push(`Field '${field}' is required`);
+      continue;
+    }
+    
+    if (value === undefined || value === null) continue;
+    
+    if (typeof value !== rules.type) {
+      errors.push(`Field '${field}' must be of type ${rules.type}`);
+      continue;
+    }
+    
+    if (rules.pattern && typeof value === 'string' && !rules.pattern.test(value)) {
+      errors.push(`Field '${field}' does not match required pattern`);
+    }
+    
+    if (rules.min !== undefined && typeof value === 'number' && value < rules.min) {
+      errors.push(`Field '${field}' must be >= ${rules.min}`);
+    }
+    
+    if (rules.max !== undefined && typeof value === 'number' && value > rules.max) {
+      errors.push(`Field '${field}' must be <= ${rules.max}`);
+    }
+    
+    if (rules.enum && !rules.enum.includes(value as any)) {
+      errors.push(`Field '${field}' must be one of ${rules.enum.join(', ')}`);
+    }
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+function createValidationMiddleware(schema: ValidationSchema) {
+  return (req: any, res: any, next: any) => {
+    const validation = validateInput(req.body, schema);
+    if (!validation.valid) {
+      return res.status(400).json({ errors: validation.errors, traceId: req.traceId });
+    }
+    next();
+  };
+}
+
 // Health Monitoring
 export { HealthMonitor };
 
