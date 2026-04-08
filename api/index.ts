@@ -270,6 +270,75 @@ function createValidationMiddleware(schema: ValidationSchema) {
 // Health Monitoring
 export { HealthMonitor };
 
+interface HealthCheckResult {
+  status: 'healthy' | 'degraded' | 'unhealthy';
+  checks: { [key: string]: boolean | string };
+  timestamp: number;
+}
+
+class HealthMonitor {
+  private inFlightRequests = 0;
+  private isShuttingDown = false;
+  private healthChecks: { [key: string]: () => Promise<boolean> } = {};
+
+  registerHealthCheck(name: string, check: () => Promise<boolean>): void {
+    this.healthChecks[name] = check;
+  }
+
+  incrementInFlightRequests(): void {
+    if (!this.isShuttingDown) {
+      this.inFlightRequests++;
+    }
+  }
+
+  decrementInFlightRequests(): void {
+    this.inFlightRequests--;
+  }
+
+  async livenessProbe(): Promise<HealthCheckResult> {
+    return { status: 'healthy', checks: { alive: true }, timestamp: Date.now() };
+  }
+
+  async readinessProbe(): Promise<HealthCheckResult> {
+    const checks: { [key: string]: boolean } = {};
+    
+    for (const [name, check] of Object.entries(this.healthChecks)) {
+      try {
+        checks[name] = await check();
+      } catch (error) {
+        checks[name] = false;
+      }
+    }
+    
+    const allHealthy = Object.values(checks).every(v => v === true);
+    const status = allHealthy ? 'healthy' : 'degraded';
+    
+    return { status, checks, timestamp: Date.now() };
+  }
+
+  initiateGracefulShutdown(timeoutMs: number = 30000): Promise<void> {
+    return new Promise((resolve) => {
+      this.isShuttingDown = true;
+      const startTime = Date.now();
+      
+      const waitForRequests = setInterval(() => {
+        if (this.inFlightRequests === 0 || Date.now() - startTime > timeoutMs) {
+          clearInterval(waitForRequests);
+          resolve();
+        }
+      }, 100);
+    });
+  }
+
+  getInFlightRequestsCount(): number {
+    return this.inFlightRequests;
+  }
+
+  isHealthy(): boolean {
+    return !this.isShuttingDown;
+  }
+}
+
 // Error Handling and Logging
 export { RequestError, createErrorLogger, errorHandlingMiddleware, fetchWithTimeout };
 
