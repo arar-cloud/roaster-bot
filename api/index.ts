@@ -79,6 +79,55 @@ export function createEagerLoader<T>(
 }
 
 // ============================================
+// Request/Response Caching Middleware
+// ============================================
+const responseCache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+
+export function createCacheMiddleware(options: { defaultTtl?: number } = {}) {
+  const defaultTtl = options.defaultTtl || 60000; // 60 seconds default
+
+  return function cacheMiddleware(req: any, res: any, next: any): void {
+    const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
+    const cached = responseCache.get(cacheKey);
+
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      res.setHeader('X-Cache', 'HIT');
+      res.setHeader('Cache-Control', `public, max-age=${Math.floor(cached.ttl / 1000)}`);
+      return res.json(cached.data);
+    }
+
+    const originalJson = res.json;
+    res.json = function(data: any) {
+      const cacheableStatus = res.statusCode >= 200 && res.statusCode < 300;
+      if (cacheableStatus && req.method === 'GET') {
+        responseCache.set(cacheKey, {
+          data,
+          timestamp: Date.now(),
+          ttl: defaultTtl
+        });
+        res.setHeader('X-Cache', 'MISS');
+        res.setHeader('Cache-Control', `public, max-age=${Math.floor(defaultTtl / 1000)}`);
+      }
+      return originalJson.call(this, data);
+    };
+
+    next();
+  };
+}
+
+export function invalidateCache(pattern?: string): void {
+  if (!pattern) {
+    responseCache.clear();
+    return;
+  }
+  for (const key of responseCache.keys()) {
+    if (key.includes(pattern)) {
+      responseCache.delete(key);
+    }
+  }
+}
+
+// ============================================
 // Export Resilience Infrastructure
 // ============================================
 // Distributed Tracing and Correlation IDs
