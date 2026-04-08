@@ -257,6 +257,52 @@ function errorHandlingMiddleware(req: any, res: any, next: any) {
 // HTTP Agents with connection pooling
 export { httpAgent, httpsAgent, REQUEST_TIMEOUT_MS, CONNECTION_TIMEOUT_MS };
 
+const http = require('http');
+const https = require('https');
+
+const REQUEST_TIMEOUT_MS = 30000; // 30 second timeout for API calls
+const CONNECTION_TIMEOUT_MS = 10000; // 10 second connection timeout
+
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 1000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: REQUEST_TIMEOUT_MS,
+  freeSocketTimeout: 30000
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 1000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: REQUEST_TIMEOUT_MS,
+  freeSocketTimeout: 30000
+});
+
+async function fetchWithTimeout(
+  url: string,
+  options: any = {},
+  timeoutMs: number = REQUEST_TIMEOUT_MS
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+      agent: url.startsWith('https') ? httpsAgent : httpAgent
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    throw error;
+  }
+}
+
 // Convenience function for resilient external API calls
 export async function callExternalAPI<T>(
   endpoint: string,
