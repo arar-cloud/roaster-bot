@@ -1,5 +1,8 @@
 import app from '../src/index.js';
 
+// Re-export Express app for integration
+export default app;
+
 // ============================================
 // Export Resilience Infrastructure
 // ============================================
