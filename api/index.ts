@@ -1,4 +1,9 @@
 import app from '../src/index.js';
+import { createCacheMiddleware, correlationIdMiddleware } from './index.js';
+
+// Apply optimizations to Express app
+app.use(correlationIdMiddleware);
+app.use(createCacheMiddleware({ defaultTtl: 30000 }));
 
 // Re-export Express app for integration
 export default app;
@@ -131,7 +136,7 @@ export function invalidateCache(pattern?: string): void {
 // Export Resilience Infrastructure
 // ============================================
 // Distributed Tracing and Correlation IDs
-export { correlationIdMiddleware, createContextualLogger };
+export { correlationIdMiddleware };
 
 function correlationIdMiddleware(req: any, res: any, next: any): void {
   const correlationId = req.headers['x-correlation-id'] || 
@@ -252,6 +257,17 @@ async function retryWithBackoff<T>(
 // ============================================
 // Connection Pooling & Async I/O Patterns
 // ============================================
+export const dbConnectionPool = new ConnectionPool(10, async () => ({ query: async () => null }));
+
+export async function withAsyncConnection<T>(fn: (conn: any) => Promise<T>): Promise<T> {
+  const conn = await dbConnectionPool.acquire();
+  try {
+    return await fn(conn);
+  } finally {
+    dbConnectionPool.release(conn);
+  }
+}
+
 export class ConnectionPool {
   private connections: Promise<any>[] = [];
   private available: Promise<any>[] = [];
