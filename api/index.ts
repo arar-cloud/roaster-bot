@@ -103,6 +103,102 @@ async function retryWithBackoff<T>(
 // Request Deduplication and Caching
 export { IdempotentCache };
 
+interface RateLimitConfig {
+  tokensPerWindow: number;
+  windowSizeMs: number;
+  maxQueuedRequests?: number;
+}
+
+class TokenBucket {
+  private tokens: number;
+  private lastRefillTime: number = Date.now();
+  private queuedRequests: number = 0;
+  private config: RateLimitConfig;
+
+  constructor(config: RateLimitConfig) {
+    this.config = config;
+    this.tokens = config.tokensPerWindow;
+  }
+
+  async acquireToken(timeoutMs: number = 5000): Promise<boolean> {
+    const startTime = Date.now();
+    
+    while (Date.now() - startTime < timeoutMs) {
+      this.refillTokens();
+      
+      if (this.tokens >= 1) {
+        this.tokens--;
+        return true;
+      }
+      
+      if (this.config.maxQueuedRequests && this.queuedRequests >= this.config.maxQueuedRequests) {
+        return false; // Backpressure: reject request
+      }
+      
+      this.queuedRequests++;
+      await new Promise(resolve => setTimeout(resolve, 50));
+      this.queuedRequests--;
+    }
+    
+    return false;
+  }
+
+  private refillTokens(): void {
+    const now = Date.now();
+    const timePassed = now - this.lastRefillTime;
+    const tokensToAdd = (timePassed / this.config.windowSizeMs) * this.config.tokensPerWindow;
+    
+    this.tokens = Math.min(
+      this.config.tokensPerWindow,
+      this.tokens + tokensToAdd
+    );
+    this.lastRefillTime = now;
+  }
+}
+
+function createRateLimitMiddleware(config: RateLimitConfig) {
+  const bucket = new TokenBucket(config);
+  
+  return async (req: any, res: any, next: any) => {
+    const hasToken = await bucket.acquireToken();
+    
+    if (!hasToken) {
+      res.status(429).json({ error: 'Too many requests', traceId: req.traceId });
+    } else {
+      next();
+    }
+  };
+}
+
+class IdempotentCache {
+  private cache = new Map<string, { result: any; timestamp: number }>();
+  private ttlMs: number;
+
+  constructor(ttlMs: number = 60000) {
+    this.ttlMs = ttlMs;
+  }
+
+  get(key: string): any {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return undefined;
+    }
+    
+    return entry.result;
+  }
+
+  set(key: string, result: any): void {
+    this.cache.set(key, { result, timestamp: Date.now() });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
 // Input Validation
 export { validateInput, createValidationMiddleware };
 
