@@ -111,7 +111,8 @@ export function createBatchLoader<T, K>(
 ) {
   const cache = new Map<string, Promise<T | Error>>();
   let batch: K[] = [];
-  let scheduled = false;
+  let batchPromise: Promise<(T | Error)[]> | null = null;
+  let resultsByKey = new Map<string, T | Error>();
 
   function load(key: K): Promise<T | Error> {
     const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
@@ -122,38 +123,26 @@ export function createBatchLoader<T, K>(
 
     batch.push(key);
     
-    if (!scheduled) {
-      scheduled = true;
-      const promise = new Promise<(T | Error)[]>(resolve => {
+    if (!batchPromise) {
+      batchPromise = new Promise<(T | Error)[]>(resolve => {
         setImmediate(async () => {
           const keys = batch;
           batch = [];
-          scheduled = false;
+          resultsByKey.clear();
           const results = await resolver(keys);
+          keys.forEach((key, idx) => {
+            const resultKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
+            resultsByKey.set(resultKey, results[idx]);
+          });
           resolve(results);
+          batchPromise = null;
         });
       });
-
-      const resultsByKey = new Map<string, T | Error>();
-      promise.then(results => {
-        batch.forEach((key, idx) => {
-          const resultKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
-          resultsByKey.set(resultKey, results[idx]);
-        });
-      });
-
-      const resultPromise = promise.then(() => {
-        const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
-        return resultsByKey.get(cacheKey)!;
-      });
-      cache.set(cacheKey, resultPromise);
-      return resultPromise;
     }
 
-    const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
-    const resultPromise = Promise.resolve(batch).then(async () => {
-      const results = await resolver([key]);
-      return results[0];
+    const resultPromise = batchPromise.then(() => {
+      const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
+      return resultsByKey.get(cacheKey)!;
     });
     cache.set(cacheKey, resultPromise);
     return resultPromise;
@@ -161,6 +150,7 @@ export function createBatchLoader<T, K>(
 
   function clearCache(): void {
     cache.clear();
+    resultsByKey.clear();
   }
 
   return { load, clearCache };
@@ -170,10 +160,19 @@ export function createEagerLoader<T>(
   getIdFn: (item: T) => string | number,
   joinFn: (items: T[], relatedIds: (string | number)[]) => Promise<T[]>
 ) {
+  const relationshipCache = new Map<string, T[]>();
+  
   return async function eagerLoad(items: T[]): Promise<T[]> {
     if (!items || items.length === 0) return items;
     const ids = items.map(getIdFn);
-    return joinFn(items, ids);
+    const cacheKey = ids.join(',');
+    
+    const cached = relationshipCache.get(cacheKey);
+    if (cached) return cached;
+    
+    const result = await joinFn(items, ids);
+    relationshipCache.set(cacheKey, result);
+    return result;
   };
 }
 
