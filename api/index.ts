@@ -249,6 +249,65 @@ async function retryWithBackoff<T>(
   throw lastError || new Error('Retry exhausted');
 }
 
+// ============================================
+// Connection Pooling & Async I/O Patterns
+// ============================================
+export class ConnectionPool {
+  private connections: Promise<any>[] = [];
+  private available: Promise<any>[] = [];
+  private poolSize: number;
+  private connectionFactory: () => Promise<any>;
+  private acquireTimeout: number = 5000;
+
+  constructor(poolSize: number, connectionFactory: () => Promise<any>) {
+    this.poolSize = poolSize;
+    this.connectionFactory = connectionFactory;
+    this.initializePool();
+  }
+
+  private async initializePool(): Promise<void> {
+    const promises: Promise<any>[] = [];
+    for (let i = 0; i < this.poolSize; i++) {
+      const connPromise = this.connectionFactory();
+      this.connections.push(connPromise);
+      this.available.push(connPromise);
+      promises.push(connPromise);
+    }
+    await Promise.all(promises);
+  }
+
+  async acquire(): Promise<any> {
+    const startTime = Date.now();
+    while (Date.now() - startTime < this.acquireTimeout) {
+      if (this.available.length > 0) {
+        return this.available.pop();
+      }
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    throw new Error('Connection pool exhausted: timeout waiting for available connection');
+  }
+
+  release(conn: any): void {
+    this.available.push(Promise.resolve(conn));
+  }
+
+  async executeQuery<T>(query: string, params?: any[]): Promise<T> {
+    const conn = await this.acquire();
+    try {
+      return await conn.query(query, params);
+    } finally {
+      this.release(conn);
+    }
+  }
+
+  async close(): Promise<void> {
+    const conns = await Promise.all(this.connections);
+    await Promise.all(conns.map((c: any) => c.close?.()));
+    this.connections = [];
+    this.available = [];
+  }
+}
+
 // Request Deduplication and Caching
 export { IdempotentCache };
 
@@ -414,6 +473,23 @@ function createValidationMiddleware(schema: ValidationSchema) {
     }
     next();
   };
+}
+
+// ============================================
+// Async Database Query Wrapper
+// ============================================
+export async function executeAsyncQuery<T>(
+  pool: ConnectionPool,
+  query: string,
+  params?: any[],
+  circuitBreaker?: CircuitBreaker
+): Promise<T> {
+  const executeWithRetry = async () => pool.executeQuery<T>(query, params);
+  
+  if (circuitBreaker) {
+    return circuitBreaker.execute(executeWithRetry);
+  }
+  return retryWithBackoff(executeWithRetry);
 }
 
 // Health Monitoring
