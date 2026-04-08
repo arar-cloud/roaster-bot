@@ -11,7 +11,7 @@ app.use(paginationMiddleware);
 export default app;
 
 // ============================================
-// Pagination Middleware: Prevent Full Table Scans
+// Batch Query Utility: Prevent N+1 Database Patterns
 // ============================================
 export interface PaginationParams {
   offset: number;
@@ -22,6 +22,22 @@ export function getPaginationParams(query: any, maxLimit: number = 100, defaultL
   const offset = Math.max(0, parseInt(query.offset || '0', 10));
   const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit || defaultLimit.toString(), 10)));
   return { offset, limit };
+}
+
+/**
+ * Batch load related resources to prevent N+1 queries.
+ * Instead of looping through results and making individual queries,
+ * collect all IDs and fetch in a single batch query.
+ * Usage: const roasters = await batchLoadRelated(roasterIds, 'roasters', db.fetchRoastersByIds)
+ */
+export async function batchLoadRelated<T>(
+  ids: (string | number)[],
+  resourceName: string,
+  fetchFn: (ids: (string | number)[]) => Promise<Map<string | number, T>>
+): Promise<Map<string | number, T>> {
+  if (ids.length === 0) return new Map();
+  const uniqueIds = [...new Set(ids)];
+  return fetchFn(uniqueIds);
 }
 
 export function paginationMiddleware(req: Request, res: Response, next: NextFunction) {
