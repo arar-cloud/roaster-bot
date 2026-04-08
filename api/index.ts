@@ -1,12 +1,34 @@
 import app from '../src/index.js';
 import { createCacheMiddleware, correlationIdMiddleware } from './index.js';
+import { Request, Response, NextFunction } from 'express';
 
 // Apply optimizations to Express app
 app.use(correlationIdMiddleware);
 app.use(createCacheMiddleware({ defaultTtl: 30000 }));
+app.use(paginationMiddleware);
 
 // Re-export Express app for integration
 export default app;
+
+// ============================================
+// Pagination Middleware: Prevent Full Table Scans
+// ============================================
+export interface PaginationParams {
+  offset: number;
+  limit: number;
+}
+
+export function getPaginationParams(query: any, maxLimit: number = 100, defaultLimit: number = 20): PaginationParams {
+  const offset = Math.max(0, parseInt(query.offset || '0', 10));
+  const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit || defaultLimit.toString(), 10)));
+  return { offset, limit };
+}
+
+export function paginationMiddleware(req: Request, res: Response, next: NextFunction) {
+  const pagination = getPaginationParams(req.query);
+  (req as any).pagination = pagination;
+  next();
+}
 
 // ============================================
 // N+1 Query Optimization: Batch Loading & Eager Loading
