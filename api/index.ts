@@ -4,6 +4,81 @@ import app from '../src/index.js';
 export default app;
 
 // ============================================
+// N+1 Query Optimization: Batch Loading & Eager Loading
+// ============================================
+export function createBatchLoader<T, K>(
+  resolver: (keys: K[]) => Promise<(T | Error)[]>,
+  cacheKeyFn?: (key: K) => string
+) {
+  const cache = new Map<string, Promise<T | Error>>();
+  let batch: K[] = [];
+  let scheduled = false;
+
+  function load(key: K): Promise<T | Error> {
+    const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
+    
+    if (cache.has(cacheKey)) {
+      return cache.get(cacheKey)!;
+    }
+
+    batch.push(key);
+    
+    if (!scheduled) {
+      scheduled = true;
+      const promise = new Promise<(T | Error)[]>(resolve => {
+        setImmediate(async () => {
+          const keys = batch;
+          batch = [];
+          scheduled = false;
+          const results = await resolver(keys);
+          resolve(results);
+        });
+      });
+
+      const resultsByKey = new Map<string, T | Error>();
+      promise.then(results => {
+        batch.forEach((key, idx) => {
+          const resultKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
+          resultsByKey.set(resultKey, results[idx]);
+        });
+      });
+
+      const resultPromise = promise.then(() => {
+        const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
+        return resultsByKey.get(cacheKey)!;
+      });
+      cache.set(cacheKey, resultPromise);
+      return resultPromise;
+    }
+
+    const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
+    const resultPromise = Promise.resolve(batch).then(async () => {
+      const results = await resolver([key]);
+      return results[0];
+    });
+    cache.set(cacheKey, resultPromise);
+    return resultPromise;
+  }
+
+  function clearCache(): void {
+    cache.clear();
+  }
+
+  return { load, clearCache };
+}
+
+export function createEagerLoader<T>(
+  getIdFn: (item: T) => string | number,
+  joinFn: (items: T[], relatedIds: (string | number)[]) => Promise<T[]>
+) {
+  return async function eagerLoad(items: T[]): Promise<T[]> {
+    if (!items || items.length === 0) return items;
+    const ids = items.map(getIdFn);
+    return joinFn(items, ids);
+  };
+}
+
+// ============================================
 // Export Resilience Infrastructure
 // ============================================
 // Distributed Tracing and Correlation IDs
