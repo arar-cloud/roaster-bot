@@ -112,6 +112,83 @@ export { HealthMonitor };
 // Error Handling and Logging
 export { RequestError, createErrorLogger, errorHandlingMiddleware, fetchWithTimeout };
 
+// Request Error with structured context
+class RequestError extends Error {
+  constructor(
+    message: string,
+    public statusCode: number = 500,
+    public traceId: string = '',
+    public context: Record<string, unknown> = {}
+  ) {
+    super(message);
+    this.name = 'RequestError';
+  }
+}
+
+// Contextual logger with trace ID support
+interface LogContext {
+  traceId: string;
+  [key: string]: unknown;
+}
+
+function createContextualLogger(traceId: string) {
+  const context: LogContext = { traceId };
+  return {
+    info: (message: string, data?: Record<string, unknown>) => {
+      console.log(JSON.stringify({ level: 'info', message, ...context, ...data }, null, 2));
+    },
+    error: (message: string, error?: Error, data?: Record<string, unknown>) => {
+      console.error(JSON.stringify({
+        level: 'error',
+        message,
+        error: error?.message,
+        stack: error?.stack,
+        ...context,
+        ...data
+      }, null, 2));
+    },
+    warn: (message: string, data?: Record<string, unknown>) => {
+      console.warn(JSON.stringify({ level: 'warn', message, ...context, ...data }, null, 2));
+    }
+  };
+}
+
+function createErrorLogger() {
+  return (error: unknown, traceId: string) => {
+    const logger = createContextualLogger(traceId);
+    if (error instanceof RequestError) {
+      logger.error(error.message, error, { statusCode: error.statusCode, context: error.context });
+    } else if (error instanceof Error) {
+      logger.error(error.message, error);
+    } else {
+      logger.error('Unknown error', undefined, { error });
+    }
+  };
+}
+
+function errorHandlingMiddleware(req: any, res: any, next: any) {
+  const traceId = req.traceId || req.headers['x-trace-id'] || require('crypto').randomUUID();
+  req.traceId = traceId;
+  const logger = createContextualLogger(traceId);
+  
+  const originalSend = res.send;
+  res.send = function(data: any) {
+    res.setHeader('X-Trace-Id', traceId);
+    return originalSend.call(this, data);
+  };
+  
+  try {
+    next();
+  } catch (error) {
+    logger.error('Unhandled error in request', error instanceof Error ? error : new Error(String(error)));
+    if (error instanceof RequestError) {
+      res.status(error.statusCode).json({ error: error.message, traceId, context: error.context });
+    } else {
+      res.status(500).json({ error: 'Internal server error', traceId });
+    }
+  }
+}
+
 // HTTP Agents with connection pooling
 export { httpAgent, httpsAgent, REQUEST_TIMEOUT_MS, CONNECTION_TIMEOUT_MS };
 
