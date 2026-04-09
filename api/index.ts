@@ -2,6 +2,16 @@ import app from '../src/index.js';
 import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } from './index.js';
 import { Request, Response, NextFunction } from 'express';
 
+// Extend Express Request type with timeout and correlation fields
+declare global {
+  namespace Express {
+    interface Request {
+      timeout?: number;
+      correlationId?: string;
+    }
+  }
+}
+
 // ============================================
 // Async Error Handler Wrapper & Rejection Tracking
 // ============================================
@@ -58,6 +68,7 @@ import crypto from 'crypto';
 
 // Apply optimizations to Express app
 app.use(correlationIdMiddleware);
+app.use(timeoutMiddleware(DEFAULT_REQUEST_TIMEOUT));
 app.use(createCacheMiddleware({ defaultTtl: 30000 }));
 app.use(createETagMiddleware());
 app.use(paginationMiddleware);
@@ -355,6 +366,32 @@ export const errorHandlerMiddleware = (err: any, req: any, res: any, next: any) 
 // ============================================
 // Export Resilience Infrastructure
 // ============================================
+// ============================================
+// Request Timeout Configuration & Middleware
+// ============================================
+const DEFAULT_REQUEST_TIMEOUT = 30000; // 30 seconds
+const MAX_REQUEST_TIMEOUT = 120000; // 2 minutes max
+
+export const timeoutMiddleware = (defaultTimeout = DEFAULT_REQUEST_TIMEOUT) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const timeout = (req as any).timeout || defaultTimeout;
+    const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_REQUEST_TIMEOUT);
+    
+    const timeoutHandle = setTimeout(() => {
+      const correlationId = (req as any).correlationId || 'unknown';
+      console.warn(`[${correlationId}] Request timeout after ${clampedTimeout}ms`);
+      
+      if (!res.headersSent) {
+        const errorResponse = createErrorResponse(408, 'Request timeout', req, 'REQUEST_TIMEOUT');
+        res.status(408).json(errorResponse);
+      }
+    }, clampedTimeout);
+    
+    res.on('finish', () => clearTimeout(timeoutHandle));
+    next();
+  };
+};
+
 // Distributed Tracing and Correlation IDs
 export { correlationIdMiddleware };
 
