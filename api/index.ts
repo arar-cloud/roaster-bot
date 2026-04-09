@@ -1,6 +1,23 @@
 import app from '../src/index.js';
 import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } from './index.js';
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
+
+// ============================================
+// Reliability Utilities Re-export
+// ============================================
+// Re-export utilities from src for use in route handlers
+export { 
+  wrapAsyncHandler,
+  retryWithExponentialBackoff,
+  getOrCreateCircuitBreaker,
+  Mutex,
+  stateMutex,
+  createErrorResponse,
+  StandardizedError,
+  RetryOptions,
+  CircuitBreakerState
+} from '../src/index.js';
 
 // Extend Express Request type with timeout and correlation fields
 declare global {
@@ -64,8 +81,6 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   entry.timestamp = Date.now();
   rejectionTracker.set('global_unhandled', entry);
 });
-import crypto from 'crypto';
-
 // Apply optimizations to Express app
 app.use(correlationIdMiddleware);
 app.use(timeoutMiddleware(DEFAULT_REQUEST_TIMEOUT));
