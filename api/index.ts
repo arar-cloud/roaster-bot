@@ -8,7 +8,7 @@ interface PaginationOptions {
 }
 
 class PaginationHelper {
-  static encodeCursor(id: string, timestamp: number): string {
+  static encodeCursor(id: string, timestamp: number; ttl: number): string {
     return Buffer.from(`${id}:${timestamp}`).toString('base64');
   }
 
@@ -327,7 +327,7 @@ const compressionMiddleware = compression({
 const requestValidator = (req: Request, res: Response, next: Function) => {
   const contentLength = parseInt(req.headers['content-length'] || '0', 10);
   const maxRequestSize = 5 * 1024 * 1024;
-  
+
   if (contentLength > maxRequestSize) {
     return res.status(413).json({ error: 'Payload too large', maxSize: maxRequestSize });
   }
