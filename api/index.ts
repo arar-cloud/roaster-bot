@@ -23,6 +23,48 @@ class BatchLoader<T, K> {
       this.pendingPromise = new Promise((resolve) => {
         this.resolveQueue = resolve;
         
+        // Schedule flush
+        if (this.queue.length >= this.batchSize) {
+          this.flushBatch();
+        } else if (!this.timeoutId) {
+          this.timeoutId = setTimeout(() => this.flushBatch(), this.flushInterval);
+        }
+      });
+    }
+    
+    return this.pendingPromise.then((results) => results.get(item as unknown as K));
+  }
+  
+  private async flushBatch(): Promise<void> {
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
+    }
+    
+    const itemsToProcess = this.queue.splice(0, this.batchSize);
+    if (itemsToProcess.length === 0) return;
+    
+    try {
+      const results = await this.batchFn(itemsToProcess);
+      if (this.resolveQueue) {
+        this.resolveQueue(results);
+        this.resolveQueue = null;
+        this.pendingPromise = null;
+      }
+    } catch (error) {
+      console.error('BatchLoader flush error:', error);
+      if (this.resolveQueue) {
+        this.resolveQueue(new Map());
+        this.resolveQueue = null;
+        this.pendingPromise = null;
+      }
+    }
+  }
+    
+    if (!this.pendingPromise) {
+      this.pendingPromise = new Promise((resolve) => {
+        this.resolveQueue = resolve;
+        
         // Flush on batch size or timeout
         if (this.queue.length >= this.batchSize) {
           this.flush();
