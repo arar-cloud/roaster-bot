@@ -94,11 +94,40 @@ interface CacheEntry<T> {
 
 export class CacheManager {
   private cache: Map<string, CacheEntry<any>> = new Map();
+  private pendingRequests: Map<string, Promise<any>> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
   
   constructor(cleanupIntervalMs: number = 60000) {
     // Auto-cleanup expired entries every 60 seconds
     this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
+  }
+  
+  // Generate deterministic cache key from query parameters
+  generateQueryKey(endpoint: string, params: Record<string, any>): string {
+    const sorted = Object.keys(params).sort().map(k => `${k}=${JSON.stringify(params[k])}`).join('&');
+    return `query:${endpoint}:${sorted}`;
+  }
+  
+  // Deduplication: prevent parallel identical requests from hitting DB
+  async getOrFetch<T>(key: string, fetcher: () => Promise<T>, ttlMs: number = 60000): Promise<T> {
+    const cached = this.get<T>(key);
+    if (cached !== null) return cached as T;
+    
+    if (this.pendingRequests.has(key)) {
+      return this.pendingRequests.get(key)!;
+    }
+    
+    const promise = fetcher().then(result => {
+      this.set(key, result, ttlMs);
+      this.pendingRequests.delete(key);
+      return result;
+    }).catch(err => {
+      this.pendingRequests.delete(key);
+      throw err;
+    });
+    
+    this.pendingRequests.set(key, promise);
+    return promise;
   }
   
   set<T>(key: string, data: T, ttlMs: number = 60000): void {
@@ -178,9 +207,11 @@ export function cacheMiddleware(ttlMs: number = 60000) {
     const cachedResponse = apiCache.get(cacheKey);
     
     if (cachedResponse !== null) {
+      res.set('X-Cache', 'HIT');
       return res.json(cachedResponse);
     }
     
+    res.set('X-Cache', 'MISS');
     next();
   };
 }
