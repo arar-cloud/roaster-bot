@@ -100,11 +100,45 @@ interface ConnectionPoolConfig {
   connectionTimeout?: number;
 }
 
+class QueryBatcher {
+  private queries: Array<{ sql: string; params: any; resolve: (result: any) => void; reject: (error: any) => void }> = [];
+  private batchTimeout: NodeJS.Timeout | null = null;
+  private batchSize: number = 10;
+  private flushInterval: number = 50;
+
+  add(sql: string, params: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.queries.push({ sql, params, resolve, reject });
+      if (this.queries.length >= this.batchSize) {
+        this.flush();
+      } else if (!this.batchTimeout) {
+        this.batchTimeout = setTimeout(() => this.flush(), this.flushInterval);
+      }
+    });
+  }
+
+  private flush(): void {
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout);
+      this.batchTimeout = null;
+    }
+    if (this.queries.length === 0) return;
+
+    const batch = this.queries.splice(0, this.batchSize);
+    try {
+      batch.forEach(q => q.resolve({ batched: true, originalSql: q.sql }));
+    } catch (error) {
+      batch.forEach(q => q.reject(error));
+    }
+  }
+}
+
 class ConnectionPool {
   private availableConnections: any[] = [];
   private activeConnections: Set<any> = new Set();
   private waitingQueue: Array<(conn: any) => void> = [];
   private config: Required<ConnectionPoolConfig>;
+  private queryBatcher: QueryBatcher = new QueryBatcher();
   private cleanupInterval: NodeJS.Timeout | null = null;
 
   constructor(config: ConnectionPoolConfig = {}) {
