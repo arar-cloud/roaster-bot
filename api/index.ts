@@ -57,6 +57,7 @@ import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } 
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { EventEmitter } from 'events';
+import compression from 'compression';
 
 // ============================================
 // Response Caching Middleware
@@ -304,9 +305,34 @@ declare global {
     interface Request {
       timeout?: number;
       correlationId?: string;
+      pagination?: { limit: number; offset: number };
     }
   }
 }
+
+// ============================================
+// Compression and Request Validation Middleware
+// ============================================
+const compressionMiddleware = compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req: Request, res: Response) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+});
+
+const requestValidator = (req: Request, res: Response, next: Function) => {
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  const maxRequestSize = 5 * 1024 * 1024;
+  
+  if (contentLength > maxRequestSize) {
+    return res.status(413).json({ error: 'Payload too large', maxSize: maxRequestSize });
+  }
+  next();
+};
 
 // ============================================
 // Async Error Handler Wrapper & Rejection Tracking
@@ -361,6 +387,8 @@ process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
   rejectionTracker.set('global_unhandled', entry);
 });
 // Apply optimizations to Express app
+app.use(compressionMiddleware);
+app.use(requestValidator);
 app.use(correlationIdMiddleware);
 app.use(timeoutMiddleware(DEFAULT_REQUEST_TIMEOUT));
 app.use(createCacheMiddleware({ defaultTtl: 30000 }));
