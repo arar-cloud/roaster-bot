@@ -1,4 +1,86 @@
 // ============================================
+// Pagination and Streaming Response Handler
+// ============================================
+interface PaginationOptions {
+  limit: number;
+  cursor?: string;
+}
+
+interface PaginatedResponse<T> {
+  data: T[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+// Cursor encoding/decoding for pagination state
+class CursorPaginator {
+  private readonly chunkSize: number = 50; // items per page
+  
+  encodeCursor(offset: number): string {
+    return Buffer.from(JSON.stringify({ offset })).toString('base64');
+  }
+  
+  decodeCursor(cursor: string): number {
+    try {
+      const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf-8'));
+      return decoded.offset || 0;
+    } catch {
+      return 0;
+    }
+  }
+  
+  paginate<T>(items: T[], cursor?: string, limit: number = this.chunkSize): PaginatedResponse<T> {
+    const offset = cursor ? this.decodeCursor(cursor) : 0;
+    const page = items.slice(offset, offset + limit);
+    const nextOffset = offset + limit;
+    
+    return {
+      data: page,
+      nextCursor: nextOffset < items.length ? this.encodeCursor(nextOffset) : undefined,
+      hasMore: nextOffset < items.length
+    };
+  }
+}
+
+// Streaming response helper for chunked delivery
+class StreamingResponseHandler {
+  private readonly chunkSizeBytes: number = 8192; // 8KB chunks
+  
+  streamJSON(res: any, data: any[]): Promise<void> {
+    return new Promise((resolve) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Transfer-Encoding', 'chunked');
+      res.write('[');
+      
+      let index = 0;
+      const sendChunk = () => {
+        if (index >= data.length) {
+          res.write(']');
+          res.end();
+          resolve();
+          return;
+        }
+        
+        const chunk = data[index];
+        const json = JSON.stringify(chunk);
+        if (index > 0) res.write(',');
+        res.write(json);
+        index++;
+        
+        // Throttle chunk delivery to avoid overwhelming clients
+        setImmediate(sendChunk);
+      };
+      
+      sendImmediate(sendChunk);
+    });
+  }
+}
+
+function setImmediate(cb: () => void) {
+  setTimeout(cb, 0);
+}
+
+// ============================================
 // Database Connection Pool Configuration
 // ============================================
 // ============================================
