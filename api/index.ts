@@ -81,6 +81,151 @@ function setImmediate(cb: () => void) {
 }
 
 // ============================================
+// Database Query Batching and N+1 Prevention
+// ============================================
+
+// DataLoader pattern: batch multiple individual queries into single batch operation
+class DataLoader<K, V> {
+  private queue: Array<{ key: K; resolve: (v: V) => void; reject: (e: Error) => void }> = [];
+  private batchScheduled = false;
+  private readonly batchFn: (keys: K[]) => Promise<Map<K, V>>;
+  private readonly batchSize: number;
+  
+  constructor(batchFn: (keys: K[]) => Promise<Map<K, V>>, batchSize: number = 100) {
+    this.batchFn = batchFn;
+    this.batchSize = batchSize;
+  }
+  
+  load(key: K): Promise<V> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ key, resolve, reject });
+      
+      // Schedule batch on next tick if not already scheduled
+      if (!this.batchScheduled) {
+        this.batchScheduled = true;
+        setImmediate(() => this.processBatch());
+      }
+      
+      // Also process immediately if we hit batch size limit
+      if (this.queue.length >= this.batchSize) {
+        this.processBatch();
+      }
+    });
+  }
+  
+  private async processBatch(): Promise<void> {
+    if (this.queue.length === 0) {
+      this.batchScheduled = false;
+      return;
+    }
+    
+    const batch = this.queue.splice(0, this.batchSize);
+    const keys = batch.map(item => item.key);
+    
+    try {
+      const results = await this.batchFn(keys);
+      
+      for (const item of batch) {
+        const value = results.get(item.key);
+        if (value !== undefined) {
+          item.resolve(value);
+        } else {
+          item.reject(new Error(`No value found for key: ${item.key}`));
+        }
+      }
+    } catch (err) {
+      for (const item of batch) {
+        item.reject(err as Error);
+      }
+    }
+    
+    // Continue processing remaining queue
+    if (this.queue.length > 0) {
+      setImmediate(() => this.processBatch());
+    } else {
+      this.batchScheduled = false;
+    }
+  }
+  
+  clear(): void {
+    this.queue = [];
+    this.batchScheduled = false;
+  }
+}
+
+// Query batching helper for consolidating multiple DB queries
+class QueryBatcher {
+  private batches: Map<string, { keys: Set<any>; promise: Promise<Map<any, any>> | null }> = new Map();
+  
+  // Batch multiple IDs into single query instead of N individual queries
+  async batchFetch<T>(
+    queryId: string,
+    ids: any[],
+    batchQueryFn: (ids: any[]) => Promise<Map<any, T>>
+  ): Promise<Map<any, T>> {
+    // If batch already exists and has pending promise, wait for it
+    if (!this.batches.has(queryId)) {
+      this.batches.set(queryId, { keys: new Set(), promise: null });
+    }
+    
+    const batch = this.batches.get(queryId)!;
+    
+    // Add new IDs to batch
+    for (const id of ids) {
+      batch.keys.add(id);
+    }
+    
+    // Execute batch on next tick if not already scheduled
+    if (!batch.promise) {
+      batch.promise = new Promise((resolve) => {
+        setImmediate(async () => {
+          const keysArray = Array.from(batch.keys);
+          batch.keys.clear();
+          
+          try {
+            const result = await batchQueryFn(keysArray);
+            resolve(result);
+          } catch (err) {
+            console.error(`Batch query failed for ${queryId}:`, err);
+            resolve(new Map());
+          } finally {
+            batch.promise = null;
+          }
+        });
+      });
+    }
+    
+    return batch.promise;
+  }
+  
+  // Eager load relationships to prevent N+1 queries
+  async eagerLoad<T, R>(
+    items: T[],
+    relationshipIds: (item: T) => any[],
+    batchLoader: (ids: any[]) => Promise<Map<any, R>>
+  ): Promise<Map<any, R>> {
+    const allIds = new Set<any>();
+    for (const item of items) {
+      const ids = relationshipIds(item);
+      for (const id of ids) {
+        allIds.add(id);
+      }
+    }
+    
+    if (allIds.size === 0) {
+      return new Map();
+    }
+    
+    // Single batch query instead of N individual queries
+    return batchLoader(Array.from(allIds));
+  }
+  
+  clear(): void {
+    this.batches.clear();
+  }
+}
+
+// ============================================
 // Database Connection Pool Configuration
 // ============================================
 // ============================================
