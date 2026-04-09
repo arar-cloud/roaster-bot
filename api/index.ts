@@ -4,6 +4,103 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
 // ============================================
+// Connection Pool Management
+// ============================================
+interface ConnectionPoolConfig {
+  minConnections?: number;
+  maxConnections?: number;
+  idleTimeout?: number;
+  connectionTimeout?: number;
+}
+
+class ConnectionPool {
+  private availableConnections: any[] = [];
+  private activeConnections: Set<any> = new Set();
+  private waitingQueue: Array<(conn: any) => void> = [];
+  private config: Required<ConnectionPoolConfig>;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor(config: ConnectionPoolConfig = {}) {
+    this.config = {
+      minConnections: config.minConnections || 5,
+      maxConnections: config.maxConnections || 20,
+      idleTimeout: config.idleTimeout || 30000,
+      connectionTimeout: config.connectionTimeout || 10000
+    };
+    this.initializePool();
+  }
+
+  private initializePool() {
+    for (let i = 0; i < this.config.minConnections; i++) {
+      this.availableConnections.push({ id: i, createdAt: Date.now() });
+    }
+    this.startCleanupInterval();
+  }
+
+  private startCleanupInterval() {
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      this.availableConnections = this.availableConnections.filter(conn => {
+        return now - conn.createdAt < this.config.idleTimeout;
+      });
+    }, this.config.idleTimeout);
+  }
+
+  async acquire(): Promise<any> {
+    if (this.availableConnections.length > 0) {
+      return this.availableConnections.pop()!;
+    }
+    
+    if (this.activeConnections.size < this.config.maxConnections) {
+      const conn = { id: Math.random(), createdAt: Date.now() };
+      this.activeConnections.add(conn);
+      return conn;
+    }
+
+    return new Promise(resolve => {
+      this.waitingQueue.push(resolve);
+      setTimeout(() => {
+        const idx = this.waitingQueue.indexOf(resolve);
+        if (idx > -1) this.waitingQueue.splice(idx, 1);
+      }, this.config.connectionTimeout);
+    });
+  }
+
+  release(conn: any) {
+    this.activeConnections.delete(conn);
+    if (this.waitingQueue.length > 0) {
+      const resolve = this.waitingQueue.shift()!;
+      resolve(conn);
+    } else {
+      this.availableConnections.push(conn);
+    }
+  }
+
+  destroy() {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    this.availableConnections = [];
+    this.activeConnections.clear();
+    this.waitingQueue = [];
+  }
+}
+
+export const dbConnectionPool = new ConnectionPool({ maxConnections: 20 });
+
+// ============================================
+// Async Database Access Wrapper
+// ============================================
+export async function withDatabaseConnection<T>(
+  operation: (conn: any) => Promise<T>
+): Promise<T> {
+  const conn = await dbConnectionPool.acquire();
+  try {
+    return await operation(conn);
+  } finally {
+    dbConnectionPool.release(conn);
+  }
+}
+
+// ============================================
 // Reliability Utilities Re-export
 // ============================================
 // Re-export utilities from src for use in route handlers
