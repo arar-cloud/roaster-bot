@@ -330,6 +330,123 @@ export function invalidateCache(pattern?: string): void {
 }
 
 // ============================================
+// Mutual Exclusion Lock for State Synchronization
+// ============================================
+class Mutex {
+  private locked: boolean = false;
+  private waitQueue: Array<() => void> = [];
+  
+  async lock(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return Promise.resolve();
+    }
+    
+    return new Promise(resolve => {
+      this.waitQueue.push(resolve);
+    });
+  }
+  
+  unlock(): void {
+    if (this.waitQueue.length > 0) {
+      const next = this.waitQueue.shift();
+      if (next) next();
+    } else {
+      this.locked = false;
+    }
+  }
+  
+  async execute<T>(fn: () => Promise<T> | T): Promise<T> {
+    await this.lock();
+    try {
+      return await Promise.resolve(fn());
+    } finally {
+      this.unlock();
+    }
+  }
+}
+
+const stateMutex = new Mutex();
+
+// ============================================
+// Graceful Shutdown Handler
+// ============================================
+interface InFlightRequest {
+  correlationId: string;
+  startTime: number;
+  endpoint: string;
+}
+
+const inFlightRequests = new Map<string, InFlightRequest>();
+let isShuttingDown = false;
+
+const trackingMiddleware = (req: Request, res: Response, next: any) => {
+  if (!req.correlationId) {
+    req.correlationId = crypto.randomUUID();
+  }
+  
+  const requestId = req.correlationId;
+  inFlightRequests.set(requestId, {
+    correlationId: requestId,
+    startTime: Date.now(),
+    endpoint: `${req.method} ${req.path}`
+  });
+  
+  res.on('finish', () => {
+    inFlightRequests.delete(requestId);
+  });
+  
+  res.on('close', () => {
+    inFlightRequests.delete(requestId);
+  });
+  
+  if (isShuttingDown) {
+    const error = createErrorResponse(503, 'Server is shutting down', req, 'SERVER_SHUTTING_DOWN');
+    res.status(503).json(error);
+    return;
+  }
+  
+  next();
+};
+
+app.use(trackingMiddleware);
+
+const DEFAULT_SHUTDOWN_TIMEOUT = 30000; // 30 seconds
+
+async function gracefulShutdown() {
+  console.log('[SHUTDOWN] Initiating graceful shutdown...');
+  isShuttingDown = true;
+  
+  try {
+    await stateMutex.execute(async () => {
+      const shutdownDeadline = Date.now() + DEFAULT_SHUTDOWN_TIMEOUT;
+      
+      while (inFlightRequests.size > 0 && Date.now() < shutdownDeadline) {
+        const remaining = Array.from(inFlightRequests.values());
+        const elapsed = Date.now() - remaining[0].startTime;
+        console.log(`[SHUTDOWN] Draining ${inFlightRequests.size} requests. Oldest: ${elapsed}ms`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      
+      if (inFlightRequests.size > 0) {
+        console.warn(`[SHUTDOWN] Timeout reached. ${inFlightRequests.size} requests still in-flight.`);
+      } else {
+        console.log('[SHUTDOWN] All requests drained successfully.');
+      }
+    });
+  } catch (error) {
+    console.error('[SHUTDOWN] Error during graceful shutdown:', error);
+  }
+  
+  process.exit(0);
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
+export { gracefulShutdown, inFlightRequests, isShuttingDown };
+
+// ============================================
 // Error Response Standardization
 // ============================================
 interface StandardizedError {
