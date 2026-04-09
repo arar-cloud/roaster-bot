@@ -262,6 +262,89 @@ export function createQueryCache<T>(
 }
 
 // ============================================
+// Database Query Optimization - Batch Queries & Pagination
+// ============================================
+interface BatchQueryOptions {
+  batchSize?: number;
+  timeout?: number;
+}
+
+interface PaginationCursor {
+  token: string;
+  hasMore: boolean;
+  nextCursor?: string;
+}
+
+class BatchQuery {
+  private queue: Map<string, any[]> = new Map();
+  private timers: Map<string, NodeJS.Timeout> = new Map();
+  private batchSize: number;
+  private timeout: number;
+
+  constructor(options: BatchQueryOptions = {}) {
+    this.batchSize = options.batchSize || 100;
+    this.timeout = options.timeout || 50;
+  }
+
+  async add<T>(key: string, item: T, executor: (items: T[]) => Promise<any>): Promise<any> {
+    if (!this.queue.has(key)) {
+      this.queue.set(key, []);
+    }
+    const batch = this.queue.get(key)!;
+    batch.push(item);
+
+    if (this.timers.has(key)) {
+      clearTimeout(this.timers.get(key)!);
+    }
+
+    if (batch.length >= this.batchSize) {
+      return this.flush(key, executor);
+    }
+
+    return new Promise(resolve => {
+      const timer = setTimeout(() => this.flush(key, executor).then(resolve), this.timeout);
+      this.timers.set(key, timer);
+    });
+  }
+
+  private async flush<T>(key: string, executor: (items: T[]) => Promise<any>): Promise<any> {
+    const batch = this.queue.get(key);
+    if (!batch || batch.length === 0) return null;
+    this.queue.delete(key);
+    const timer = this.timers.get(key);
+    if (timer) {
+      clearTimeout(timer);
+      this.timers.delete(key);
+    }
+    return executor(batch);
+  }
+}
+
+export class PaginationCursorUtil {
+  static encode(offset: number, limit: number): string {
+    return Buffer.from(JSON.stringify({ offset, limit })).toString('base64');
+  }
+
+  static decode(cursor: string): { offset: number; limit: number } {
+    const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
+    return JSON.parse(decoded);
+  }
+
+  static createResponse<T>(items: T[], offset: number, limit: number, total: number): PaginationCursor & { items: T[] } {
+    const hasMore = offset + limit < total;
+    const nextCursor = hasMore ? this.encode(offset + limit, limit) : undefined;
+    return {
+      items,
+      token: this.encode(offset, limit),
+      hasMore,
+      nextCursor
+    };
+  }
+}
+
+export const batchQuery = new BatchQuery({ batchSize: 100, timeout: 50 });
+
+// ============================================
 // N+1 Query Optimization: Batch Loading & Eager Loading
 // ============================================
 export function createBatchLoader<T, K>(
