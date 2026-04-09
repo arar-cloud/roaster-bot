@@ -266,6 +266,40 @@ export function invalidateCache(pattern?: string): void {
 }
 
 // ============================================
+// Error Response Standardization
+// ============================================
+interface StandardizedError {
+  status: number;
+  message: string;
+  correlationId?: string;
+  timestamp: string;
+  path?: string;
+  code?: string;
+}
+
+function createErrorResponse(status: number, message: string, req?: any, code?: string): StandardizedError {
+  return {
+    status,
+    message,
+    correlationId: req?.correlationId || 'unknown',
+    timestamp: new Date().toISOString(),
+    path: req?.path || 'unknown',
+    code: code || 'INTERNAL_ERROR'
+  };
+}
+
+// Error handling middleware for standardized responses
+export const errorHandlerMiddleware = (err: any, req: any, res: any, next: any) => {
+  const correlationId = req.correlationId || 'unknown';
+  const status = err.status || err.statusCode || 500;
+  const message = err.message || 'Internal Server Error';
+  const code = err.code || 'UNHANDLED_ERROR';
+  
+  const errorResponse = createErrorResponse(status, message, req, code);
+  res.status(status).json(errorResponse);
+};
+
+// ============================================
 // Export Resilience Infrastructure
 // ============================================
 // Distributed Tracing and Correlation IDs
