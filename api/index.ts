@@ -2,6 +2,7 @@ import app from '../src/index.js';
 import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } from './index.js';
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { EventEmitter } from 'events';
 
 // ============================================
 // Connection Pool Management
@@ -285,6 +286,81 @@ export function paginationMiddleware(req: Request, res: Response, next: NextFunc
   (req as any).pagination = pagination;
   next();
 }
+
+// ============================================
+// Cache Manager with Redis Support & Event-Driven Invalidation
+// ============================================
+class CacheManager extends EventEmitter {
+  private memoryCache: Map<string, { data: any; ttl: number; timestamp: number }> = new Map();
+  private ttlMap: Map<string, NodeJS.Timeout> = new Map();
+  private redisClient: any = null;
+  private isRedisAvailable: boolean = false;
+
+  constructor(redisClient?: any) {
+    super();
+    this.redisClient = redisClient;
+    this.isRedisAvailable = !!redisClient;
+  }
+
+  async get(key: string): Promise<any | null> {
+    const memEntry = this.memoryCache.get(key);
+    if (memEntry && Date.now() - memEntry.timestamp < memEntry.ttl) {
+      return memEntry.data;
+    }
+    if (memEntry) this.memoryCache.delete(key);
+    if (this.isRedisAvailable && this.redisClient) {
+      try {
+        const redisData = await this.redisClient.get(key);
+        if (redisData) {
+          const parsed = JSON.parse(redisData);
+          this.memoryCache.set(key, { data: parsed, ttl: 300000, timestamp: Date.now() });
+          return parsed;
+        }
+      } catch (err) {
+        console.error(`[CacheManager] Redis get error for key ${key}:`, err);
+      }
+    }
+    return null;
+  }
+
+  async set(key: string, data: any, ttl: number = 300000): Promise<void> {
+    this.memoryCache.set(key, { data, ttl, timestamp: Date.now() });
+    if (this.ttlMap.has(key)) clearTimeout(this.ttlMap.get(key)!);
+    this.ttlMap.set(key, setTimeout(() => {
+      this.memoryCache.delete(key);
+      this.ttlMap.delete(key);
+      this.emit('cache:expired', key);
+    }, ttl));
+    if (this.isRedisAvailable && this.redisClient) {
+      try {
+        await this.redisClient.setex(key, Math.ceil(ttl / 1000), JSON.stringify(data));
+      } catch (err) {
+        console.error(`[CacheManager] Redis set error for key ${key}:`, err);
+      }
+    }
+  }
+
+  async invalidate(pattern?: RegExp | string): Promise<void> {
+    if (!pattern) {
+      this.memoryCache.clear();
+      this.ttlMap.forEach(timer => clearTimeout(timer));
+      this.ttlMap.clear();
+    } else {
+      const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
+      for (const key of this.memoryCache.keys()) {
+        if (regex.test(key)) {
+          this.memoryCache.delete(key);
+          const timer = this.ttlMap.get(key);
+          if (timer) clearTimeout(timer);
+          this.ttlMap.delete(key);
+        }
+      }
+    }
+    this.emit('cache:invalidated', pattern);
+  }
+}
+
+export const cacheManager = new CacheManager();
 
 // ============================================
 // Query Result Caching & Memoization
