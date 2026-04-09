@@ -1,6 +1,111 @@
 // ============================================
 // Database Connection Pool Configuration
 // ============================================
+// ============================================
+// Request Cache Manager (Response Caching)
+// ============================================
+interface CacheEntry<T> {
+  data: T;
+  timestamp: number;
+  ttl: number; // milliseconds
+}
+
+export class CacheManager {
+  private cache: Map<string, CacheEntry<any>> = new Map();
+  private cleanupInterval: NodeJS.Timeout | null = null;
+  
+  constructor(cleanupIntervalMs: number = 60000) {
+    // Auto-cleanup expired entries every 60 seconds
+    this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
+  }
+  
+  set<T>(key: string, data: T, ttlMs: number = 60000): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl: ttlMs,
+    });
+  }
+  
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key) as CacheEntry<T> | undefined;
+    if (!entry) return null;
+    
+    const isExpired = Date.now() - entry.timestamp > entry.ttl;
+    if (isExpired) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.data;
+  }
+  
+  invalidate(pattern: string): number {
+    let count = 0;
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+        count++;
+      }
+    }
+    return count;
+  }
+  
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > entry.ttl) {
+        this.cache.delete(key);
+      }
+    }
+  }
+  
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.cache.clear();
+  }
+}
+
+// Global cache instance
+export const apiCache = new CacheManager();
+
+// ============================================
+// Cache Middleware Factory
+// ============================================
+export function cacheMiddleware(ttlMs: number = 60000) {
+  return (req: any, res: any, next: any) => {
+    const originalJson = res.json.bind(res);
+    
+    res.json = function(data: any) {
+      // Generate cache key from method, path, and query
+      const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
+      
+      // Cache successful responses (status 200-299)
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        apiCache.set(cacheKey, data, ttlMs);
+      }
+      
+      return originalJson(data);
+    };
+    
+    // Check cache before calling next middleware
+    const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
+    const cachedResponse = apiCache.get(cacheKey);
+    
+    if (cachedResponse !== null) {
+      return res.json(cachedResponse);
+    }
+    
+    next();
+  };
+}
+
+// ============================================
+// Database Connection Pool Configuration
+// ============================================
 export const connectionPoolConfig = {
   min: 2,           // Minimum connections in pool
   max: 10,          // Maximum connections in pool
