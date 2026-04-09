@@ -1,4 +1,17 @@
 // ============================================
+// Database Connection Pool Configuration
+// ============================================
+export const connectionPoolConfig = {
+  min: 2,           // Minimum connections in pool
+  max: 10,          // Maximum connections in pool
+  idleTimeoutMillis: 30000, // Close idle connections after 30s
+  connectionTimeoutMillis: 2000, // Connection timeout
+  statement_timeout: 30000,  // Query timeout
+  max_pool_size: 10,
+  reapInterval: 1000,  // Check for idle connections every 1s
+};
+
+// ============================================
 // Batch Loading Utility (N+1 Query Prevention)
 // ============================================
 class BatchLoader<T, K> {
