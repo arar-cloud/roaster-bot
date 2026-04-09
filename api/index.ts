@@ -117,6 +117,71 @@ export const connectionPoolConfig = {
 };
 
 // ============================================
+// Cursor-Based Pagination Utilities
+// ============================================
+export interface PaginationParams {
+  cursor?: string; // Base64-encoded cursor
+  limit?: number;  // Default 20, max 100
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  nextCursor: string | null; // Null when no more items
+  hasMore: boolean;
+  count: number;
+}
+
+// Encode cursor (id + offset)
+export function encodeCursor(id: string | number, offset: number = 0): string {
+  return Buffer.from(`${id}:${offset}`).toString('base64');
+}
+
+// Decode cursor
+export function decodeCursor(cursor: string): { id: string; offset: number } {
+  try {
+    const decoded = Buffer.from(cursor, 'base64').toString('utf-8');
+    const [id, offset] = decoded.split(':');
+    return { id, offset: parseInt(offset, 10) || 0 };
+  } catch {
+    return { id: '', offset: 0 };
+  }
+}
+
+// Build paginated response with cursor
+export function buildPaginatedResponse<T>(
+  items: T[],
+  cursor: string | undefined,
+  limit: number = 20,
+  totalCount: number
+): PaginatedResponse<T> {
+  const { offset } = cursor ? decodeCursor(cursor) : { offset: 0 };
+  const nextOffset = offset + items.length;
+  const hasMore = nextOffset < totalCount;
+  
+  return {
+    data: items,
+    nextCursor: hasMore ? encodeCursor(items[items.length - 1] as any, nextOffset) : null,
+    hasMore,
+    count: items.length,
+  };
+}
+
+// Streaming pagination helper - streams items without loading entire dataset
+export async function* streamPaginatedResults<T>(
+  queryFn: (offset: number, limit: number) => Promise<T[]>,
+  limit: number = 20,
+  totalItems: number
+): AsyncGenerator<T[], void, unknown> {
+  let offset = 0;
+  while (offset < totalItems) {
+    const batch = await queryFn(offset, limit);
+    if (batch.length === 0) break;
+    yield batch;
+    offset += batch.length;
+  }
+}
+
+// ============================================
 // Batch Loading Utility (N+1 Query Prevention)
 // ============================================
 class BatchLoader<T, K> {
