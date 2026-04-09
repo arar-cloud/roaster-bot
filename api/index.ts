@@ -1,6 +1,59 @@
 import app from '../src/index.js';
 import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } from './index.js';
 import { Request, Response, NextFunction } from 'express';
+
+// ============================================
+// Async Error Handler Wrapper & Rejection Tracking
+// ============================================
+const rejectionTracker = new Map<string, { count: number; lastError: string; timestamp: number }>();
+
+export function wrapAsyncHandler(handler: (req: Request, res: Response, next?: any) => Promise<any>) {
+  return async (req: Request, res: Response, next: any) => {
+    try {
+      await handler(req, res, next);
+    } catch (error) {
+      const correlationId = (req as any).correlationId || 'unknown';
+      console.error(`[${correlationId}] Async handler error caught:`, error);
+      
+      const errorEntry = rejectionTracker.get(correlationId) || { count: 0, lastError: '', timestamp: Date.now() };
+      errorEntry.count++;
+      errorEntry.lastError = error instanceof Error ? error.message : String(error);
+      errorEntry.timestamp = Date.now();
+      rejectionTracker.set(correlationId, errorEntry);
+      
+      if (!res.headersSent) {
+        res.status(500).json({
+          status: 500,
+          message: 'Internal Server Error',
+          correlationId,
+          timestamp: new Date().toISOString(),
+          code: 'ASYNC_HANDLER_ERROR'
+        });
+      }
+      next(error);
+    }
+  };
+}
+
+export function getRejectionMetrics(): Array<{id: string; count: number; lastError: string; timestamp: number}> {
+  return Array.from(rejectionTracker.entries()).map(([id, metrics]) => ({
+    id,
+    count: metrics.count,
+    lastError: metrics.lastError,
+    timestamp: metrics.timestamp
+  }));
+}
+
+// Global unhandled rejection tracking
+process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+  const errorMsg = reason instanceof Error ? reason.message : String(reason);
+  console.error('[GLOBAL] Unhandled Rejection:', errorMsg, promise);
+  const entry = rejectionTracker.get('global_unhandled') || { count: 0, lastError: '', timestamp: Date.now() };
+  entry.count++;
+  entry.lastError = errorMsg;
+  entry.timestamp = Date.now();
+  rejectionTracker.set('global_unhandled', entry);
+});
 import crypto from 'crypto';
 
 // Apply optimizations to Express app
