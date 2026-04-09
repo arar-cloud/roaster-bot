@@ -444,6 +444,10 @@ export async function batchLoadRelated<T>(
  * ETag middleware: Compute ETags and handle If-None-Match requests.
  * Returns 304 Not Modified for unchanged resources, reducing bandwidth.
  */
+export { ResponseCache, responseCache };
+export { QueryBatcher };
+export { PaginationHelper };
+
 export function createETagMiddleware() {
   return (req: Request, res: Response, next: NextFunction) => {
     const originalJson = res.json;
