@@ -364,6 +364,116 @@ export const errorHandlerMiddleware = (err: any, req: any, res: any, next: any) 
 };
 
 // ============================================
+// Circuit Breaker for External Service Calls
+// ============================================
+enum CircuitBreakerState {
+  CLOSED = 'CLOSED',
+  OPEN = 'OPEN',
+  HALF_OPEN = 'HALF_OPEN'
+}
+
+interface CircuitBreakerConfig {
+  failureThreshold?: number;
+  successThreshold?: number;
+  timeout?: number;
+  resetTimeout?: number;
+}
+
+class CircuitBreaker<T> {
+  private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
+  private failureCount: number = 0;
+  private successCount: number = 0;
+  private lastFailureTime: number | null = null;
+  private config: Required<CircuitBreakerConfig>;
+
+  constructor(
+    private name: string,
+    private fn: () => Promise<T>,
+    config: CircuitBreakerConfig = {}
+  ) {
+    this.config = {
+      failureThreshold: config.failureThreshold || 5,
+      successThreshold: config.successThreshold || 2,
+      timeout: config.timeout || 30000,
+      resetTimeout: config.resetTimeout || 60000
+    };
+  }
+
+  async call(): Promise<T> {
+    if (this.state === CircuitBreakerState.OPEN) {
+      if (Date.now() - (this.lastFailureTime || 0) > this.config.resetTimeout) {
+        this.state = CircuitBreakerState.HALF_OPEN;
+        this.successCount = 0;
+        console.warn(`[CircuitBreaker] ${this.name} entering HALF_OPEN state`);
+      } else {
+        throw new Error(`Circuit breaker ${this.name} is OPEN`);
+      }
+    }
+
+    try {
+      const result = await Promise.race([
+        this.fn(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`Timeout after ${this.config.timeout}ms`)), this.config.timeout)
+        )
+      ]);
+
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess(): void {
+    this.failureCount = 0;
+    
+    if (this.state === CircuitBreakerState.HALF_OPEN) {
+      this.successCount++;
+      if (this.successCount >= this.config.successThreshold) {
+        this.state = CircuitBreakerState.CLOSED;
+        console.info(`[CircuitBreaker] ${this.name} recovered to CLOSED`);
+      }
+    }
+  }
+
+  private onFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    
+    if (this.failureCount >= this.config.failureThreshold && this.state === CircuitBreakerState.CLOSED) {
+      this.state = CircuitBreakerState.OPEN;
+      console.error(`[CircuitBreaker] ${this.name} opened after ${this.failureCount} failures`);
+    }
+  }
+
+  getState(): CircuitBreakerState {
+    return this.state;
+  }
+
+  reset(): void {
+    this.state = CircuitBreakerState.CLOSED;
+    this.failureCount = 0;
+    this.successCount = 0;
+    this.lastFailureTime = null;
+  }
+}
+
+export function createCircuitBreaker<T>(
+  name: string,
+  fn: () => Promise<T>,
+  config?: CircuitBreakerConfig
+): { call: () => Promise<T>; getState: () => CircuitBreakerState; reset: () => void } {
+  const breaker = new CircuitBreaker(name, fn, config);
+  return {
+    call: () => breaker.call(),
+    getState: () => breaker.getState(),
+    reset: () => breaker.reset()
+  };
+}
+
+// ============================================
 // Export Resilience Infrastructure
 // ============================================
 // ============================================
