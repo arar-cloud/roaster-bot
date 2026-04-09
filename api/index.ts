@@ -1,4 +1,63 @@
 // ============================================
+// Batch Loading Utility (N+1 Query Prevention)
+// ============================================
+class BatchLoader<T, K> {
+  private queue: T[] = [];
+  private pendingPromise: Promise<Map<K, any>> | null = null;
+  private resolveQueue: Function | null = null;
+  private timeoutId: NodeJS.Timeout | null = null;
+  private readonly batchSize: number;
+  private readonly flushInterval: number; // ms
+  private readonly batchFn: (items: T[]) => Promise<Map<K, any>>;
+
+  constructor(batchFn: (items: T[]) => Promise<Map<K, any>>, batchSize: number = 100, flushInterval: number = 10) {
+    this.batchFn = batchFn;
+    this.batchSize = batchSize;
+    this.flushInterval = flushInterval;
+  }
+
+  load(item: T): Promise<any> {
+    this.queue.push(item);
+    
+    if (!this.pendingPromise) {
+      this.pendingPromise = new Promise((resolve) => {
+        this.resolveQueue = resolve;
+        
+        // Flush on batch size or timeout
+        if (this.queue.length >= this.batchSize) {
+          this.flush();
+        } else {
+          if (this.timeoutId) clearTimeout(this.timeoutId);
+          this.timeoutId = setTimeout(() => this.flush(), this.flushInterval);
+        }
+      });
+    }
+    
+    return this.pendingPromise.then(() => this.pendingPromise!);
+  }
+
+  private async flush() {
+    if (this.timeoutId) clearTimeout(this.timeoutId);
+    if (this.queue.length === 0) return;
+    
+    const batch = this.queue;
+    this.queue = [];
+    
+    try {
+      const result = await this.batchFn(batch);
+      if (this.resolveQueue) {
+        this.resolveQueue(result);
+      }
+    } catch (err) {
+      console.error('BatchLoader flush error:', err);
+    }
+    
+    this.pendingPromise = null;
+    this.resolveQueue = null;
+  }
+}
+
+// ============================================
 // Pagination and Lazy Loading Utilities
 // ============================================
 interface PaginationOptions {
@@ -47,6 +106,25 @@ class PaginationHelper {
         const { nested, ...rest } = item;
         return rest;
       });
+    }
+    return items;
+  }
+
+  // Apply batch loading to expand nested relations without N+1 queries
+  static async expandWithBatchLoading(
+    items: any[],
+    expandFields: string[],
+    loaderMap: Map<string, BatchLoader<any, any>>
+  ) {
+    for (const field of expandFields) {
+      const loader = loaderMap.get(field);
+      if (!loader) continue;
+      
+      for (const item of items) {
+        if (item[`${field}_id`]) {
+          item[field] = await loader.load(item[`${field}_id`]);
+        }
+      }
     }
     return items;
   }
