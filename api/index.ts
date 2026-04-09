@@ -73,6 +73,46 @@ app.use(createCacheMiddleware({ defaultTtl: 30000 }));
 app.use(createETagMiddleware());
 app.use(paginationMiddleware);
 
+// ============================================
+// Health and Readiness Probes
+// ============================================
+let isReady = false;
+let healthStatus = {
+  uptime: process.uptime(),
+  memoryUsage: process.memoryUsage(),
+  circuitBreakers: {} as Record<string, string>,
+  lastCheck: new Date().toISOString()
+};
+
+app.get('/health', (req: Request, res: Response) => {
+  healthStatus = {
+    uptime: process.uptime(),
+    memoryUsage: process.memoryUsage(),
+    circuitBreakers: {},
+    lastCheck: new Date().toISOString()
+  };
+  res.status(200).json({ status: 'healthy', details: healthStatus });
+});
+
+app.get('/ready', (req: Request, res: Response) => {
+  if (isReady && !isShuttingDown) {
+    res.status(200).json({ status: 'ready' });
+  } else {
+    res.status(503).json({ status: 'not_ready' });
+  }
+});
+
+// Signal readiness after initialization
+setTimeout(() => {
+  isReady = true;
+  console.log('[HEALTH] Service marked as ready');
+}, 1000);
+
+process.on('SIGTERM', () => {
+  isReady = false;
+  console.log('[HEALTH] Service marked as not ready for shutdown');
+});
+
 // Re-export Express app for integration
 export default app;
 
