@@ -1,3 +1,57 @@
+// ============================================
+// Pagination and Lazy Loading Utilities
+// ============================================
+interface PaginationOptions {
+  cursor?: string;
+  limit?: number;
+  expand?: string[];
+}
+
+class PaginationHelper {
+  static encodeCursor(id: string, timestamp: number): string {
+    return Buffer.from(`${id}:${timestamp}`).toString('base64');
+  }
+
+  static decodeCursor(cursor: string): { id: string; timestamp: number } | null {
+    try {
+      const [id, timestamp] = Buffer.from(cursor, 'base64').toString().split(':');
+      return { id, timestamp: parseInt(timestamp, 10) };
+    } catch {
+      return null;
+    }
+  }
+
+  static paginate(items: any[], options: PaginationOptions, keyField: string = 'id') {
+    const limit = Math.min(options.limit || 20, 100);
+    let startIdx = 0;
+
+    if (options.cursor) {
+      const decoded = this.decodeCursor(options.cursor);
+      if (decoded) {
+        startIdx = items.findIndex(item => item[keyField] === decoded.id);
+        if (startIdx >= 0) startIdx += 1;
+      }
+    }
+
+    const pageItems = items.slice(startIdx, startIdx + limit);
+    const nextCursor = pageItems.length === limit && startIdx + limit < items.length
+      ? this.encodeCursor(pageItems[pageItems.length - 1][keyField], Date.now())
+      : null;
+
+    return { items: pageItems, nextCursor, hasMore: !!nextCursor };
+  }
+
+  static lazyLoadNested(items: any[], expand?: string[]): any[] {
+    if (!expand || expand.length === 0) {
+      return items.map(item => {
+        const { nested, ...rest } = item;
+        return rest;
+      });
+    }
+    return items;
+  }
+}
+
 import app from '../src/index.js';
 import { createCacheMiddleware, correlationIdMiddleware, createETagMiddleware } from './index.js';
 import { Request, Response, NextFunction } from 'express';
@@ -27,13 +81,13 @@ class ResponseCache {
   set(key: string, data: any, ttl: number = 300000): string {
     const content = JSON.stringify(data);
     const etag = `"${crypto.createHash('md5').update(content).digest('hex')}"` ;
-    
+
     if (this.cache.size >= this.maxSize) {
       const oldest = Array.from(this.cache.entries())
         .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
       if (oldest) this.cache.delete(oldest[0]);
     }
-    
+
     this.cache.set(key, { data, etag, timestamp: Date.now(), ttl });
     return etag;
   }
@@ -73,11 +127,11 @@ export function createCacheMiddleware() {
       if (req.method === 'GET' && res.statusCode === 200) {
         const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
         const etag = responseCache.set(cacheKey, data, 300000);
-        
+
         res.setHeader('ETag', etag);
         res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
         res.setHeader('Vary', 'Accept-Encoding');
-        
+
         if (req.headers['if-none-match'] === etag) {
           res.statusCode = 304;
           return res.end();
@@ -171,7 +225,7 @@ class ConnectionPool {
     if (this.availableConnections.length > 0) {
       return this.availableConnections.pop()!;
     }
-    
+
     if (this.activeConnections.size < this.config.maxConnections) {
       const conn = { id: Math.random(), createdAt: Date.now() };
       this.activeConnections.add(conn);
@@ -225,7 +279,7 @@ export async function withDatabaseConnection<T>(
 // Reliability Utilities Re-export
 // ============================================
 // Re-export utilities from src for use in route handlers
-export { 
+export {
   wrapAsyncHandler,
   retryWithExponentialBackoff,
   getOrCreateCircuitBreaker,
@@ -266,13 +320,13 @@ export function wrapAsyncHandler(handler: (req: Request, res: Response, next?: a
     } catch (error) {
       const correlationId = (req as any).correlationId || 'unknown';
       console.error(`[${correlationId}] Async handler error caught:`, error);
-      
+
       const errorEntry = rejectionTracker.get(correlationId) || { count: 0, lastError: '', timestamp: Date.now() };
       errorEntry.count++;
       errorEntry.lastError = error instanceof Error ? error.message : String(error);
       errorEntry.timestamp = Date.now();
       rejectionTracker.set(correlationId, errorEntry);
-      
+
       if (!res.headersSent) {
         res.status(500).json({
           status: 500,
@@ -397,7 +451,7 @@ export function createETagMiddleware() {
       const etagValue = crypto.createHash('md5').update(JSON.stringify(body)).digest('hex');
       res.set('ETag', `"${etagValue}"`);
       res.set('Cache-Control', 'public, max-age=300');
-      
+
       const clientETag = req.get('If-None-Match');
       if (clientETag === `"${etagValue}"`) {
         return res.status(304).end();
@@ -658,13 +712,13 @@ export function createBatchLoader<T, K>(
 
   function load(key: K): Promise<T | Error> {
     const cacheKey = cacheKeyFn ? cacheKeyFn(key) : String(key);
-    
+
     if (cache.has(cacheKey)) {
       return cache.get(cacheKey)!;
     }
 
     batch.push(key);
-    
+
     if (!batchPromise) {
       batchPromise = new Promise<(T | Error)[]>(resolve => {
         setImmediate(async () => {
@@ -703,15 +757,15 @@ export function createEagerLoader<T>(
   joinFn: (items: T[], relatedIds: (string | number)[]) => Promise<T[]>
 ) {
   const relationshipCache = new Map<string, T[]>();
-  
+
   return async function eagerLoad(items: T[]): Promise<T[]> {
     if (!items || items.length === 0) return items;
     const ids = items.map(getIdFn);
     const cacheKey = ids.join(',');
-    
+
     const cached = relationshipCache.get(cacheKey);
     if (cached) return cached;
-    
+
     const result = await joinFn(items, ids);
     relationshipCache.set(cacheKey, result);
     return result;
@@ -773,18 +827,18 @@ export function invalidateCache(pattern?: string): void {
 class Mutex {
   private locked: boolean = false;
   private waitQueue: Array<() => void> = [];
-  
+
   async lock(): Promise<void> {
     if (!this.locked) {
       this.locked = true;
       return Promise.resolve();
     }
-    
+
     return new Promise(resolve => {
       this.waitQueue.push(resolve);
     });
   }
-  
+
   unlock(): void {
     if (this.waitQueue.length > 0) {
       const next = this.waitQueue.shift();
@@ -793,7 +847,7 @@ class Mutex {
       this.locked = false;
     }
   }
-  
+
   async execute<T>(fn: () => Promise<T> | T): Promise<T> {
     await this.lock();
     try {
@@ -822,28 +876,28 @@ const trackingMiddleware = (req: Request, res: Response, next: any) => {
   if (!req.correlationId) {
     req.correlationId = crypto.randomUUID();
   }
-  
+
   const requestId = req.correlationId;
   inFlightRequests.set(requestId, {
     correlationId: requestId,
     startTime: Date.now(),
     endpoint: `${req.method} ${req.path}`
   });
-  
+
   res.on('finish', () => {
     inFlightRequests.delete(requestId);
   });
-  
+
   res.on('close', () => {
     inFlightRequests.delete(requestId);
   });
-  
+
   if (isShuttingDown) {
     const error = createErrorResponse(503, 'Server is shutting down', req, 'SERVER_SHUTTING_DOWN');
     res.status(503).json(error);
     return;
   }
-  
+
   next();
 };
 
@@ -854,18 +908,18 @@ const DEFAULT_SHUTDOWN_TIMEOUT = 30000; // 30 seconds
 async function gracefulShutdown() {
   console.log('[SHUTDOWN] Initiating graceful shutdown...');
   isShuttingDown = true;
-  
+
   try {
     await stateMutex.execute(async () => {
       const shutdownDeadline = Date.now() + DEFAULT_SHUTDOWN_TIMEOUT;
-      
+
       while (inFlightRequests.size > 0 && Date.now() < shutdownDeadline) {
         const remaining = Array.from(inFlightRequests.values());
         const elapsed = Date.now() - remaining[0].startTime;
         console.log(`[SHUTDOWN] Draining ${inFlightRequests.size} requests. Oldest: ${elapsed}ms`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
-      
+
       if (inFlightRequests.size > 0) {
         console.warn(`[SHUTDOWN] Timeout reached. ${inFlightRequests.size} requests still in-flight.`);
       } else {
@@ -875,7 +929,7 @@ async function gracefulShutdown() {
   } catch (error) {
     console.error('[SHUTDOWN] Error during graceful shutdown:', error);
   }
-  
+
   process.exit(0);
 }
 
@@ -913,7 +967,7 @@ export const errorHandlerMiddleware = (err: any, req: any, res: any, next: any) 
   const status = err.status || err.statusCode || 500;
   const message = err.message || 'Internal Server Error';
   const code = err.code || 'UNHANDLED_ERROR';
-  
+
   const errorResponse = createErrorResponse(status, message, req, code);
   res.status(status).json(errorResponse);
 };
@@ -983,7 +1037,7 @@ class CircuitBreaker<T> {
 
   private onSuccess(): void {
     this.failureCount = 0;
-    
+
     if (this.state === CircuitBreakerState.HALF_OPEN) {
       this.successCount++;
       if (this.successCount >= this.config.successThreshold) {
@@ -996,7 +1050,7 @@ class CircuitBreaker<T> {
   private onFailure(): void {
     this.failureCount++;
     this.lastFailureTime = Date.now();
-    
+
     if (this.failureCount >= this.config.failureThreshold && this.state === CircuitBreakerState.CLOSED) {
       this.state = CircuitBreakerState.OPEN;
       console.error(`[CircuitBreaker] ${this.name} opened after ${this.failureCount} failures`);
@@ -1041,17 +1095,17 @@ export const timeoutMiddleware = (defaultTimeout = DEFAULT_REQUEST_TIMEOUT) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const timeout = (req as any).timeout || defaultTimeout;
     const clampedTimeout = Math.min(Math.max(timeout, 1000), MAX_REQUEST_TIMEOUT);
-    
+
     const timeoutHandle = setTimeout(() => {
       const correlationId = (req as any).correlationId || 'unknown';
       console.warn(`[${correlationId}] Request timeout after ${clampedTimeout}ms`);
-      
+
       if (!res.headersSent) {
         const errorResponse = createErrorResponse(408, 'Request timeout', req, 'REQUEST_TIMEOUT');
         res.status(408).json(errorResponse);
       }
     }, clampedTimeout);
-    
+
     res.on('finish', () => clearTimeout(timeoutHandle));
     next();
   };
@@ -1061,16 +1115,16 @@ export const timeoutMiddleware = (defaultTimeout = DEFAULT_REQUEST_TIMEOUT) => {
 export { correlationIdMiddleware };
 
 function correlationIdMiddleware(req: any, res: any, next: any): void {
-  const correlationId = req.headers['x-correlation-id'] || 
-                        req.headers['x-trace-id'] || 
+  const correlationId = req.headers['x-correlation-id'] ||
+                        req.headers['x-trace-id'] ||
                         require('crypto').randomUUID();
-  
+
   req.correlationId = correlationId;
   req.traceId = correlationId;
-  
+
   res.setHeader('X-Correlation-Id', correlationId);
   res.setHeader('X-Trace-Id', correlationId);
-  
+
   const originalJson = res.json;
   res.json = function(body: any) {
     if (typeof body === 'object' && body !== null) {
@@ -1078,7 +1132,7 @@ function correlationIdMiddleware(req: any, res: any, next: any): void {
     }
     return originalJson.call(this, body);
   };
-  
+
   next();
 }
 
@@ -1268,24 +1322,24 @@ class TokenBucket {
 
   async acquireToken(timeoutMs: number = 5000): Promise<boolean> {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeoutMs) {
       this.refillTokens();
-      
+
       if (this.tokens >= 1) {
         this.tokens--;
         return true;
       }
-      
+
       if (this.config.maxQueuedRequests && this.queuedRequests >= this.config.maxQueuedRequests) {
         return false; // Backpressure: reject request
       }
-      
+
       this.queuedRequests++;
       await new Promise(resolve => setTimeout(resolve, 50));
       this.queuedRequests--;
     }
-    
+
     return false;
   }
 
@@ -1293,7 +1347,7 @@ class TokenBucket {
     const now = Date.now();
     const timePassed = now - this.lastRefillTime;
     const tokensToAdd = (timePassed / this.config.windowSizeMs) * this.config.tokensPerWindow;
-    
+
     this.tokens = Math.min(
       this.config.tokensPerWindow,
       this.tokens + tokensToAdd
@@ -1304,10 +1358,10 @@ class TokenBucket {
 
 function createRateLimitMiddleware(config: RateLimitConfig) {
   const bucket = new TokenBucket(config);
-  
+
   return async (req: any, res: any, next: any) => {
     const hasToken = await bucket.acquireToken();
-    
+
     if (!hasToken) {
       res.status(429).json({ error: 'Too many requests', traceId: req.traceId });
     } else {
@@ -1327,12 +1381,12 @@ class IdempotentCache {
   get(key: string): any {
     const entry = this.cache.get(key);
     if (!entry) return undefined;
-    
+
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(key);
       return undefined;
     }
-    
+
     return entry.result;
   }
 
@@ -1361,45 +1415,45 @@ interface ValidationSchema {
 
 function validateInput(data: unknown, schema: ValidationSchema): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
-  
+
   if (typeof data !== 'object' || data === null) {
     return { valid: false, errors: ['Input must be an object'] };
   }
-  
+
   const obj = data as Record<string, unknown>;
-  
+
   for (const [field, rules] of Object.entries(schema)) {
     const value = obj[field];
-    
+
     if (rules.required && (value === undefined || value === null)) {
       errors.push(`Field '${field}' is required`);
       continue;
     }
-    
+
     if (value === undefined || value === null) continue;
-    
+
     if (typeof value !== rules.type) {
       errors.push(`Field '${field}' must be of type ${rules.type}`);
       continue;
     }
-    
+
     if (rules.pattern && typeof value === 'string' && !rules.pattern.test(value)) {
       errors.push(`Field '${field}' does not match required pattern`);
     }
-    
+
     if (rules.min !== undefined && typeof value === 'number' && value < rules.min) {
       errors.push(`Field '${field}' must be >= ${rules.min}`);
     }
-    
+
     if (rules.max !== undefined && typeof value === 'number' && value > rules.max) {
       errors.push(`Field '${field}' must be <= ${rules.max}`);
     }
-    
+
     if (rules.enum && !rules.enum.includes(value as any)) {
       errors.push(`Field '${field}' must be one of ${rules.enum.join(', ')}`);
     }
   }
-  
+
   return { valid: errors.length === 0, errors };
 }
 
@@ -1423,7 +1477,7 @@ export async function executeAsyncQuery<T>(
   circuitBreaker?: CircuitBreaker
 ): Promise<T> {
   const executeWithRetry = async () => pool.executeQuery<T>(query, params);
-  
+
   if (circuitBreaker) {
     return circuitBreaker.execute(executeWithRetry);
   }
@@ -1464,7 +1518,7 @@ class HealthMonitor {
 
   async readinessProbe(): Promise<HealthCheckResult> {
     const checks: { [key: string]: boolean } = {};
-    
+
     for (const [name, check] of Object.entries(this.healthChecks)) {
       try {
         checks[name] = await check();
@@ -1472,10 +1526,10 @@ class HealthMonitor {
         checks[name] = false;
       }
     }
-    
+
     const allHealthy = Object.values(checks).every(v => v === true);
     const status = allHealthy ? 'healthy' : 'degraded';
-    
+
     return { status, checks, timestamp: Date.now() };
   }
 
@@ -1483,7 +1537,7 @@ class HealthMonitor {
     return new Promise((resolve) => {
       this.isShuttingDown = true;
       const startTime = Date.now();
-      
+
       const waitForRequests = setInterval(() => {
         if (this.inFlightRequests === 0 || Date.now() - startTime > timeoutMs) {
           clearInterval(waitForRequests);
@@ -1563,13 +1617,13 @@ function errorHandlingMiddleware(req: any, res: any, next: any) {
   const traceId = req.traceId || req.headers['x-trace-id'] || require('crypto').randomUUID();
   req.traceId = traceId;
   const logger = createContextualLogger(traceId);
-  
+
   const originalSend = res.send;
   res.send = function(data: any) {
     res.setHeader('X-Trace-Id', traceId);
     return originalSend.call(this, data);
   };
-  
+
   try {
     next();
   } catch (error) {
@@ -1616,7 +1670,7 @@ async function fetchWithTimeout(
 ): Promise<Response> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
+
   try {
     const response = await fetch(url, {
       ...options,
@@ -1661,7 +1715,7 @@ export async function callExternalAPI<T>(
       () => breaker.execute(() => retryWithBackoff(fn, options.maxRetries || 3, 100, 5000, logger)),
       30000
     );
-    
+
     const latency = Date.now() - startTime;
     logger.info(`External API call succeeded: ${endpoint}`, { latency, endpoint });
     return result;
