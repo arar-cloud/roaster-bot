@@ -226,6 +226,60 @@ class QueryBatcher {
 }
 
 // ============================================
+// Express Integration and Example Handlers
+// ============================================
+
+// Initialize performance utilities
+const cacheManager = new CacheManager(60000); // 60 second cleanup
+const paginator = new CursorPaginator();
+const streamHandler = new StreamingResponseHandler();
+const queryBatcher = new QueryBatcher();
+
+// Example: Paginated endpoint with caching and query batching
+function createPaginatedHandler(dataFetcher: () => Promise<any[]>) {
+  return async (req: any, res: any) => {
+    const { cursor, limit = 50 } = req.query;
+    const cacheKey = cacheManager.generateQueryKey('/api/items', { cursor, limit });
+    
+    try {
+      // Use deduplication to prevent parallel identical requests
+      const result = await cacheManager.getOrFetch(
+        cacheKey,
+        async () => {
+          // Fetch data with query batching enabled
+          const data = await dataFetcher();
+          return paginator.paginate(data, cursor, parseInt(limit));
+        },
+        5 * 60 * 1000 // 5 minute TTL
+      );
+      
+      res.set('X-Cache', 'HIT');
+      res.json(result);
+    } catch (err) {
+      console.error('Handler error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  };
+}
+
+// Example: Streaming large dataset endpoint
+function createStreamingHandler(dataFetcher: () => Promise<any[]>) {
+  return async (req: any, res: any) => {
+    try {
+      const data = await dataFetcher();
+      await streamHandler.streamJSON(res, data);
+    } catch (err) {
+      console.error('Streaming error:', err);
+      res.status(500).json({ error: 'Streaming failed' });
+    }
+  };
+}
+
+// Export utilities for use in other modules
+export { CacheManager, CursorPaginator, StreamingResponseHandler, QueryBatcher, DataLoader, createCacheMiddleware, createPaginatedHandler, createStreamingHandler };
+export { cacheManager, paginator, streamHandler, queryBatcher };
+
+// ============================================
 // Database Connection Pool Configuration
 // ============================================
 // ============================================
