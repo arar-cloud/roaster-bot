@@ -114,7 +114,14 @@ export {
   createErrorResponse,
   StandardizedError,
   RetryOptions,
-  CircuitBreakerState
+  CircuitBreakerState,
+  BatchQuery,
+  PaginationHelper,
+  PaginationCursor,
+  ConnectionPool,
+  AsyncDatabaseClient,
+  CacheManager,
+  createCacheMiddleware
 } from '../src/index.js';
 
 // Extend Express Request type with timeout and correlation fields
