@@ -5,6 +5,92 @@ import crypto from 'crypto';
 import { EventEmitter } from 'events';
 
 // ============================================
+// Response Caching Middleware
+// ============================================
+interface CacheEntry {
+  data: any;
+  etag: string;
+  timestamp: number;
+  ttl: number;
+}
+
+class ResponseCache {
+  private cache: Map<string, CacheEntry> = new Map();
+  private maxSize: number;
+  private cleanupInterval: NodeJS.Timeout;
+
+  constructor(maxSize: number = 100) {
+    this.maxSize = maxSize;
+    this.cleanupInterval = setInterval(() => this.prune(), 60000);
+  }
+
+  set(key: string, data: any, ttl: number = 300000): string {
+    const content = JSON.stringify(data);
+    const etag = `"${crypto.createHash('md5').update(content).digest('hex')}"` ;
+    
+    if (this.cache.size >= this.maxSize) {
+      const oldest = Array.from(this.cache.entries())
+        .sort((a, b) => a[1].timestamp - b[1].timestamp)[0];
+      if (oldest) this.cache.delete(oldest[0]);
+    }
+    
+    this.cache.set(key, { data, etag, timestamp: Date.now(), ttl });
+    return etag;
+  }
+
+  get(key: string): CacheEntry | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > entry.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry;
+  }
+
+  prune(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > entry.ttl) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  destroy(): void {
+    clearInterval(this.cleanupInterval);
+    this.cache.clear();
+  }
+}
+
+const responseCache = new ResponseCache(100);
+
+export function createCacheMiddleware() {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const originalSend = res.send;
+
+    res.send = function(data: any) {
+      if (req.method === 'GET' && res.statusCode === 200) {
+        const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
+        const etag = responseCache.set(cacheKey, data, 300000);
+        
+        res.setHeader('ETag', etag);
+        res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+        res.setHeader('Vary', 'Accept-Encoding');
+        
+        if (req.headers['if-none-match'] === etag) {
+          res.statusCode = 304;
+          return res.end();
+        }
+      }
+      return originalSend.call(this, data);
+    };
+
+    next();
+  };
+}
+
+// ============================================
 // Connection Pool Management
 // ============================================
 interface ConnectionPoolConfig {
