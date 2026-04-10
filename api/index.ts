@@ -28,6 +28,11 @@ class IdempotencyStore {
   constructor() {
     // Cleanup expired entries every 10 minutes
     this.cleanupInterval = setInterval(() => this.cleanup(), 10 * 60 * 1000);
+
+    // Force cleanup if store is growing too large
+    if (this.store.size > this.maxStoredRecords) {
+      this.cleanup();
+    }
   }
 
   set(key: string, responseCode: number, responseBody: any): void {
@@ -184,12 +189,12 @@ class StructuredLogger {
       message,
       ...context
     };
-    
+
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {
       this.logBuffer.shift();
     }
-    
+
     // In production, send to structured logging service
     if (level === 'error') {
       console.error(JSON.stringify(entry));
@@ -386,7 +391,7 @@ const backpressureMiddleware = (req: any, res: any, next: any) => {
   // Monitor write buffer and pause reading if pressure builds
   const originalWrite = res.write.bind(res);
   const originalEnd = res.end.bind(res);
-  
+
   res.write = function(chunk: any, encoding?: any, callback?: any) {
     if (res.writableHighWaterMark && res.writableLength > res.writableHighWaterMark * 0.8) {
       // High backpressure detected, signal client to back off
@@ -394,11 +399,11 @@ const backpressureMiddleware = (req: any, res: any, next: any) => {
     }
     return originalWrite(chunk, encoding, callback);
   };
-  
+
   res.end = function(chunk?: any, encoding?: any, callback?: any) {
     return originalEnd(chunk, encoding, callback);
   };
-  
+
   next();
 };
 
@@ -459,33 +464,33 @@ const timeoutMiddleware = (timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS) => {
 // Rate limiter with backpressure handling
 export const createLimiter = () => (req: any, res: any, next: any) => {
   const utilization = globalBucket.getUtilization();
-  
+
   if (!globalBucket.tryConsume(1)) {
     res.setHeader('Retry-After', '1');
     res.setHeader('X-RateLimit-Reset', new Date(Date.now() + 1000).toISOString());
     res.setHeader('X-Backpressure', 'high');
     return res.status(429).json({ error: 'Rate limit exceeded' });
   }
-  
+
   // Graceful degradation signals
   if (utilization > 0.8) {
     res.setHeader('X-Backpressure', 'moderate');
   } else if (utilization > 0.95) {
     res.setHeader('X-Backpressure', 'critical');
   }
-  
+
   next();
 };
 
 // Gzip compression middleware
 function compressionMiddleware(req: any, res: any, next: any): void {
   const acceptEncoding = (req.headers['accept-encoding'] || '').toString();
-  
+
   if (acceptEncoding.includes('gzip')) {
     res.setHeader('Content-Encoding', 'gzip');
     res.setHeader('Vary', 'Accept-Encoding');
   }
-  
+
   next();
 }
 
@@ -504,10 +509,10 @@ function serializeOptimized(data: any): string {
 // Request correlation middleware for trace ID propagation
 const requestCorrelationMiddleware = (req: any, res: any, next: any) => {
   // Generate or extract trace ID for request correlation
-  req.traceId = req.headers['x-trace-id'] || 
-    req.headers['x-request-id'] || 
+  req.traceId = req.headers['x-trace-id'] ||
+    req.headers['x-request-id'] ||
     require('crypto').randomUUID();
-  
+
   res.set('X-Trace-ID', req.traceId);
   next();
 };
@@ -534,19 +539,19 @@ export class BatchQueryExecutor {
     queryFn: (ids: (string | number)[]) => Promise<any[]>
   ): Promise<Map<string | number, any>> {
     if (!ids || ids.length === 0) return new Map();
-    
+
     // Use cache key based on sorted IDs for consistency
     const cacheKey = `batch_${ids.sort().join('_')}`;
     const cached = queryCache.get(cacheKey);
     if (cached) return new Map(Object.entries(cached));
-    
+
     // Execute single bulk query instead of n queries
     const results = await queryFn(ids);
     const resultMap: Record<string, any> = {};
     results.forEach((item: any) => {
       if (item.id) resultMap[item.id] = item;
     });
-    
+
     queryCache.set(cacheKey, resultMap);
     return new Map(Object.entries(resultMap));
   }
@@ -603,10 +608,10 @@ interface HealthStatus {
 
 const performHealthCheck = async (): Promise<HealthStatus> => {
   const dependencies: { [key: string]: any } = {};
-  
+
   // Check external services
   dependencies.copilot = { status: 'ok', message: 'GitHub Copilot SDK initialized' };
-  
+
   // Simulate database health check
   try {
     await Promise.race([
@@ -617,14 +622,14 @@ const performHealthCheck = async (): Promise<HealthStatus> => {
   } catch (e) {
     dependencies.database = { status: 'error', message: 'Connection failed' };
   }
-  
+
   // Check cache
   try {
     dependencies.cache = { status: 'ok', message: 'Cache operational' };
   } catch (e) {
     dependencies.cache = { status: 'error', message: 'Cache unavailable' };
   }
-  
+
   const overallStatus = Object.values(dependencies).every((d: any) => d.status === 'ok') ? 'healthy' : 'degraded';
   return {
     status: overallStatus,
@@ -645,7 +650,7 @@ if (app && typeof app.get === 'function') {
       res.status(503).json({ status: 'unhealthy', error: 'Health check failed' });
     }
   });
-  
+
   app.get('/readiness', async (req: any, res: any) => {
     try {
       const health = await performHealthCheck();
