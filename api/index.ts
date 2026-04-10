@@ -43,6 +43,67 @@ class QueryCache {
 
 export const queryCache = new QueryCache();
 
+// Token bucket for adaptive rate limiting
+class TokenBucket {
+  private tokens: number;
+  private lastRefill: number = Date.now();
+  private readonly capacity: number;
+  private readonly refillRate: number; // tokens per second
+
+  constructor(capacity: number, refillRate: number) {
+    this.capacity = capacity;
+    this.refillRate = refillRate;
+    this.tokens = capacity;
+  }
+
+  tryConsume(count: number = 1): boolean {
+    this.refill();
+    if (this.tokens >= count) {
+      this.tokens -= count;
+      return true;
+    }
+    return false;
+  }
+
+  private refill(): void {
+    const now = Date.now();
+    const secondsElapsed = (now - this.lastRefill) / 1000;
+    this.tokens = Math.min(
+      this.capacity,
+      this.tokens + secondsElapsed * this.refillRate
+    );
+    this.lastRefill = now;
+  }
+
+  getUtilization(): number {
+    this.refill();
+    return this.tokens / this.capacity;
+  }
+}
+
+const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
+
+// Rate limiter with backpressure handling
+export const createLimiter = () => (req: any, res: any, next: any) => {
+  const utilization = globalBucket.getUtilization();
+  
+  if (!globalBucket.tryConsume(1)) {
+    res.setHeader('Retry-After', '1');
+    res.setHeader('X-RateLimit-Reset', new Date(Date.now() + 1000).toISOString());
+    res.setHeader('X-Backpressure', 'high');
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+  
+  // Graceful degradation signals
+  if (utilization > 0.8) {
+    res.setHeader('X-Backpressure', 'moderate');
+  } else if (utilization > 0.95) {
+    res.setHeader('X-Backpressure', 'critical');
+  }
+  
+  next();
+};
+
 // Gzip compression middleware
 function compressionMiddleware(req: any, res: any, next: any): void {
   const acceptEncoding = (req.headers['accept-encoding'] || '').toString();
@@ -70,6 +131,7 @@ function serializeOptimized(data: any): string {
 // Apply middleware to app if available
 if (app && typeof app.use === 'function') {
   app.use(compressionMiddleware);
+  app.use(createLimiter());
 }
 
 // Batch query utilities to eliminate N+1 patterns
