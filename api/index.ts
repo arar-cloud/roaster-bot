@@ -102,6 +102,93 @@ interface IdempotencyRecord {
   expiresAt: number;
 }
 
+// Circuit breaker for external service calls
+interface CircuitState {
+  status: 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+  failureCount: number;
+  lastFailureTime: number;
+  successCount: number;
+}
+
+class CircuitBreaker {
+  private state: CircuitState = {
+    status: 'CLOSED',
+    failureCount: 0,
+    lastFailureTime: 0,
+    successCount: 0,
+  };
+  
+  private readonly failureThreshold = 5;
+  private readonly successThreshold = 2;
+  private readonly timeout = 60000; // 1 minute
+
+  async executeWithRetry<T>(
+    operation: () => Promise<T>,
+    operationName: string,
+    maxRetries = 3,
+  ): Promise<T> {
+    if (this.state.status === 'OPEN') {
+      if (Date.now() - this.state.lastFailureTime > this.timeout) {
+        this.state.status = 'HALF_OPEN';
+        this.state.successCount = 0;
+      } else {
+        throw new Error(`Circuit breaker OPEN for ${operationName}. Service unavailable.`);
+      }
+    }
+
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.executeWithTimeout(operation, 30000);
+        this.recordSuccess();
+        return result;
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        
+        if (attempt < maxRetries) {
+          const backoffMs = Math.min(1000 * Math.pow(2, attempt) + Math.random() * 1000, 30000);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      }
+    }
+
+    this.recordFailure();
+    throw lastError || new Error(`${operationName} failed after ${maxRetries} retries`);
+  }
+
+  private async executeWithTimeout<T>(operation: () => Promise<T>, timeoutMs: number): Promise<T> {
+    return Promise.race([
+      operation(),
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error('Operation timeout')), timeoutMs),
+      ),
+    ]);
+  }
+
+  private recordSuccess(): void {
+    this.state.failureCount = 0;
+    if (this.state.status === 'HALF_OPEN') {
+      this.state.successCount += 1;
+      if (this.state.successCount >= this.successThreshold) {
+        this.state.status = 'CLOSED';
+        this.state.successCount = 0;
+      }
+    }
+  }
+
+  private recordFailure(): void {
+    this.state.lastFailureTime = Date.now();
+    this.state.failureCount += 1;
+    if (this.state.failureCount >= this.failureThreshold) {
+      this.state.status = 'OPEN';
+    }
+  }
+
+  getStatus(): CircuitState {
+    return { ...this.state };
+  }
+}
+
 class IdempotencyStore {
   private store: Map<string, IdempotencyRecord> = new Map();
   private readonly ttlMs = 60 * 60 * 1000; // 1 hour
