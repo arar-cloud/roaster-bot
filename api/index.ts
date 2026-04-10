@@ -101,8 +101,8 @@ export class BatchQueryExecutor {
   ): Promise<Map<string | number, any>> {
     if (!ids || ids.length === 0) return new Map();
     
-    // Use cache key based on sorted IDs for consistency
-    const cacheKey = `batch_${ids.sort().join('_')}`;
+    // Use cache key based on sorted IDs for consistency; deduplicate without mutating input
+    const cacheKey = `batch_${Array.from(new Set(ids)).sort().join('_')}`;
     const cached = queryCache.get(cacheKey);
     if (cached) return new Map(Object.entries(cached));
     
