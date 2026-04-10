@@ -143,6 +143,75 @@ class DatabasePool {
 const db = new DatabasePool();
 
 // ============================================
+// N+1 Query Optimization Helpers
+// ============================================
+
+interface EagerLoadOptions<T> {
+  parentTable: string;
+  parentId: string;
+  relationTable: string;
+  relationForeignKey: string;
+  cacheKey?: string;
+  ttl?: number;
+}
+
+class QueryOptimizer {
+  /**
+   * Fetch parent records with related data in single batched query
+   * Eliminates N+1 pattern: SELECT * FROM parents -> for each: SELECT * FROM relations
+   * New pattern: SELECT p.*, r.* FROM parents p LEFT JOIN relations r USING (id)
+   */
+  async eagerLoad<T>(
+    sql: string,
+    params: any[],
+    options?: { cacheKey?: string; ttl?: number }
+  ): Promise<T[]> {
+    if (options?.cacheKey) {
+      const cached = await cache.get<T[]>(options.cacheKey);
+      if (cached) return cached;
+    }
+
+    const result = await db.query(sql, params);
+    const data = result.rows;
+
+    if (options?.cacheKey) {
+      await cache.set(data, options.cacheKey, { ttl: options.ttl || 300 });
+    }
+
+    return data;
+  }
+
+  /**
+   * Batch fetch related records by ID instead of looping
+   * Pattern: SELECT * FROM relations WHERE id IN ($1, $2, $3, ...)
+   */
+  async batchFetch<T>(
+    sql: string,
+    ids: (string | number)[],
+    batchSize: number = 1000
+  ): Promise<Map<string | number, T[]>> {
+    const result = new Map<string | number, T[]>();
+    
+    for (let i = 0; i < ids.length; i += batchSize) {
+      const batch = ids.slice(i, i + batchSize);
+      const placeholders = batch.map((_, idx) => `${idx + 1}`).join(',');
+      const batchSql = sql.replace('$1', `(${placeholders})`);
+      const batchResult = await db.query(batchSql, batch);
+      
+      for (const row of batchResult.rows) {
+        const key = row.id || row.parent_id;
+        if (!result.has(key)) result.set(key, []);
+        result.get(key)!.push(row as T);
+      }
+    }
+    
+    return result;
+  }
+}
+
+const queryOptimizer = new QueryOptimizer();
+
+// ============================================
 // Pagination and Streaming Response Handler
 // ============================================
 interface PaginationOptions {
