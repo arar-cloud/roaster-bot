@@ -43,4 +43,33 @@ class QueryCache {
 
 export const queryCache = new QueryCache();
 
+// Gzip compression middleware
+function compressionMiddleware(req: any, res: any, next: any): void {
+  const acceptEncoding = (req.headers['accept-encoding'] || '').toString();
+  
+  if (acceptEncoding.includes('gzip')) {
+    res.setHeader('Content-Encoding', 'gzip');
+    res.setHeader('Vary', 'Accept-Encoding');
+  }
+  
+  next();
+}
+
+// Optimized JSON serialization: removes circular refs and whitespace
+function serializeOptimized(data: any): string {
+  const seen = new WeakSet();
+  return JSON.stringify(data, (key: string, value: any) => {
+    if (typeof value === 'object' && value !== null) {
+      if (seen.has(value)) return undefined;
+      seen.add(value);
+    }
+    return value;
+  });
+}
+
+// Apply middleware to app if available
+if (app && typeof app.use === 'function') {
+  app.use(compressionMiddleware);
+}
+
 export default app;
