@@ -72,4 +72,69 @@ if (app && typeof app.use === 'function') {
   app.use(compressionMiddleware);
 }
 
+// Batch query utilities to eliminate N+1 patterns
+export class BatchQueryExecutor {
+  // Batch fetch operation: converts array of queries into single bulk request
+  static async batchFetch(
+    ids: (string | number)[],
+    queryFn: (ids: (string | number)[]) => Promise<any[]>
+  ): Promise<Map<string | number, any>> {
+    if (!ids || ids.length === 0) return new Map();
+    
+    // Use cache key based on sorted IDs for consistency
+    const cacheKey = `batch_${ids.sort().join('_')}`;
+    const cached = queryCache.get(cacheKey);
+    if (cached) return new Map(Object.entries(cached));
+    
+    // Execute single bulk query instead of n queries
+    const results = await queryFn(ids);
+    const resultMap: Record<string, any> = {};
+    results.forEach((item: any) => {
+      if (item.id) resultMap[item.id] = item;
+    });
+    
+    queryCache.set(cacheKey, resultMap);
+    return new Map(Object.entries(resultMap));
+  }
+
+  // Batch insert operation: single round-trip for multiple inserts
+  static async batchInsert(
+    items: any[],
+    insertFn: (items: any[]) => Promise<any[]>
+  ): Promise<any[]> {
+    if (!items || items.length === 0) return [];
+    // Single database round-trip for all inserts
+    return insertFn(items);
+  }
+
+  // Decorator for automatic query batching with debounce
+  static batchDecorator(
+    queryFn: (ids: (string | number)[]) => Promise<any[]>,
+    debounceMs: number = 10
+  ) {
+    let pending: (string | number)[] = [];
+    let timer: NodeJS.Timeout | null = null;
+    const results = new Map<string | number, Promise<any>>();
+
+    return (id: string | number): Promise<any> => {
+      if (results.has(id)) return results.get(id)!;
+
+      pending.push(id);
+      const promise = new Promise((resolve) => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(async () => {
+          const ids = [...new Set(pending)];
+          pending = [];
+          timer = null;
+          const mapped = await this.batchFetch(ids, queryFn);
+          ids.forEach((id) => resolve(mapped.get(id)));
+        }, debounceMs);
+      });
+
+      results.set(id, promise);
+      return promise;
+    };
+  }
+}
+
 export default app;
