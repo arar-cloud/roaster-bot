@@ -70,6 +70,79 @@ class RedisCache {
 const cache = new RedisCache();
 
 // ============================================
+// Database Connection Pooling
+// ============================================
+import { Pool } from 'pg';
+
+interface DBPoolConfig {
+  max: number;
+  min: number;
+  idleTimeoutMillis: number;
+  connectionTimeoutMillis: number;
+}
+
+class DatabasePool {
+  private pool: Pool;
+
+  constructor() {
+    const config: DBPoolConfig = {
+      max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+      min: parseInt(process.env.DB_POOL_MIN || '2', 10),
+      idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10),
+      connectionTimeoutMillis: parseInt(process.env.DB_CONN_TIMEOUT || '5000', 10)
+    };
+
+    this.pool = new Pool({
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432', 10),
+      database: process.env.DB_NAME,
+      max: config.max,
+      min: config.min,
+      idleTimeoutMillis: config.idleTimeoutMillis,
+      connectionTimeoutMillis: config.connectionTimeoutMillis,
+      application_name: 'roaster-bot-api'
+    });
+
+    this.pool.on('error', (err) => console.error('Unexpected error on idle client:', err));
+  }
+
+  async query(sql: string, params?: any[]): Promise<any> {
+    const client = await this.pool.connect();
+    try {
+      return await client.query(sql, params);
+    } finally {
+      client.release();
+    }
+  }
+
+  async batchQuery(queries: Array<{ sql: string; params?: any[] }>): Promise<any[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const results = [];
+      for (const { sql, params } of queries) {
+        results.push(await client.query(sql, params));
+      }
+      await client.query('COMMIT');
+      return results;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  async close(): Promise<void> {
+    await this.pool.end();
+  }
+}
+
+const db = new DatabasePool();
+
+// ============================================
 // Pagination and Streaming Response Handler
 // ============================================
 interface PaginationOptions {
