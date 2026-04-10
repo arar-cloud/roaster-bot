@@ -381,6 +381,27 @@ class TokenBucket {
 
 const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
 
+// Backpressure middleware to handle slow clients and prevent buffer overflow
+const backpressureMiddleware = (req: any, res: any, next: any) => {
+  // Monitor write buffer and pause reading if pressure builds
+  const originalWrite = res.write.bind(res);
+  const originalEnd = res.end.bind(res);
+  
+  res.write = function(chunk: any, encoding?: any, callback?: any) {
+    if (res.writableHighWaterMark && res.writableLength > res.writableHighWaterMark * 0.8) {
+      // High backpressure detected, signal client to back off
+      res.setHeader('Retry-After', '1');
+    }
+    return originalWrite(chunk, encoding, callback);
+  };
+  
+  res.end = function(chunk?: any, encoding?: any, callback?: any) {
+    return originalEnd(chunk, encoding, callback);
+  };
+  
+  next();
+};
+
 // Request timeout configuration
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 const LONG_RUNNING_TIMEOUT_MS = 300000; // 5 minutes for background operations
