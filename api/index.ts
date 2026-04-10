@@ -17,11 +17,11 @@ class QueryCache {
     if (!entry) return null;
     if (Date.now() > entry.expires) {
       this.cache.delete(key);
+      this.timestamps.delete(key);
       return null;
     }
-    // Move to end for LRU
-    this.cache.delete(key);
-    this.cache.set(key, entry);
+    // Update timestamp lazily (no delete-and-reinsert)
+    this.timestamps.set(key, Date.now());
     return entry.data;
   }
 
