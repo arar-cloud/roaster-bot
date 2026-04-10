@@ -100,6 +100,23 @@ interface IdempotencyRecord {
   responseBody: any;
   timestamp: number;
   expiresAt: number;
+  requestHash: string;
+}
+
+function isValidIdempotencyKey(key: string): boolean {
+  const keyRegex = /^[a-zA-Z0-9_-]{1,255}$/;
+  return keyRegex.test(key);
+}
+
+function generateRequestHash(method: string, path: string, body: any): string {
+  const content = `${method}:${path}:${JSON.stringify(body || {})}`;
+  let hash = 0;
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return hash.toString(16);
 }
 
 // Circuit breaker for external service calls
@@ -186,6 +203,41 @@ class CircuitBreaker {
 
   getStatus(): CircuitState {
     return { ...this.state };
+  }
+}
+
+class IdempotencyStore {
+  private store: Map<string, IdempotencyRecord> = new Map();
+  private readonly ttlMs = 60 * 60 * 1000;
+
+  check(key: string, requestHash: string): IdempotencyRecord | null {
+    if (!isValidIdempotencyKey(key)) {
+      throw new ValidationError('idempotencyKey', 'Invalid idempotency key format');
+    }
+    const record = this.store.get(key);
+    if (!record) return null;
+    if (record.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return null;
+    }
+    if (record.requestHash !== requestHash) {
+      throw new ValidationError('idempotencyKey', 'Idempotency key already used with different request parameters');
+    }
+    return record;
+  }
+
+  storeResponse(key: string, requestHash: string, responseCode: number, responseBody: any): void {
+    if (!isValidIdempotencyKey(key)) {
+      throw new ValidationError('idempotencyKey', 'Invalid idempotency key format');
+    }
+    this.store.set(key, {
+      key,
+      requestHash,
+      responseCode,
+      responseBody,
+      timestamp: Date.now(),
+      expiresAt: Date.now() + this.ttlMs,
+    });
   }
 }
 
