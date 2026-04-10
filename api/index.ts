@@ -94,6 +94,7 @@ class CircuitBreaker {
   ): Promise<T> {
     if (this.state === 'open') {
       if (Date.now() - this.lastFailureTime > this.resetTimeout) {
+        logger.info('CircuitBreaker state transition', { from: 'open', to: 'half-open', reason: 'reset_timeout_expired', operationName });
         this.state = 'half-open';
         this.successCount = 0;
       } else {
@@ -116,6 +117,7 @@ class CircuitBreaker {
     if (this.state === 'half-open') {
       this.successCount++;
       if (this.successCount >= this.successThreshold) {
+        logger.info('CircuitBreaker state transition', { from: 'half-open', to: 'closed', reason: 'success_threshold_reached' });
         this.state = 'closed';
         this.successCount = 0;
       }
@@ -126,6 +128,7 @@ class CircuitBreaker {
     this.lastFailureTime = Date.now();
     this.failureCount++;
     if (this.failureCount >= this.failureThreshold) {
+      logger.warn('CircuitBreaker state transition', { from: this.state, to: 'open', failureCount: this.failureCount });
       this.state = 'open';
     }
   }
