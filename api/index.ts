@@ -381,6 +381,60 @@ class TokenBucket {
 
 const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
 
+// Request timeout configuration
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+const LONG_RUNNING_TIMEOUT_MS = 300000; // 5 minutes for background operations
+
+// Timeout middleware factory
+const timeoutMiddleware = (timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS) => {
+  return (req: any, res: any, next: any) => {
+    let timeoutHandle: NodeJS.Timeout | null = null;
+    let isResponseSent = false;
+
+    const cleanup = () => {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
+    };
+
+    const originalJson = res.json.bind(res);
+    const originalSend = res.send.bind(res);
+    const originalEnd = res.end.bind(res);
+
+    res.json = function(data: any) {
+      cleanup();
+      isResponseSent = true;
+      return originalJson(data);
+    };
+
+    res.send = function(data: any) {
+      cleanup();
+      isResponseSent = true;
+      return originalSend(data);
+    };
+
+    res.end = function() {
+      cleanup();
+      isResponseSent = true;
+      return originalEnd();
+    };
+
+    timeoutHandle = setTimeout(() => {
+      if (!isResponseSent) {
+        isResponseSent = true;
+        res.status(408).json({
+          error: 'Request timeout',
+          timeout: timeoutMs,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }, timeoutMs);
+
+    res.on('finish', cleanup);
+    next();
+  };
+};
+
 // Rate limiter with backpressure handling
 export const createLimiter = () => (req: any, res: any, next: any) => {
   const utilization = globalBucket.getUtilization();
