@@ -67,6 +67,111 @@ class IdempotencyStore {
 
 export const idempotencyStore = new IdempotencyStore();
 
+// Circuit breaker for external service resilience
+class CircuitBreaker {
+  private state: 'closed' | 'open' | 'half-open' = 'closed';
+  private failureCount: number = 0;
+  private successCount: number = 0;
+  private lastFailureTime: number = 0;
+  private readonly failureThreshold: number;
+  private readonly successThreshold: number;
+  private readonly resetTimeout: number; // ms
+
+  constructor(failureThreshold = 5, successThreshold = 2, resetTimeout = 60000) {
+    this.failureThreshold = failureThreshold;
+    this.successThreshold = successThreshold;
+    this.resetTimeout = resetTimeout;
+  }
+
+  async execute<T>(
+    operation: () => Promise<T>,
+    operationName: string = 'unknown'
+  ): Promise<T> {
+    if (this.state === 'open') {
+      if (Date.now() - this.lastFailureTime > this.resetTimeout) {
+        this.state = 'half-open';
+        this.successCount = 0;
+      } else {
+        throw new Error(`Circuit breaker open for ${operationName}. Retry after ${this.resetTimeout}ms`);
+      }
+    }
+
+    try {
+      const result = await operation();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess(): void {
+    this.failureCount = 0;
+    if (this.state === 'half-open') {
+      this.successCount++;
+      if (this.successCount >= this.successThreshold) {
+        this.state = 'closed';
+        this.successCount = 0;
+      }
+    }
+  }
+
+  private onFailure(): void {
+    this.lastFailureTime = Date.now();
+    this.failureCount++;
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = 'open';
+    }
+  }
+
+  getState(): string {
+    return this.state;
+  }
+}
+
+// Exponential backoff retry helper
+class ExponentialBackoffRetry {
+  private readonly maxAttempts: number;
+  private readonly initialDelayMs: number;
+  private readonly maxDelayMs: number;
+  private readonly multiplier: number;
+
+  constructor(maxAttempts = 3, initialDelayMs = 100, maxDelayMs = 5000, multiplier = 2) {
+    this.maxAttempts = maxAttempts;
+    this.initialDelayMs = initialDelayMs;
+    this.maxDelayMs = maxDelayMs;
+    this.multiplier = multiplier;
+  }
+
+  async execute<T>(
+    operation: () => Promise<T>,
+    operationName: string = 'operation'
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < this.maxAttempts - 1) {
+          const delayMs = Math.min(
+            this.maxDelayMs,
+            this.initialDelayMs * Math.pow(this.multiplier, attempt)
+          );
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
+    throw lastError || new Error(`Failed after ${this.maxAttempts} attempts for ${operationName}`);
+  }
+}
+
+const copilotCircuitBreaker = new CircuitBreaker(5, 2, 60000);
+const externalServiceRetry = new ExponentialBackoffRetry(3, 100, 5000, 2);
+
 // Idempotency key middleware for state-changing operations
 export const idempotencyMiddleware = (req: any, res: any, next: any) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
