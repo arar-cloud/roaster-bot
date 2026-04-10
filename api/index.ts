@@ -1,5 +1,88 @@
 import app from '../src/index.js';
 
+// Extend Express Request type properly
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: string;
+      traceId?: string;
+      idempotencyKey?: string;
+    }
+  }
+}
+
+// Idempotency store (in-memory for single instance, should use Redis in production)
+interface IdempotencyRecord {
+  key: string;
+  responseCode: number;
+  responseBody: any;
+  timestamp: number;
+  expiresAt: number;
+}
+
+class IdempotencyStore {
+  private store: Map<string, IdempotencyRecord> = new Map();
+  private readonly ttlMs = 60 * 60 * 1000; // 1 hour
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // Cleanup expired entries every 10 minutes
+    this.cleanupInterval = setInterval(() => this.cleanup(), 10 * 60 * 1000);
+  }
+
+  set(key: string, responseCode: number, responseBody: any): void {
+    this.store.set(key, {
+      key,
+      responseCode,
+      responseBody,
+      timestamp: Date.now(),
+      expiresAt: Date.now() + this.ttlMs
+    });
+  }
+
+  get(key: string): IdempotencyRecord | undefined {
+    const record = this.store.get(key);
+    if (!record) return undefined;
+    if (Date.now() > record.expiresAt) {
+      this.store.delete(key);
+      return undefined;
+    }
+    return record;
+  }
+
+  cleanup(): void {
+    const now = Date.now();
+    for (const [key, record] of this.store.entries()) {
+      if (now > record.expiresAt) {
+        this.store.delete(key);
+      }
+    }
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    this.store.clear();
+  }
+}
+
+export const idempotencyStore = new IdempotencyStore();
+
+// Idempotency key middleware for state-changing operations
+export const idempotencyMiddleware = (req: any, res: any, next: any) => {
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    const key = req.headers['idempotency-key'];
+    if (key) {
+      req.idempotencyKey = key as string;
+      const cached = idempotencyStore.get(key);
+      if (cached) {
+        res.status(cached.responseCode).json(cached.responseBody);
+        return;
+      }
+    }
+  }
+  next();
+};
+
 // Input validation schemas for API boundary protection
 interface RequestSchema {
   validate(data: any): { valid: boolean; errors: string[] };
@@ -173,6 +256,7 @@ function serializeOptimized(data: any): string {
 if (app && typeof app.use === 'function') {
   app.use(compressionMiddleware);
   app.use(createLimiter());
+  app.use(idempotencyMiddleware);
   // Add JSON body parser with validation
   app.use(require('express').json({
     verify: (req: any, res, buf) => {
