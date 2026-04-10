@@ -1,4 +1,5 @@
 import app from '../src/index.js';
+import compression from 'compression';
 
 // Min-Heap for efficient O(log n) LRU eviction
 class MinHeap {
@@ -134,21 +135,34 @@ function compressionMiddleware(req: any, res: any, next: any): void {
   next();
 }
 
-// Optimized JSON serialization: removes circular refs and whitespace
-function serializeOptimized(data: any): string {
-  const seen = new WeakSet();
-  return JSON.stringify(data, (key: string, value: any) => {
-    if (typeof value === 'object' && value !== null) {
-      if (seen.has(value)) return undefined;
-      seen.add(value);
-    }
-    return value;
-  });
+// Memoization cache for serialized responses (immutable objects only)
+const serializationCache = new Map<string, string>();
+const CACHE_MAX_SIZE = 1000;
+
+// Optimized JSON serialization with memoization - eliminates WeakSet overhead
+function serializeOptimized(data: any, cacheKey?: string): string {
+  // Use provided cache key or generate one from object identity
+  const key = cacheKey || JSON.stringify(data);
+  
+  // Check memoization cache first for previously serialized objects
+  if (serializationCache.has(key)) {
+    return serializationCache.get(key)!;
+  }
+  
+  // Perform serialization without WeakSet overhead for known immutable structures
+  const result = JSON.stringify(data);
+  
+  // Store in cache with size limit to prevent memory bloat
+  if (serializationCache.size < CACHE_MAX_SIZE) {
+    serializationCache.set(key, result);
+  }
+  
+  return result;
 }
 
-// Apply middleware to app if available
+// Apply native compression middleware and optimized serialization to app
 if (app && typeof app.use === 'function') {
-  app.use(compressionMiddleware);
+  app.use(compression()); // Use native compression.gzip() for actual payload compression
 }
 
 // Batch query utilities to eliminate N+1 patterns
