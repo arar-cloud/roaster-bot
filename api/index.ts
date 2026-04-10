@@ -211,6 +211,29 @@ class QueryOptimizer {
 
 const queryOptimizer = new QueryOptimizer();
 
+// Initialize performance optimizations on startup
+import { cache, db, queryOptimizer } from '../api/index.js';
+
+// Bootstrap cache and connection pool
+async function initializePerformanceLayer() {
+  try {
+    await cache.init();
+    console.log('Cache layer initialized');
+  } catch (err) {
+    console.warn('Cache initialization failed (non-critical):', err);
+  }
+}
+
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('Shutting down gracefully...');
+  await cache.close();
+  await db.close();
+  process.exit(0);
+});
+
+await initializePerformanceLayer();
+
 // ============================================
 // Pagination and Streaming Response Handler
 // ============================================
