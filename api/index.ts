@@ -247,10 +247,37 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
+// Idempotency key validation
+function validateIdempotencyKey(key: string | undefined): { valid: boolean; error?: string } {
+  if (!key) {
+    return { valid: true }; // Optional
+  }
+  
+  if (typeof key !== 'string') {
+    return { valid: false, error: 'Idempotency key must be a string' };
+  }
+  
+  if (key.length < 1 || key.length > 256) {
+    return { valid: false, error: 'Idempotency key must be 1-256 characters' };
+  }
+  
+  if (!/^[a-zA-Z0-9\-_]+$/.test(key)) {
+    return { valid: false, error: 'Idempotency key must contain only alphanumeric, dash, underscore' };
+  }
+  
+  return { valid: true };
+}
+
 // Idempotency key middleware for state-changing operations
 export const idempotencyMiddleware = (req: any, res: any, next: any) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     const key = req.headers['idempotency-key'];
+    const validation = validateIdempotencyKey(key);
+    
+    if (!validation.valid) {
+      return res.status(400).json({ error: validation.error, retriable: false });
+    }
+    
     if (key) {
       req.idempotencyKey = key as string;
       const cached = idempotencyStore.get(key);
