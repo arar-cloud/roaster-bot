@@ -1,4 +1,75 @@
 // ============================================
+// Redis Caching Layer with TTL
+// ============================================
+import { createClient } from 'redis';
+
+interface CacheOptions {
+  ttl?: number; // seconds, default 300 (5 min)
+}
+
+class RedisCache {
+  private client: any;
+  private isConnected: boolean = false;
+
+  async init() {
+    try {
+      this.client = createClient({
+        url: process.env.REDIS_URL || 'redis://localhost:6379',
+        socket: {
+          reconnectStrategy: (retries) => Math.min(retries * 50, 500)
+        }
+      });
+      this.client.on('error', (err: any) => console.error('Redis error:', err));
+      await this.client.connect();
+      this.isConnected = true;
+      console.log('Redis cache initialized');
+    } catch (err) {
+      console.warn('Redis cache unavailable, operating in no-cache mode:', err);
+      this.isConnected = false;
+    }
+  }
+
+  async get<T>(key: string): Promise<T | null> {
+    if (!this.isConnected) return null;
+    try {
+      const cached = await this.client.get(key);
+      return cached ? JSON.parse(cached) : null;
+    } catch (err) {
+      console.warn('Cache get failed:', err);
+      return null;
+    }
+  }
+
+  async set<T>(key: string, value: T, options?: CacheOptions): Promise<void> {
+    if (!this.isConnected) return;
+    try {
+      const ttl = options?.ttl || 300;
+      await this.client.setEx(key, ttl, JSON.stringify(value));
+    } catch (err) {
+      console.warn('Cache set failed:', err);
+    }
+  }
+
+  async delete(key: string): Promise<void> {
+    if (!this.isConnected) return;
+    try {
+      await this.client.del(key);
+    } catch (err) {
+      console.warn('Cache delete failed:', err);
+    }
+  }
+
+  async close(): Promise<void> {
+    if (this.isConnected && this.client) {
+      await this.client.quit();
+      this.isConnected = false;
+    }
+  }
+}
+
+const cache = new RedisCache();
+
+// ============================================
 // Pagination and Streaming Response Handler
 // ============================================
 interface PaginationOptions {
