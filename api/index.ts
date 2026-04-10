@@ -1,5 +1,46 @@
 import app from '../src/index.js';
 
+// Input validation schemas for API boundary protection
+interface RequestSchema {
+  validate(data: any): { valid: boolean; errors: string[] };
+}
+
+class JsonSchema implements RequestSchema {
+  private requiredFields: Set<string>;
+  private fieldTypes: Map<string, string>;
+
+  constructor(fields: { [key: string]: string }, required: string[] = []) {
+    this.fieldTypes = new Map(Object.entries(fields));
+    this.requiredFields = new Set(required);
+  }
+
+  validate(data: any): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    if (typeof data !== 'object' || data === null) {
+      errors.push('Request body must be a valid JSON object');
+      return { valid: false, errors };
+    }
+    for (const field of this.requiredFields) {
+      if (!(field in data)) errors.push(`Missing required field: ${field}`);
+    }
+    for (const [field, expectedType] of this.fieldTypes) {
+      if (field in data && typeof data[field] !== expectedType) {
+        errors.push(`Field ${field} must be of type ${expectedType}`);
+      }
+    }
+    return { valid: errors.length === 0, errors };
+  }
+}
+
+// Schema validation middleware
+export const schemaValidation = (schema: RequestSchema) => (req: any, res: any, next: any) => {
+  const validation = schema.validate(req.body);
+  if (!validation.valid) {
+    return res.status(400).json({ error: 'Invalid request payload', details: validation.errors });
+  }
+  next();
+};
+
 // Simple in-memory LRU cache for query results
 class QueryCache {
   private cache: Map<string, { data: any; expires: number }> = new Map();
@@ -132,6 +173,12 @@ function serializeOptimized(data: any): string {
 if (app && typeof app.use === 'function') {
   app.use(compressionMiddleware);
   app.use(createLimiter());
+  // Add JSON body parser with validation
+  app.use(require('express').json({
+    verify: (req: any, res, buf) => {
+      req.rawBody = buf.toString();
+    }
+  }));
 }
 
 // Batch query utilities to eliminate N+1 patterns
