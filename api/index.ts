@@ -247,7 +247,7 @@ class QueryOptimizer {
 const queryOptimizer = new QueryOptimizer();
 
 // Initialize performance optimizations on startup
-import { cache, db, queryOptimizer } from '../api/index.js';
+import { cache, db, queryOptimizer, queryStream } from '../api/index.js';
 
 // Bootstrap cache and connection pool
 async function initializePerformanceLayer() {
@@ -268,6 +268,41 @@ process.on('SIGTERM', async () => {
 });
 
 await initializePerformanceLayer();
+
+// ============================================
+// Streaming Query Iterator for Large Datasets
+// ============================================
+class QueryStream {
+  private pool: any;
+  private batchSize: number = 1000;
+
+  constructor(pool: any, batchSize: number = 1000) {
+    this.pool = pool;
+    this.batchSize = batchSize;
+  }
+
+  async *iterateBatches(sql: string, params?: any[]) {
+    let offset = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const batchSql = `${sql} LIMIT ${this.batchSize} OFFSET ${offset}`;
+      const result = await this.pool.query(batchSql, params);
+      
+      if (result.rows.length === 0) {
+        hasMore = false;
+      } else {
+        yield result.rows;
+        offset += result.rows.length;
+        if (result.rows.length < this.batchSize) {
+          hasMore = false;
+        }
+      }
+    }
+  }
+}
+
+const queryStream = new QueryStream(db.pool);
 
 // ============================================
 // Pagination and Streaming Response Handler
