@@ -1,4 +1,5 @@
 import app from '../src/index.js';
+import type { NextFunction, Request, Response } from 'express';
 
 // Extend Express Request type properly
 declare global {
@@ -7,8 +8,89 @@ declare global {
       rawBody?: string;
       traceId?: string;
       idempotencyKey?: string;
+      validatedBody?: any;
+      validatedQuery?: any;
+      validatedParams?: any;
     }
   }
+}
+
+// Input validation utilities
+class ValidationError extends Error {
+  constructor(public field: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+function validateEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email) && email.length <= 255;
+}
+
+function validateString(value: any, fieldName: string, minLength = 0, maxLength = 10000): string {
+  if (typeof value !== 'string') {
+    throw new ValidationError(fieldName, `${fieldName} must be a string`);
+  }
+  if (value.length < minLength) {
+    throw new ValidationError(fieldName, `${fieldName} must be at least ${minLength} characters`);
+  }
+  if (value.length > maxLength) {
+    throw new ValidationError(fieldName, `${fieldName} must not exceed ${maxLength} characters`);
+  }
+  return value.trim();
+}
+
+function validateNumber(value: any, fieldName: string, min?: number, max?: number): number {
+  const num = Number(value);
+  if (isNaN(num)) {
+    throw new ValidationError(fieldName, `${fieldName} must be a valid number`);
+  }
+  if (min !== undefined && num < min) {
+    throw new ValidationError(fieldName, `${fieldName} must be at least ${min}`);
+  }
+  if (max !== undefined && num > max) {
+    throw new ValidationError(fieldName, `${fieldName} must not exceed ${max}`);
+  }
+  return num;
+}
+
+function sanitizeString(value: string): string {
+  return value
+    .replace(/[<>"']/g, (char) => {
+      const htmlEntityMap: { [key: string]: string } = { '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+      return htmlEntityMap[char] || char;
+    })
+    .slice(0, 10000);
+}
+
+function validatePayload(data: any, expectedFields: { [key: string]: 'string' | 'number' | 'email' | 'optional' }): Record<string, any> {
+  const validated: Record<string, any> = {};
+  
+  for (const [field, type] of Object.entries(expectedFields)) {
+    if (type === 'optional') {
+      validated[field] = data[field] || null;
+      continue;
+    }
+    
+    if (!Object.prototype.hasOwnProperty.call(data, field)) {
+      throw new ValidationError(field, `Missing required field: ${field}`);
+    }
+    
+    if (type === 'string') {
+      validated[field] = sanitizeString(validateString(data[field], field));
+    } else if (type === 'number') {
+      validated[field] = validateNumber(data[field], field);
+    } else if (type === 'email') {
+      const email = validateString(data[field], field);
+      if (!validateEmail(email)) {
+        throw new ValidationError(field, `${field} must be a valid email address`);
+      }
+      validated[field] = email.toLowerCase();
+    }
+  }
+  
+  return validated;
 }
 
 // Idempotency store (in-memory for single instance, should use Redis in production)
