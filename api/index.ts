@@ -75,8 +75,10 @@ export const idempotencyMiddleware = (req: any, res: any, next: any) => {
       req.idempotencyKey = key as string;
       const cached = idempotencyStore.get(key);
       if (cached) {
-        res.status(cached.responseCode).json(cached.responseBody);
-        return;
+        res.status(cached.responseCode)
+          .set('X-Idempotency-Replayed', 'true')
+          .set('X-Trace-ID', req.traceId || '');
+        return res.json(cached.responseBody);
       }
     }
   }
@@ -252,9 +254,21 @@ function serializeOptimized(data: any): string {
   });
 }
 
+// Request correlation middleware for trace ID propagation
+const requestCorrelationMiddleware = (req: any, res: any, next: any) => {
+  // Generate or extract trace ID for request correlation
+  req.traceId = req.headers['x-trace-id'] || 
+    req.headers['x-request-id'] || 
+    require('crypto').randomUUID();
+  
+  res.set('X-Trace-ID', req.traceId);
+  next();
+};
+
 // Apply middleware to app if available
 if (app && typeof app.use === 'function') {
   app.use(compressionMiddleware);
+  app.use(requestCorrelationMiddleware);
   app.use(createLimiter());
   app.use(idempotencyMiddleware);
   // Add JSON body parser with validation
