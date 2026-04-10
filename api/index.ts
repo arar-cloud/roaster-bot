@@ -3,6 +3,7 @@ import app from '../src/index.js';
 // Simple in-memory LRU cache for query results
 class QueryCache {
   private cache: Map<string, { data: any; expires: number }> = new Map();
+  private timestamps: Map<string, number> = new Map();
   private maxSize: number;
   private ttlMs: number;
 
