@@ -1,9 +1,64 @@
 import app from '../src/index.js';
 
+// Min-Heap for efficient O(log n) LRU eviction
+class MinHeap {
+  private heap: Array<{ timestamp: number; key: string }> = [];
+
+  push(timestamp: number, key: string): void {
+    this.heap.push({ timestamp, key });
+    this.bubbleUp(this.heap.length - 1);
+  }
+
+  popMin(): { timestamp: number; key: string } | undefined {
+    if (this.heap.length === 0) return undefined;
+    const min = this.heap[0];
+    const last = this.heap.pop();
+    if (this.heap.length > 0 && last) {
+      this.heap[0] = last;
+      this.bubbleDown(0);
+    }
+    return min;
+  }
+
+  private bubbleUp(index: number): void {
+    while (index > 0) {
+      const parentIndex = Math.floor((index - 1) / 2);
+      if (this.heap[index].timestamp < this.heap[parentIndex].timestamp) {
+        [this.heap[index], this.heap[parentIndex]] = [this.heap[parentIndex], this.heap[index]];
+        index = parentIndex;
+      } else {
+        break;
+      }
+    }
+  }
+
+  private bubbleDown(index: number): void {
+    while (true) {
+      const leftChild = 2 * index + 1;
+      const rightChild = 2 * index + 2;
+      let smallest = index;
+
+      if (leftChild < this.heap.length && this.heap[leftChild].timestamp < this.heap[smallest].timestamp) {
+        smallest = leftChild;
+      }
+      if (rightChild < this.heap.length && this.heap[rightChild].timestamp < this.heap[smallest].timestamp) {
+        smallest = rightChild;
+      }
+      if (smallest !== index) {
+        [this.heap[index], this.heap[smallest]] = [this.heap[smallest], this.heap[index]];
+        index = smallest;
+      } else {
+        break;
+      }
+    }
+  }
+}
+
 // Simple in-memory LRU cache for query results
 class QueryCache {
   private cache: Map<string, { data: any; expires: number }> = new Map();
   private timestamps: Map<string, number> = new Map();
+  private heap: MinHeap = new MinHeap();
   private maxSize: number;
   private ttlMs: number;
 
@@ -34,6 +89,7 @@ class QueryCache {
         this.timestamps.delete(k);
       }
     }
+    const now = Date.now();
     // Remove oldest entry by timestamp if still at capacity
     if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
       let oldestKey: string | null = null;
@@ -41,11 +97,14 @@ class QueryCache {
       for (const [k, ts] of this.timestamps.entries()) {
         if (ts < oldestTime) {
           oldestTime = ts;
-          oldestKey = k;
+          oldest.key = k;
         }
       }
-      if (oldestKey) {
-        this.cache.delete(oldestKey);
+      if Evict oldest entry when at capacity - O(log n) via heap
+    if (this.cache.size >= this.maxSize) {
+      const oldest = this.heap.popMin();
+      if (oldest && this.cache.has(oldest.key)) {
+        this.cache.delete(oldest.key);
         this.timestamps.delete(oldestKey);
       }
     }
@@ -66,12 +125,12 @@ export const queryCache = new QueryCache();
 // Gzip compression middleware
 function compressionMiddleware(req: any, res: any, next: any): void {
   const acceptEncoding = (req.headers['accept-encoding'] || '').toString();
-  
+
   if (acceptEncoding.includes('gzip')) {
     res.setHeader('Content-Encoding', 'gzip');
     res.setHeader('Vary', 'Accept-Encoding');
   }
-  
+
   next();
 }
 
@@ -100,19 +159,19 @@ export class BatchQueryExecutor {
     queryFn: (ids: (string | number)[]) => Promise<any[]>
   ): Promise<Map<string | number, any>> {
     if (!ids || ids.length === 0) return new Map();
-    
+
     // Use cache key based on sorted IDs for consistency; deduplicate without mutating input
     const cacheKey = `batch_${Array.from(new Set(ids)).sort().join('_')}`;
     const cached = queryCache.get(cacheKey);
     if (cached) return new Map(Object.entries(cached));
-    
+
     // Execute single bulk query instead of n queries
     const results = await queryFn(ids);
     const resultMap: Record<string, any> = {};
     results.forEach((item: any) => {
       if (item.id) resultMap[item.id] = item;
     });
-    
+
     queryCache.set(cacheKey, resultMap);
     return new Map(Object.entries(resultMap));
   }
