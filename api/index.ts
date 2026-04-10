@@ -12,6 +12,7 @@ class RedisCache {
   private client: any;
   private codec: any;
   private isConnected: boolean = false;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
 
   async init() {
     try {
@@ -87,6 +88,7 @@ interface DBPoolConfig {
 
 class DatabasePool {
   private pool: Pool;
+  private healthCheckInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     const config: DBPoolConfig = {
@@ -110,6 +112,32 @@ class DatabasePool {
     });
 
     this.pool.on('error', (err) => console.error('Unexpected error on idle client:', err));
+    this.warmup().catch(err => console.error('Warmup failed:', err));
+    this.startHealthCheck();
+  }
+
+  private async warmup(): Promise<void> {
+    try {
+      const promises = [];
+      for (let i = 0; i < 5; i++) {
+        promises.push(this.pool.query('SELECT 1'));
+      }
+      await Promise.all(promises);
+      console.log('Database pool warmed up: 5 connections pre-established');
+    } catch (err) {
+      console.error('Warmup failed:', err);
+    }
+  }
+
+  private startHealthCheck(): void {
+    this.healthCheckInterval = setInterval(async () => {
+      try {
+        await this.pool.query('SELECT 1');
+      } catch (err) {
+        console.warn('Health check failed:', err);
+      }
+    }, 30000);
+    console.log('Health check started: every 30 seconds');
   }
 
   async query(sql: string, params?: any[]): Promise<any> {
@@ -140,6 +168,9 @@ class DatabasePool {
   }
 
   async close(): Promise<void> {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
     await this.pool.end();
   }
 }
@@ -195,20 +226,20 @@ class QueryOptimizer {
     batchSize: number = 1000
   ): Promise<Map<string | number, T[]>> {
     const result = new Map<string | number, T[]>();
-    
+
     for (let i = 0; i < ids.length; i += batchSize) {
       const batch = ids.slice(i, i + batchSize);
       const placeholders = batch.map((_, idx) => `${idx + 1}`).join(',');
       const batchSql = sql.replace('$1', `(${placeholders})`);
       const batchResult = await db.query(batchSql, batch);
-      
+
       for (const row of batchResult.rows) {
         const key = row.id || row.parent_id;
         if (!result.has(key)) result.set(key, []);
         result.get(key)!.push(row as T);
       }
     }
-    
+
     return result;
   }
 }
@@ -255,11 +286,11 @@ interface PaginatedResponse<T> {
 // Cursor encoding/decoding for pagination state
 class CursorPaginator {
   private readonly chunkSize: number = 50; // items per page
-  
+
   encodeCursor(offset: number): string {
     return Buffer.from(JSON.stringify({ offset })).toString('base64');
   }
-  
+
   decodeCursor(cursor: string): number {
     try {
       const decoded = JSON.parse(Buffer.from(cursor, 'base64').toString('utf-8'));
@@ -268,12 +299,12 @@ class CursorPaginator {
       return 0;
     }
   }
-  
+
   paginate<T>(items: T[], cursor?: string, limit: number = this.chunkSize): PaginatedResponse<T> {
     const offset = cursor ? this.decodeCursor(cursor) : 0;
     const page = items.slice(offset, offset + limit);
     const nextOffset = offset + limit;
-    
+
     return {
       data: page,
       nextCursor: nextOffset < items.length ? this.encodeCursor(nextOffset) : undefined,
@@ -285,13 +316,13 @@ class CursorPaginator {
 // Streaming response helper for chunked delivery
 class StreamingResponseHandler {
   private readonly chunkSizeBytes: number = 8192; // 8KB chunks
-  
+
   streamJSON(res: any, data: any[]): Promise<void> {
     return new Promise((resolve) => {
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Transfer-Encoding', 'chunked');
       res.write('[');
-      
+
       let index = 0;
       const sendChunk = () => {
         if (index >= data.length) {
@@ -300,17 +331,17 @@ class StreamingResponseHandler {
           resolve();
           return;
         }
-        
+
         const chunk = data[index];
         const json = JSON.stringify(chunk);
         if (index > 0) res.write(',');
         res.write(json);
         index++;
-        
+
         // Throttle chunk delivery to avoid overwhelming clients
         setImmediate(sendChunk);
       };
-      
+
       sendImmediate(sendChunk);
     });
   }
@@ -330,41 +361,41 @@ class DataLoader<K, V> {
   private batchScheduled = false;
   private readonly batchFn: (keys: K[]) => Promise<Map<K, V>>;
   private readonly batchSize: number;
-  
+
   constructor(batchFn: (keys: K[]) => Promise<Map<K, V>>, batchSize: number = 100) {
     this.batchFn = batchFn;
     this.batchSize = batchSize;
   }
-  
+
   load(key: K): Promise<V> {
     return new Promise((resolve, reject) => {
       this.queue.push({ key, resolve, reject });
-      
+
       // Schedule batch on next tick if not already scheduled
       if (!this.batchScheduled) {
         this.batchScheduled = true;
         setImmediate(() => this.processBatch());
       }
-      
+
       // Also process immediately if we hit batch size limit
       if (this.queue.length >= this.batchSize) {
         this.processBatch();
       }
     });
   }
-  
+
   private async processBatch(): Promise<void> {
     if (this.queue.length === 0) {
       this.batchScheduled = false;
       return;
     }
-    
+
     const batch = this.queue.splice(0, this.batchSize);
     const keys = batch.map(item => item.key);
-    
+
     try {
       const results = await this.batchFn(keys);
-      
+
       for (const item of batch) {
         const value = results.get(item.key);
         if (value !== undefined) {
@@ -378,7 +409,7 @@ class DataLoader<K, V> {
         item.reject(err as Error);
       }
     }
-    
+
     // Continue processing remaining queue
     if (this.queue.length > 0) {
       setImmediate(() => this.processBatch());
@@ -386,7 +417,7 @@ class DataLoader<K, V> {
       this.batchScheduled = false;
     }
   }
-  
+
   clear(): void {
     this.queue = [];
     this.batchScheduled = false;
@@ -396,7 +427,7 @@ class DataLoader<K, V> {
 // Query batching helper for consolidating multiple DB queries
 class QueryBatcher {
   private batches: Map<string, { keys: Set<any>; promise: Promise<Map<any, any>> | null }> = new Map();
-  
+
   // Batch multiple IDs into single query instead of N individual queries
   async batchFetch<T>(
     queryId: string,
@@ -407,21 +438,21 @@ class QueryBatcher {
     if (!this.batches.has(queryId)) {
       this.batches.set(queryId, { keys: new Set(), promise: null });
     }
-    
+
     const batch = this.batches.get(queryId)!;
-    
+
     // Add new IDs to batch
     for (const id of ids) {
       batch.keys.add(id);
     }
-    
+
     // Execute batch on next tick if not already scheduled
     if (!batch.promise) {
       batch.promise = new Promise((resolve) => {
         setImmediate(async () => {
           const keysArray = Array.from(batch.keys);
           batch.keys.clear();
-          
+
           try {
             const result = await batchQueryFn(keysArray);
             resolve(result);
@@ -434,10 +465,10 @@ class QueryBatcher {
         });
       });
     }
-    
+
     return batch.promise;
   }
-  
+
   // Eager load relationships to prevent N+1 queries
   async eagerLoad<T, R>(
     items: T[],
@@ -451,15 +482,15 @@ class QueryBatcher {
         allIds.add(id);
       }
     }
-    
+
     if (allIds.size === 0) {
       return new Map();
     }
-    
+
     // Single batch query instead of N individual queries
     return batchLoader(Array.from(allIds));
   }
-  
+
   clear(): void {
     this.batches.clear();
   }
@@ -480,7 +511,7 @@ function createPaginatedHandler(dataFetcher: () => Promise<any[]>) {
   return async (req: any, res: any) => {
     const { cursor, limit = 50 } = req.query;
     const cacheKey = cacheManager.generateQueryKey('/api/items', { cursor, limit });
-    
+
     try {
       // Use deduplication to prevent parallel identical requests
       const result = await cacheManager.getOrFetch(
@@ -492,7 +523,7 @@ function createPaginatedHandler(dataFetcher: () => Promise<any[]>) {
         },
         5 * 60 * 1000 // 5 minute TTL
       );
-      
+
       res.set('X-Cache', 'HIT');
       res.json(result);
     } catch (err) {
@@ -535,27 +566,27 @@ export class CacheManager {
   private cache: Map<string, CacheEntry<any>> = new Map();
   private pendingRequests: Map<string, Promise<any>> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
-  
+
   constructor(cleanupIntervalMs: number = 60000) {
     // Auto-cleanup expired entries every 60 seconds
     this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
   }
-  
+
   // Generate deterministic cache key from query parameters
   generateQueryKey(endpoint: string, params: Record<string, any>): string {
     const sorted = Object.keys(params).sort().map(k => `${k}=${JSON.stringify(params[k])}`).join('&');
     return `query:${endpoint}:${sorted}`;
   }
-  
+
   // Deduplication: prevent parallel identical requests from hitting DB
   async getOrFetch<T>(key: string, fetcher: () => Promise<T>, ttlMs: number = 60000): Promise<T> {
     const cached = this.get<T>(key);
     if (cached !== null) return cached as T;
-    
+
     if (this.pendingRequests.has(key)) {
       return this.pendingRequests.get(key)!;
     }
-    
+
     const promise = fetcher().then(result => {
       this.set(key, result, ttlMs);
       this.pendingRequests.delete(key);
@@ -564,11 +595,11 @@ export class CacheManager {
       this.pendingRequests.delete(key);
       throw err;
     });
-    
+
     this.pendingRequests.set(key, promise);
     return promise;
   }
-  
+
   set<T>(key: string, data: T, ttlMs: number = 60000): void {
     this.cache.set(key, {
       data,
@@ -576,20 +607,20 @@ export class CacheManager {
       ttl: ttlMs,
     });
   }
-  
+
   get<T>(key: string): T | null {
     const entry = this.cache.get(key) as CacheEntry<T> | undefined;
     if (!entry) return null;
-    
+
     const isExpired = Date.now() - entry.timestamp > entry.ttl;
     if (isExpired) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return entry.data;
   }
-  
+
   invalidate(pattern: string): number {
     let count = 0;
     for (const key of this.cache.keys()) {
@@ -600,7 +631,7 @@ export class CacheManager {
     }
     return count;
   }
-  
+
   private cleanup(): void {
     const now = Date.now();
     for (const [key, entry] of this.cache.entries()) {
@@ -609,7 +640,7 @@ export class CacheManager {
       }
     }
   }
-  
+
   destroy(): void {
     if (this.cleanupInterval) {
       clearInterval(this.cleanupInterval);
@@ -628,28 +659,28 @@ export const apiCache = new CacheManager();
 export function cacheMiddleware(ttlMs: number = 60000) {
   return (req: any, res: any, next: any) => {
     const originalJson = res.json.bind(res);
-    
+
     res.json = function(data: any) {
       // Generate cache key from method, path, and query
       const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
-      
+
       // Cache successful responses (status 200-299)
       if (res.statusCode >= 200 && res.statusCode < 300) {
         apiCache.set(cacheKey, data, ttlMs);
       }
-      
+
       return originalJson(data);
     };
-    
+
     // Check cache before calling next middleware
     const cacheKey = `${req.method}:${req.path}:${JSON.stringify(req.query)}`;
     const cachedResponse = apiCache.get(cacheKey);
-    
+
     if (cachedResponse !== null) {
       res.set('X-Cache', 'HIT');
       return res.json(cachedResponse);
     }
-    
+
     res.set('X-Cache', 'MISS');
     next();
   };
@@ -709,7 +740,7 @@ export function buildPaginatedResponse<T>(
   const { offset } = cursor ? decodeCursor(cursor) : { offset: 0 };
   const nextOffset = offset + items.length;
   const hasMore = nextOffset < totalCount;
-  
+
   return {
     data: items,
     nextCursor: hasMore ? encodeCursor(items[items.length - 1] as any, nextOffset) : null,
@@ -753,11 +784,11 @@ class BatchLoader<T, K> {
 
   load(item: T): Promise<any> {
     this.queue.push(item);
-    
+
     if (!this.pendingPromise) {
       this.pendingPromise = new Promise((resolve) => {
         this.resolveQueue = resolve;
-        
+
         // Schedule flush
         if (this.queue.length >= this.batchSize) {
           this.flushBatch();
@@ -766,19 +797,19 @@ class BatchLoader<T, K> {
         }
       });
     }
-    
+
     return this.pendingPromise.then((results) => results.get(item as unknown as K));
   }
-  
+
   private async flushBatch(): Promise<void> {
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
     }
-    
+
     const itemsToProcess = this.queue.splice(0, this.batchSize);
     if (itemsToProcess.length === 0) return;
-    
+
     try {
       const results = await this.batchFn(itemsToProcess);
       if (this.resolveQueue) {
@@ -795,11 +826,11 @@ class BatchLoader<T, K> {
       }
     }
   }
-    
+
     if (!this.pendingPromise) {
       this.pendingPromise = new Promise((resolve) => {
         this.resolveQueue = resolve;
-        
+
         // Flush on batch size or timeout
         if (this.queue.length >= this.batchSize) {
           this.flush();
@@ -809,17 +840,17 @@ class BatchLoader<T, K> {
         }
       });
     }
-    
+
     return this.pendingPromise.then(() => this.pendingPromise!);
   }
 
   private async flush() {
     if (this.timeoutId) clearTimeout(this.timeoutId);
     if (this.queue.length === 0) return;
-    
+
     const batch = this.queue;
     this.queue = [];
-    
+
     try {
       const result = await this.batchFn(batch);
       if (this.resolveQueue) {
@@ -828,7 +859,7 @@ class BatchLoader<T, K> {
     } catch (err) {
       console.error('BatchLoader flush error:', err);
     }
-    
+
     this.pendingPromise = null;
     this.resolveQueue = null;
   }
@@ -896,7 +927,7 @@ class PaginationHelper {
     for (const field of expandFields) {
       const loader = loaderMap.get(field);
       if (!loader) continue;
-      
+
       for (const item of items) {
         if (item[`${field}_id`]) {
           item[field] = await loader.load(item[`${field}_id`]);
