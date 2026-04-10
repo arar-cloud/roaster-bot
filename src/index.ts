@@ -191,8 +191,8 @@ const port = process.env.PORT || 3000;
 
 let isShuttingDown = false;
 let activeRequests = 0;
-const SHUTDOWN_TIMEOUT_MS = 30000; // 30 seconds
-const DRAIN_POLL_INTERVAL_MS = 100; // 100ms polling interval
+const SHUTDOWN_TIMEOUT_MS = 30 * 1000; // 30 seconds
+const DRAIN_POLL_INTERVAL_MS = 100; // 100ms
 
 // Initialize app with environment validation
 try {
