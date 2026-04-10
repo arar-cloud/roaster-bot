@@ -172,6 +172,73 @@ class ExponentialBackoffRetry {
 const copilotCircuitBreaker = new CircuitBreaker(5, 2, 60000);
 const externalServiceRetry = new ExponentialBackoffRetry(3, 100, 5000, 2);
 
+// Structured logging
+class StructuredLogger {
+  private logBuffer: any[] = [];
+  private readonly maxBufferSize = 100;
+
+  log(level: 'info' | 'warn' | 'error' | 'debug', message: string, context: any = {}) {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      level,
+      message,
+      ...context
+    };
+    
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length > this.maxBufferSize) {
+      this.logBuffer.shift();
+    }
+    
+    // In production, send to structured logging service
+    if (level === 'error') {
+      console.error(JSON.stringify(entry));
+    } else if (level === 'warn') {
+      console.warn(JSON.stringify(entry));
+    } else {
+      console.log(JSON.stringify(entry));
+    }
+  }
+
+  info(message: string, context?: any) { this.log('info', message, context); }
+  warn(message: string, context?: any) { this.log('warn', message, context); }
+  error(message: string, context?: any) { this.log('error', message, context); }
+  debug(message: string, context?: any) { this.log('debug', message, context); }
+
+  getBuffer() { return [...this.logBuffer]; }
+}
+
+const logger = new StructuredLogger();
+
+// Error handling middleware
+app.use((err: any, req: any, res: any, next: any) => {
+  const traceId = req.traceId || crypto.randomUUID();
+  const errorId = crypto.randomUUID();
+
+  logger.error('Request error', {
+    traceId,
+    errorId,
+    method: req.method,
+    path: req.path,
+    statusCode: err.statusCode || 500,
+    message: err.message,
+    stack: err.stack
+  });
+
+  // Determine if error is retriable
+  const isRetriable = [408, 429, 500, 502, 503, 504].includes(err.statusCode || 500);
+  const retryAfter = err.retryAfter || (isRetriable ? 60 : undefined);
+
+  res.status(err.statusCode || 500).json({
+    error: err.message || 'Internal server error',
+    errorId,
+    traceId,
+    retriable: isRetriable,
+    retryAfter: retryAfter,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Idempotency key middleware for state-changing operations
 export const idempotencyMiddleware = (req: any, res: any, next: any) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
