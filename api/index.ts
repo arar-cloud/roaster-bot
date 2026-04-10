@@ -189,6 +189,69 @@ class CircuitBreaker {
   }
 }
 
+// Rate limiting and backpressure handler
+interface RateLimitConfig {
+  windowMs: number;
+  maxRequests: number;
+  queueLimit: number;
+}
+
+class RateLimiter {
+  private requestCounts: Map<string, number[]> = new Map();
+  private requestQueue: number = 0;
+  private readonly config: RateLimitConfig;
+
+  constructor(config: Partial<RateLimitConfig> = {}) {
+    this.config = {
+      windowMs: config.windowMs || 60000, // 1 minute
+      maxRequests: config.maxRequests || 100,
+      queueLimit: config.queueLimit || 500,
+    };
+  }
+
+  checkLimit(clientId: string): { allowed: boolean; retryAfter?: number } {
+    const now = Date.now();
+    const windowStart = now - this.config.windowMs;
+
+    if (!this.requestCounts.has(clientId)) {
+      this.requestCounts.set(clientId, []);
+    }
+
+    const timestamps = this.requestCounts.get(clientId)!;
+    const recentRequests = timestamps.filter((t) => t > windowStart);
+
+    if (recentRequests.length >= this.config.maxRequests) {
+      const oldestRequest = Math.min(...recentRequests);
+      const retryAfter = Math.ceil((oldestRequest + this.config.windowMs - now) / 1000);
+      return { allowed: false, retryAfter: Math.max(1, retryAfter) };
+    }
+
+    recentRequests.push(now);
+    this.requestCounts.set(clientId, recentRequests);
+    return { allowed: true };
+  }
+
+  checkBackpressure(): { allowed: boolean; queueLength: number } {
+    const allowed = this.requestQueue < this.config.queueLimit;
+    return { allowed, queueLength: this.requestQueue };
+  }
+
+  incrementQueue(): void {
+    this.requestQueue += 1;
+  }
+
+  decrementQueue(): void {
+    this.requestQueue = Math.max(0, this.requestQueue - 1);
+  }
+
+  getMetrics(): { clientCount: number; queueLength: number } {
+    return {
+      clientCount: this.requestCounts.size,
+      queueLength: this.requestQueue,
+    };
+  }
+}
+
 class IdempotencyStore {
   private store: Map<string, IdempotencyRecord> = new Map();
   private readonly ttlMs = 60 * 60 * 1000; // 1 hour
