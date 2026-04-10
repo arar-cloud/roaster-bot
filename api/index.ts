@@ -404,6 +404,84 @@ function handleApiError(error: unknown, traceId?: string): { status: number; bod
   };
 }
 
+// Request/response logging and monitoring
+interface RequestLog {
+  traceId: string;
+  timestamp: number;
+  method: string;
+  path: string;
+  statusCode: number;
+  duration: number;
+  clientId?: string;
+  error?: string;
+}
+
+class RequestLogger {
+  private logs: RequestLog[] = [];
+  private readonly maxLogs = 10000;
+
+  logRequest(
+    traceId: string,
+    method: string,
+    path: string,
+    statusCode: number,
+    duration: number,
+    clientId?: string,
+    error?: string,
+  ): void {
+    const log: RequestLog = {
+      traceId,
+      timestamp: Date.now(),
+      method,
+      path,
+      statusCode,
+      duration,
+      ...(clientId && { clientId }),
+      ...(error && { error }),
+    };
+
+    this.logs.push(log);
+    if (this.logs.length > this.maxLogs) {
+      this.logs = this.logs.slice(-this.maxLogs);
+    }
+
+    // Console output for structured logging (in production, send to logging service)
+    console.log(
+      JSON.stringify({
+        level: error ? 'ERROR' : 'INFO',
+        ...log,
+      }),
+    );
+  }
+
+  getRecentLogs(limit = 100): RequestLog[] {
+    return this.logs.slice(-limit);
+  }
+
+  getMetrics(): {
+    totalRequests: number;
+    avgLatency: number;
+    errorRate: number;
+  } {
+    if (this.logs.length === 0) {
+      return { totalRequests: 0, avgLatency: 0, errorRate: 0 };
+    }
+
+    const errors = this.logs.filter((l) => l.error).length;
+    const avgLatency = this.logs.reduce((sum, l) => sum + l.duration, 0) / this.logs.length;
+
+    return {
+      totalRequests: this.logs.length,
+      avgLatency: Math.round(avgLatency),
+      errorRate: Number(((errors / this.logs.length) * 100).toFixed(2)),
+    };
+  }
+}
+
+function generateTraceId(): string {
+  return `trace_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+}
+
 class IdempotencyStore {
   private store: Map<string, IdempotencyRecord> = new Map();
   private readonly ttlMs = 60 * 60 * 1000; // 1 hour
