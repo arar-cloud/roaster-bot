@@ -26,15 +26,34 @@ class QueryCache {
   }
 
   set(key: string, data: any): void {
-    // Remove oldest entry if at capacity
-    if (this.cache.size >= this.maxSize) {
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+    // First, clean up expired entries
+    const now = Date.now();
+    for (const [k, entry] of this.cache.entries()) {
+      if (now > entry.expires) {
+        this.cache.delete(k);
+        this.timestamps.delete(k);
+      }
+    }
+    // Remove oldest entry by timestamp if still at capacity
+    if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
+      let oldestKey: string | null = null;
+      let oldestTime = Infinity;
+      for (const [k, ts] of this.timestamps.entries()) {
+        if (ts < oldestTime) {
+          oldestTime = ts;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        this.timestamps.delete(oldestKey);
+      }
     }
     this.cache.set(key, {
       data,
       expires: Date.now() + this.ttlMs,
     });
+    this.timestamps.set(key, Date.now());
   }
 
   clear(): void {
