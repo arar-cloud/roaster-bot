@@ -252,6 +252,95 @@ class RateLimiter {
   }
 }
 
+// Connection pool management
+interface PooledConnection {
+  id: string;
+  createdAt: number;
+  lastUsedAt: number;
+  inUse: boolean;
+  timeout: NodeJS.Timeout | null;
+}
+
+class ConnectionPool {
+  private connections: Map<string, PooledConnection> = new Map();
+  private readonly maxConnections = 50;
+  private readonly connectionTimeout = 30000; // 30 seconds
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // Cleanup idle connections every 5 minutes
+    this.cleanupInterval = setInterval(() => this.cleanupIdleConnections(), 5 * 60 * 1000);
+  }
+
+  acquireConnection(): string {
+    // Reuse idle connection if available
+    for (const [id, conn] of this.connections.entries()) {
+      if (!conn.inUse && Date.now() - conn.lastUsedAt < this.connectionTimeout) {
+        conn.inUse = true;
+        conn.lastUsedAt = Date.now();
+        if (conn.timeout) clearTimeout(conn.timeout);
+        return id;
+      }
+    }
+
+    // Create new connection if under limit
+    if (this.connections.size < this.maxConnections) {
+      const id = `conn_${Date.now()}_${Math.random()}`;
+      this.connections.set(id, {
+        id,
+        createdAt: Date.now(),
+        lastUsedAt: Date.now(),
+        inUse: true,
+        timeout: null,
+      });
+      return id;
+    }
+
+    throw new Error('Connection pool exhausted');
+  }
+
+  releaseConnection(id: string): void {
+    const conn = this.connections.get(id);
+    if (!conn) return;
+
+    conn.inUse = false;
+    conn.lastUsedAt = Date.now();
+    // Set timeout to close connection if not reused
+    conn.timeout = setTimeout(() => {
+      this.connections.delete(id);
+    }, this.connectionTimeout);
+  }
+
+  private cleanupIdleConnections(): void {
+    const now = Date.now();
+    for (const [id, conn] of this.connections.entries()) {
+      if (!conn.inUse && now - conn.lastUsedAt > this.connectionTimeout) {
+        this.connections.delete(id);
+      }
+    }
+  }
+
+  getPoolMetrics(): { total: number; inUse: number; idle: number } {
+    let inUse = 0;
+    for (const conn of this.connections.values()) {
+      if (conn.inUse) inUse += 1;
+    }
+    return {
+      total: this.connections.size,
+      inUse,
+      idle: this.connections.size - inUse,
+    };
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    for (const conn of this.connections.values()) {
+      if (conn.timeout) clearTimeout(conn.timeout);
+    }
+    this.connections.clear();
+  }
+}
+
 class IdempotencyStore {
   private store: Map<string, IdempotencyRecord> = new Map();
   private readonly ttlMs = 60 * 60 * 1000; // 1 hour
