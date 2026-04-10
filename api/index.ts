@@ -341,6 +341,69 @@ class ConnectionPool {
   }
 }
 
+// Standardized error response format
+interface ErrorResponse {
+  error: {
+    code: string;
+    message: string;
+    details?: Record<string, any>;
+    traceId?: string;
+    timestamp: number;
+  };
+}
+
+function createErrorResponse(
+  code: string,
+  message: string,
+  details?: Record<string, any>,
+  traceId?: string,
+): ErrorResponse {
+  return {
+    error: {
+      code,
+      message,
+      ...(details && { details }),
+      ...(traceId && { traceId }),
+      timestamp: Date.now(),
+    },
+  };
+}
+
+function handleApiError(error: unknown, traceId?: string): { status: number; body: ErrorResponse } {
+  if (error instanceof ValidationError) {
+    return {
+      status: 400,
+      body: createErrorResponse('VALIDATION_ERROR', `Validation failed: ${error.message}`, { field: error.field }, traceId),
+    };
+  }
+
+  if (error instanceof Error) {
+    if (error.message.includes('timeout')) {
+      return {
+        status: 504,
+        body: createErrorResponse('GATEWAY_TIMEOUT', 'Request timeout', undefined, traceId),
+      };
+    }
+    if (error.message.includes('Circuit breaker OPEN')) {
+      return {
+        status: 503,
+        body: createErrorResponse('SERVICE_UNAVAILABLE', error.message, undefined, traceId),
+      };
+    }
+    if (error.message.includes('exhausted')) {
+      return {
+        status: 429,
+        body: createErrorResponse('RESOURCE_EXHAUSTED', error.message, undefined, traceId),
+      };
+    }
+  }
+
+  return {
+    status: 500,
+    body: createErrorResponse('INTERNAL_SERVER_ERROR', 'An unexpected error occurred', undefined, traceId),
+  };
+}
+
 class IdempotencyStore {
   private store: Map<string, IdempotencyRecord> = new Map();
   private readonly ttlMs = 60 * 60 * 1000; // 1 hour
