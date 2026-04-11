@@ -30,7 +30,7 @@ const redisClient = createClient({
 // LRU cache for token bucket entries with TTL-based eviction
 class LRUTokenBucketCache {
   private cache: Map<string, { tokens: number; lastRefill: number }> = new Map();
-  private accessOrder: string[] = [];
+  private accessOrder: Map<string, number> = new Map(); // O(1) LRU tracking instead of O(n) indexOf
   private readonly maxSize = 1000;
   private readonly ttlMs = 3600000; // 1 hour
 
@@ -41,29 +41,28 @@ class LRUTokenBucketCache {
     // Check TTL expiration
     if (Date.now() - entry.lastRefill > this.ttlMs) {
       this.cache.delete(key);
-      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      this.accessOrder.delete(key); // O(1) delete instead of O(n) filter
       return undefined;
     }
 
-    // Move to end (most recently used)
-    const idx = this.accessOrder.indexOf(key);
-    if (idx !== -1) {
-      this.accessOrder.splice(idx, 1);
-    }
-    this.accessOrder.push(key);
+    // Move to end (most recently used) - O(1) delete and set on Map
+    this.accessOrder.delete(key);
+    this.accessOrder.set(key, Date.now());
     return entry;
   }
 
   set(key: string, value: { tokens: number; lastRefill: number }): void {
     if (this.cache.has(key)) {
-      const idx = this.accessOrder.indexOf(key);
-      if (idx !== -1) this.accessOrder.splice(idx, 1);
+      this.accessOrder.delete(key);
     } else if (this.cache.size >= this.maxSize) {
-      const lruKey = this.accessOrder.shift();
-      if (lruKey) this.cache.delete(lruKey);
+      const lruKey = this.accessOrder.keys().next().value; // O(1) get oldest entry
+      if (lruKey) {
+        this.cache.delete(lruKey);
+        this.accessOrder.delete(lruKey);
+      }
     }
     this.cache.set(key, value);
-    this.accessOrder.push(key);
+    this.accessOrder.set(key, Date.now()); // O(1) insertion at end of Map
   }
 }
 
