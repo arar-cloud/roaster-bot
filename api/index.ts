@@ -14,9 +14,10 @@ interface RetryOptions {
 class ConnectionPool {
   private activeConnections: number = 0;
   private readonly maxConnections: number;
-  private readonly waitQueue: Array<{ resolve: () => void; timestamp: number }> = [];
+  private readonly waitQueue: Map<string, { id: string; resolve: () => void; timestamp: number; timeoutHandle?: NodeJS.Timeout }> = new Map();
   private readonly maxWaitTimeMs: number = 30000; // 30 second timeout
   private readonly maxQueueSize: number = 1000; // Max queue entries before rejection
+  private nextEntryId: number = 0;
 
   constructor(maxConnections: number = 10) {
     this.maxConnections = maxConnections;
