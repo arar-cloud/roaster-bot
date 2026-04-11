@@ -4,6 +4,39 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 
+// Initialize Redis client for distributed rate limiting
+const redisClient = createClient({
+  host: process.env.REDIS_HOST || 'localhost',
+  port: parseInt(process.env.REDIS_PORT || '6379', 10),
+  retry_strategy: (options: any) => {
+    if (options.error && options.error.code === 'ECONNREFUSED') {
+      console.warn('Redis connection failed, falling back to memory store');
+      return new Error('Redis unavailable');
+    }
+    if (options.total_retry_time > 1000 * 60 * 60) {
+      return new Error('Redis retry timeout');
+    }
+    return Math.min(options.attempt * 100, 3000);
+  },
+});
+
+redisClient.on('error', (err: Error) => {
+  console.error('Redis error:', err.message);
+});
+
+// Configure rate limiter with Redis store for distributed rate limiting
+const limiter = rateLimit({
+  store: new RedisStore({
+    client: redisClient,
+    prefix: 'rl:', // Rate limit key prefix
+  }),
+  windowMs: 15 * 60 * 1000, // 15 minute window
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false, // Disable `X-RateLimit-*` headers
+});
+
 // Exponential backoff retry strategy
 interface RetryOptions {
   maxAttempts?: number;
