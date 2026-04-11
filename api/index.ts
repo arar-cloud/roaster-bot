@@ -43,18 +43,24 @@ class ConnectionPool {
     const now = Date.now();
     const entriesToDelete: string[] = [];
 
+    // Early exit: only scan entries that might be expired to reduce O(n) scanning
+    let expiredCount = 0;
     for (const [entryId, entry] of this.waitQueue) {
       if (now - entry.timestamp >= this.maxWaitTimeMs) {
-        // Clear timeout handle for garbage collection
         if (entry.timeoutHandle) {
           clearTimeout(entry.timeoutHandle);
           entry.timeoutHandle = undefined;
         }
         entriesToDelete.push(entryId);
+        expiredCount++;
+        // Stop early if we've found a threshold of non-expired entries (heuristic)
+        if (expiredCount > 10 && this.waitQueue.size - expiredCount > 100) {
+          break;
+        }
       }
     }
 
-    // Remove expired entries
+    // Remove expired entries in batch
     for (const entryId of entriesToDelete) {
       this.waitQueue.delete(entryId);
     }
@@ -105,26 +111,32 @@ class ConnectionPool {
   }
 
   releaseConnection(): void {
-    this.activeConnections--;
-
-    // Get first entry from Map and process if not expired
-    for (const [entryId, entry] of this.waitQueue) {
-      if (Date.now() - entry.timestamp < this.maxWaitTimeMs) {
-        // Clear timeout to prevent orphaned timer
-        if (entry.timeoutHandle) {
-          clearTimeout(entry.timeoutHandle);
+    // Use same lock pattern as acquireConnection to ensure atomic updates
+    while (this.connectionLock) {
+      // Spin-lock: wait until lock is released
+    }
+    this.connectionLock = true;
+    try {
+      this.activeConnections--;
+      // Get first entry from Map and process if not expired
+      for (const [entryId, entry] of this.waitQueue) {
+        if (Date.now() - entry.timestamp < this.maxWaitTimeMs) {
+          if (entry.timeoutHandle) {
+            clearTimeout(entry.timeoutHandle);
+          }
+          this.activeConnections++;
+          entry.resolve();
+          this.waitQueue.delete(entryId);
+          return;
+        } else {
+          if (entry.timeoutHandle) {
+            clearTimeout(entry.timeoutHandle);
+          }
+          this.waitQueue.delete(entryId);
         }
-        this.activeConnections++;
-        entry.resolve();
-        this.waitQueue.delete(entryId);
-        return;
-      } else {
-        // Remove expired entry and clear its timeout
-        if (entry.timeoutHandle) {
-          clearTimeout(entry.timeoutHandle);
-        }
-        this.waitQueue.delete(entryId);
       }
+    } finally {
+      this.connectionLock = false;
     }
   }
 
