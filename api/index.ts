@@ -50,7 +50,8 @@ class LRUTokenBucketCache {
   }
 
   private schedulePeriodicCleanup(): void {
-    setInterval(() => this.cleanupExpiredEntries(), this.cleanupInterval);
+    // Reduced cleanup interval from 5s to 60s to minimize event loop overhead and CPU usage
+    setInterval(() => this.cleanupExpiredEntries(), 60000);
   }
 
   private cleanupExpiredEntries(): void {
@@ -102,6 +103,15 @@ class LRUTokenBucketCache {
     }
     this.cache.set(key, value);
     this.accessOrder.set(key, Date.now()); // O(1) insertion at end of Map
+    
+    // Implement size-based eviction: remove least-recently-used entry when maxSize exceeded
+    if (this.cache.size > this.maxSize) {
+      const oldestKey = this.accessOrder.keys().next().value;
+      if (oldestKey) {
+        this.cache.delete(oldestKey);
+        this.accessOrder.delete(oldestKey);
+      }
+    }
   }
 }
 
