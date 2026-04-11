@@ -2,6 +2,119 @@ import app from '../src/index.js';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 
+// TokenBucketLimiter implementation
+class TokenBucketLimiter {
+  private tokens: number;
+  private lastRefillAt: number = Date.now();
+  private readonly refillRatePerSecond: number;
+  private readonly capacity: number;
+  
+  constructor(capacity: number = 10, refillRatePerSecond: number = 1) {
+    this.capacity = capacity;
+    this.tokens = capacity;
+    this.refillRatePerSecond = refillRatePerSecond;
+  }
+  
+  canConsume(count: number = 1): boolean {
+    this.refill();
+    if (this.tokens >= count) {
+      this.tokens -= count;
+      return true;
+    }
+    return false;
+  }
+  
+  getRetryAfterMs(): number {
+    this.refill();
+    if (this.tokens < 1) {
+      return Math.ceil((1 - this.tokens) / this.refillRatePerSecond * 1000);
+    }
+    return 0;
+  }
+  
+  private refill(): void {
+    const now = Date.now();
+    const elapsedSeconds = (now - this.lastRefillAt) / 1000;
+    const tokensToAdd = elapsedSeconds * this.refillRatePerSecond;
+    this.tokens = Math.min(this.capacity, this.tokens + tokensToAdd);
+    this.lastRefillAt = now;
+  }
+}
+
+// ConnectionPool singleton
+class ConnectionPool {
+  private static instance: ConnectionPool | null = null;
+  private activeConnections: Map<string, any> = new Map();
+  private readonly requestTimeoutMs: number;
+  private cleanupIntervalId: any;
+  
+  private constructor(requestTimeoutMs: number = 30000) {
+    this.requestTimeoutMs = requestTimeoutMs;
+    this.startCleanupInterval();
+  }
+  
+  static getInstance(requestTimeoutMs?: number): ConnectionPool {
+    if (!ConnectionPool.instance) {
+      ConnectionPool.instance = new ConnectionPool(requestTimeoutMs);
+    }
+    return ConnectionPool.instance;
+  }
+  
+  getConnection(clientId: string): any {
+    let conn = this.activeConnections.get(clientId);
+    if (!conn) {
+      conn = { clientId, createdAt: Date.now(), timeout: this.requestTimeoutMs };
+      this.activeConnections.set(clientId, conn);
+    }
+    return conn;
+  }
+  
+  releaseConnection(clientId: string): void {
+    this.activeConnections.delete(clientId);
+  }
+  
+  private startCleanupInterval(): void {
+    this.cleanupIntervalId = setInterval(() => {
+      const now = Date.now();
+      for (const [clientId, conn] of this.activeConnections) {
+        if (now - conn.createdAt > this.requestTimeoutMs * 2) {
+          this.activeConnections.delete(clientId);
+        }
+      }
+    }, 60000);
+  }
+  
+  shutdown(): void {
+    if (this.cleanupIntervalId) {
+      clearInterval(this.cleanupIntervalId);
+    }
+    this.activeConnections.clear();
+  }
+}
+
+// Per-client rate limiter tracking
+const rateLimiters = new Map<string, TokenBucketLimiter>();
+
+function getRateLimiter(clientId: string): TokenBucketLimiter {
+  let limiter = rateLimiters.get(clientId);
+  if (!limiter) {
+    limiter = new TokenBucketLimiter(100, 10);
+    rateLimiters.set(clientId, limiter);
+  }
+  return limiter;
+}
+
+function structuredLog(level: string, message: string, meta?: Record<string, any>): void {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    level,
+    message,
+    ...meta
+  };
+  console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify(logEntry));
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
