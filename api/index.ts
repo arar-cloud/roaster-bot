@@ -17,6 +17,32 @@ declare global {
   }
 }
 
+// Health check middleware with error handling
+function healthCheckMiddleware(req: any, res: any, next: any): void {
+  try {
+    const healthStatus = {
+      status: 'healthy',
+      timestamp: Date.now(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      poolSize: connectionPool.activeConnections?.size ?? 0
+    };
+    res.status(200).json(healthStatus);
+  } catch (err) {
+    structuredLog('error', 'Health check failed', {
+      traceId: req.traceId,
+      error: err instanceof Error ? err.message : String(err)
+    });
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: Date.now(),
+      error: err instanceof Error ? err.message : 'Unknown error'
+    });
+  }
+}
+
+const connectionPool = ConnectionPool.getInstance();
+
 // Middleware: Inject trace ID and client ID
 function traceMiddleware(req: any, res: any, next: any): void {
   req.traceId = req.get('X-Trace-ID') || randomUUID();
