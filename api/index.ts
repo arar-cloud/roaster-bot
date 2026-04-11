@@ -86,6 +86,64 @@ async function retryWithBackoff<T>(
   }
 
   throw lastError || new Error(`${operationName} failed after ${maxRetries} retries`);
+}
+
+// Request validation schema
+interface ValidationSchema {
+  [key: string]: {
+    type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+    required?: boolean;
+    maxLength?: number;
+    minLength?: number;
+    min?: number;
+    max?: number;
+  };
+}
+
+function validateRequest(body: any, schema: ValidationSchema, traceId: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  for (const [field, rules] of Object.entries(schema)) {
+    const value = body?.[field];
+    const isPresent = value !== undefined && value !== null;
+
+    if (rules.required && !isPresent) {
+      errors.push(`Missing required field: ${field}`);
+      continue;
+    }
+
+    if (!isPresent) continue;
+
+    const actualType = Array.isArray(value) ? 'array' : typeof value;
+    if (actualType !== rules.type) {
+      errors.push(`Field ${field}: expected ${rules.type}, got ${actualType}`);
+      continue;
+    }
+
+    if (rules.type === 'string') {
+      if (rules.maxLength && value.length > rules.maxLength) {
+        errors.push(`Field ${field}: exceeds max length of ${rules.maxLength}`);
+      }
+      if (rules.minLength && value.length < rules.minLength) {
+        errors.push(`Field ${field}: below min length of ${rules.minLength}`);
+      }
+    }
+
+    if (rules.type === 'number') {
+      if (rules.max !== undefined && value > rules.max) {
+        errors.push(`Field ${field}: exceeds maximum value of ${rules.max}`);
+      }
+      if (rules.min !== undefined && value < rules.min) {
+        errors.push(`Field ${field}: below minimum value of ${rules.min}`);
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    structuredLog('warn', traceId, 'Request validation failed', { errors });
+  }
+
+  return { valid: errors.length === 0, errors };
   console.log(JSON.stringify(logEntry));
 }
 
