@@ -2,6 +2,146 @@ import app from '../src/index.js';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
 
+// Exponential backoff retry strategy
+interface RetryOptions {
+  maxAttempts?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  jitterFactor?: number;
+}
+
+class RetryStrategy {
+  private maxAttempts: number;
+  private initialDelayMs: number;
+  private maxDelayMs: number;
+  private jitterFactor: number;
+
+  constructor(options: RetryOptions = {}) {
+    this.maxAttempts = options.maxAttempts ?? 3;
+    this.initialDelayMs = options.initialDelayMs ?? 100;
+    this.maxDelayMs = options.maxDelayMs ?? 10000;
+    this.jitterFactor = options.jitterFactor ?? 0.1;
+  }
+
+  async execute<T>(
+    fn: () => Promise<T>,
+    context: string = 'operation'
+  ): Promise<T> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < this.maxAttempts - 1) {
+          const delayMs = this.calculateBackoffDelay(attempt);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+    
+    const err = lastError || new Error(`${context} failed after ${this.maxAttempts} attempts`);
+    throw err;
+  }
+
+  private calculateBackoffDelay(attempt: number): number {
+    const exponentialDelay = Math.min(
+      this.initialDelayMs * Math.pow(2, attempt),
+      this.maxDelayMs
+    );
+    const jitter = exponentialDelay * this.jitterFactor * Math.random();
+    return exponentialDelay + jitter;
+  }
+}
+
+// Circuit breaker pattern for fault isolation
+interface CircuitBreakerOptions {
+  failureThreshold?: number;
+  resetTimeoutMs?: number;
+  halfOpenMaxAttempts?: number;
+}
+
+type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
+
+class CircuitBreaker {
+  private state: CircuitBreakerState = 'CLOSED';
+  private failureCount: number = 0;
+  private successCount: number = 0;
+  private failureThreshold: number;
+  private resetTimeoutMs: number;
+  private halfOpenMaxAttempts: number;
+  private lastFailureTime: number | null = null;
+  private readonly serviceName: string;
+
+  constructor(serviceName: string, options: CircuitBreakerOptions = {}) {
+    this.serviceName = serviceName;
+    this.failureThreshold = options.failureThreshold ?? 5;
+    this.resetTimeoutMs = options.resetTimeoutMs ?? 30000;
+    this.halfOpenMaxAttempts = options.halfOpenMaxAttempts ?? 2;
+  }
+
+  async execute<T>(
+    fn: () => Promise<T>
+  ): Promise<T> {
+    if (this.state === 'OPEN') {
+      if (this.shouldAttemptReset()) {
+        this.state = 'HALF_OPEN';
+        this.successCount = 0;
+      } else {
+        throw new Error(
+          `Circuit breaker OPEN for service: ${this.serviceName}. Retry after ${this.getRetryAfterMs()}ms`
+        );
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    }
+  }
+
+  private onSuccess(): void {
+    this.failureCount = 0;
+    
+    if (this.state === 'HALF_OPEN') {
+      this.successCount++;
+      if (this.successCount >= this.halfOpenMaxAttempts) {
+        this.state = 'CLOSED';
+        this.successCount = 0;
+      }
+    }
+  }
+
+  private onFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = 'OPEN';
+    }
+  }
+
+  private shouldAttemptReset(): boolean {
+    if (!this.lastFailureTime) return true;
+    return Date.now() - this.lastFailureTime >= this.resetTimeoutMs;
+  }
+
+  private getRetryAfterMs(): number {
+    if (!this.lastFailureTime) return 0;
+    const elapsed = Date.now() - this.lastFailureTime;
+    return Math.max(0, this.resetTimeoutMs - elapsed);
+  }
+
+  getState(): CircuitBreakerState {
+    return this.state;
+  }
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
