@@ -4,19 +4,18 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 
-// Initialize Redis client for distributed rate limiting
+// Initialize Redis client for distributed rate limiting with async/await (redis v5+)
 const redisClient = createClient({
-  host: process.env.REDIS_HOST || 'localhost',
-  port: parseInt(process.env.REDIS_PORT || '6379', 10),
-  retry_strategy: (options: any) => {
-    if (options.error && options.error.code === 'ECONNREFUSED') {
-      console.warn('Redis connection failed, falling back to memory store');
-      return new Error('Redis unavailable');
+  socket: {
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    reconnectStrategy: (retries: number) => {
+      if (retries > 10) {
+        console.warn('Redis reconnection failed after 10 attempts, giving up');
+        return new Error('Redis unavailable');
+      }
+      return Math.min(retries * 100, 3000);
     }
-    if (options.total_retry_time > 1000 * 60 * 60) {
-      return new Error('Redis retry timeout');
-    }
-    return Math.min(options.attempt * 100, 3000);
   },
 });
 
