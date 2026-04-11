@@ -15,6 +15,104 @@ declare global {
   }
 }
 
+// Versioned cache with TTL and staleness detection
+interface CacheEntry<T = unknown> {
+  value: T;
+  version: number;
+  createdAt: number;
+  ttlMs: number;
+  lastAccessedAt: number;
+}
+
+interface CacheConfig {
+  maxSize?: number;
+  defaultTtlMs?: number;
+  evictionPolicy?: 'LRU' | 'FIFO';
+}
+
+class VersionedCache {
+  private store = new Map<string, CacheEntry>();
+  private config: Required<CacheConfig>;
+  private accessOrder: string[] = [];
+
+  constructor(config: CacheConfig = {}) {
+    this.config = {
+      maxSize: config.maxSize || 1000,
+      defaultTtlMs: config.defaultTtlMs || 300000,
+      evictionPolicy: config.evictionPolicy || 'LRU'
+    };
+  }
+
+  set<T>(key: string, value: T, ttlMs?: number): void {
+    if (this.store.size >= this.config.maxSize && !this.store.has(key)) {
+      this.evictOne();
+    }
+    this.store.set(key, {
+      value,
+      version: (this.store.get(key)?.version || 0) + 1,
+      createdAt: Date.now(),
+      ttlMs: ttlMs || this.config.defaultTtlMs,
+      lastAccessedAt: Date.now()
+    });
+    this.trackAccess(key);
+  }
+
+  get<T>(key: string): T | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    
+    if (Date.now() - entry.createdAt > entry.ttlMs) {
+      this.store.delete(key);
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      return null;
+    }
+    
+    entry.lastAccessedAt = Date.now();
+    this.trackAccess(key);
+    return entry.value as T;
+  }
+
+  isStale(key: string): boolean {
+    const entry = this.store.get(key);
+    if (!entry) return true;
+    return Date.now() - entry.createdAt > entry.ttlMs * 0.8;
+  }
+
+  getVersion(key: string): number | null {
+    return this.store.get(key)?.version || null;
+  }
+
+  invalidate(key: string): void {
+    this.store.delete(key);
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+  }
+
+  invalidatePattern(pattern: RegExp): number {
+    let count = 0;
+    for (const key of this.store.keys()) {
+      if (pattern.test(key)) {
+        this.invalidate(key);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  private evictOne(): void {
+    if (this.config.evictionPolicy === 'LRU' && this.accessOrder.length > 0) {
+      const keyToEvict = this.accessOrder[0];
+      this.invalidate(keyToEvict);
+    }
+  }
+
+  private trackAccess(key: string): void {
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.accessOrder.push(key);
+  }
+}
+
+const cache = new VersionedCache({ maxSize: 500, defaultTtlMs: 300000 });
+
 // Structured logging helper
 interface LogContext {
   correlationId: string;
@@ -32,6 +130,61 @@ function structuredLog(context: Omit<LogContext, 'timestamp'>) {
     timestamp: new Date().toISOString()
   };
   console.log(JSON.stringify(log));
+}
+
+// Request correlation middleware
+app.use((req: Request, res: Response, next) => {
+  const correlationId = req.headers['x-correlation-id'] as string || crypto.randomUUID();
+  req.correlationId = correlationId;
+  res.setHeader('x-correlation-id', correlationId);
+  
+  const startTime = Date.now();
+  const originalSend = res.send;
+  
+  res.send = function(data: unknown) {
+    const duration = Date.now() - startTime;
+    structuredLog({
+      correlationId,
+      component: 'http',
+      severity: 'info',
+      message: 'request_completed',
+      metadata: {
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        durationMs: duration
+      }
+    });
+    return originalSend.call(this, data);
+  };
+  
+  next();
+});
+
+// Error instrumentation wrapper
+function withErrorInstrumentation(fn: (req: Request, res: Response) => Promise<void>) {
+  return async (req: Request, res: Response) => {
+    try {
+      await fn(req, res);
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      structuredLog({
+        correlationId: req.correlationId || 'unknown',
+        component: 'handler',
+        severity: 'error',
+        message: 'unhandled_error',
+        error: {
+          message: err.message,
+          stack: err.stack
+        },
+        metadata: {
+          path: req.path,
+          method: req.method
+        }
+      });
+      res.status(500).json({ success: false, errorCode: 'HANDLER_ERROR', correlationId: req.correlationId });
+    }
+  };
 }
 
 // Correlation ID middleware

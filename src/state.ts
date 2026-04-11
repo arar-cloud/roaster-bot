@@ -22,6 +22,28 @@ export interface ConflictResolutionStrategy {
   compareFn?: (local: StateSnapshot, remote: StateSnapshot) => StateSnapshot;
 }
 
+export interface Transaction {
+  id: string;
+  operations: StateOperation[];
+  status: 'pending' | 'committed' | 'rolled_back';
+  timestamp: number;
+  checksum?: string;
+}
+
+export interface StateOperation {
+  type: 'update' | 'delete' | 'create';
+  path: string;
+  value?: unknown;
+  previousValue?: unknown;
+}
+
+export interface AtomicWriteGuard {
+  locked: boolean;
+  transactionId?: string;
+  acquiredAt?: number;
+  timeout: number;
+}
+
 /**
  * Compute hash of state object for conflict detection
  */
@@ -35,6 +57,49 @@ export function computeStateHash(data: Record<string, unknown>): string {
     hash = hash & hash; // Convert to 32bit integer
   }
   return hash.toString(16);
+}
+
+/**
+ * Validate state consistency before mutations
+ * Ensures data integrity and prevents corrupt writes
+ */
+export function validateStateConsistency(snapshot: StateSnapshot, expectedHash?: string): boolean {
+  if (!snapshot || !snapshot.data || typeof snapshot.data !== 'object') {
+    return false;
+  }
+  if (expectedHash && computeStateHash(snapshot.data) !== expectedHash) {
+    return false;
+  }
+  if (snapshot.version.timestamp > Date.now() + 60000) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Atomic write guard to prevent concurrent mutations
+ * Uses simple locking mechanism for single-threaded Node.js
+ */
+const writeGuards = new Map<string, AtomicWriteGuard>();
+
+export function acquireWriteLock(stateId: string, transactionId: string, timeout: number = 30000): boolean {
+  if (writeGuards.has(stateId)) {
+    const guard = writeGuards.get(stateId)!;
+    if (guard.locked && Date.now() - (guard.acquiredAt || 0) < guard.timeout) {
+      return false;
+    }
+  }
+  writeGuards.set(stateId, { locked: true, transactionId, acquiredAt: Date.now(), timeout });
+  return true;
+}
+
+export function releaseWriteLock(stateId: string, transactionId: string): boolean {
+  const guard = writeGuards.get(stateId);
+  if (guard && guard.transactionId === transactionId) {
+    writeGuards.delete(stateId);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -177,6 +242,18 @@ export function createStateSnapshot(
       hash,
     },
   };
+}
+
+/**
+ * Pre-commit validation and conflict detection for transactions
+ * Ensures no conflicting writes occur before transaction commits
+ */
+export function validatePreCommit(snapshot: StateSnapshot, previousChecksum: string): boolean {
+  if (!validateStateConsistency(snapshot)) {
+    return false;
+  }
+  const currentChecksum = computeStateHash(snapshot.data);
+  return currentChecksum === previousChecksum;
 }
 
 /**
