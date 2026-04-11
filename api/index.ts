@@ -430,6 +430,33 @@ class TokenBucket {
 
 const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
 
+// Rate limiting configuration with backpressure handling
+function createRateLimiter(windowMs: number = 60000, maxRequests: number = 100, message: string = 'Too many requests') {
+  return rateLimit({
+    windowMs,
+    max: maxRequests,
+    message,
+    standardHeaders: true,
+    legacyHeaders: false,
+    handler: (req: any, res: any) => {
+      const retryAfter = Math.ceil(windowMs / 1000);
+      res.set('Retry-After', String(retryAfter));
+      res.status(429).json({
+        error: 'Too many requests',
+        retryAfter,
+        message: `Rate limit exceeded. Please retry after ${retryAfter} seconds.`
+      });
+    },
+    skip: (req: any) => {
+      // Skip rate limiting for health checks
+      return req.path === '/health' || req.path === '/ready';
+    }
+  });
+}
+
+const globalLimiter = createRateLimiter(60000, 1000, 'Global rate limit exceeded');
+const apiBusyLimiter = createRateLimiter(60000, 100, 'API rate limit exceeded');
+
 // Retry configuration with exponential backoff and circuit breaker
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_RESET_TIMEOUT = 60000; // 60 seconds
