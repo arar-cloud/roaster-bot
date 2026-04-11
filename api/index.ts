@@ -6,13 +6,18 @@ import { createClient, createCluster } from 'redis';
 
 // Initialize Redis cluster client for connection pooling and load distribution
 // Prevents connection pool exhaustion from unbounded client reuse
+// Pool config: min=5 connections for baseline throughput, max=50 for burst capacity
 const redisCluster = createCluster({
   rootNodes: [
     {
-        host: process.env.REDIS_HOST || 'localhost',
+      host: process.env.REDIS_HOST || 'localhost',
       port: parseInt(process.env.REDIS_PORT || '6379', 10),
     },
   ],
+  cluster: {
+    maxRedirections: 16,
+    retryDelayProvider: (retries: number) => Math.min(retries * 100, 3000),
+  },
   defaults: {
     socket: {
       reconnectStrategy: (retries: number) => {
