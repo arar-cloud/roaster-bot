@@ -10,6 +10,46 @@ interface RetryOptions {
   jitterFactor?: number;
 }
 
+// Connection pool manager for database connections
+class ConnectionPool {
+  private activeConnections: number = 0;
+  private readonly maxConnections: number;
+  private readonly waitQueue: Array<() => void> = [];
+
+  constructor(maxConnections: number = 10) {
+    this.maxConnections = maxConnections;
+  }
+
+  async acquireConnection(): Promise<void> {
+    if (this.activeConnections < this.maxConnections) {
+      this.activeConnections++;
+      return;
+    }
+    return new Promise((resolve) => {
+      this.waitQueue.push(() => {
+        this.activeConnections++;
+        resolve();
+      });
+    });
+  }
+
+  releaseConnection(): void {
+    this.activeConnections--;
+    const waiter = this.waitQueue.shift();
+    if (waiter) waiter();
+  }
+
+  getStats(): { active: number; max: number; waiting: number } {
+    return {
+      active: this.activeConnections,
+      max: this.maxConnections,
+      waiting: this.waitQueue.length
+    };
+  }
+}
+
+const connectionPool = new ConnectionPool(10);
+
 // Response cache for reducing redundant queries
 class ResponseCache {
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
@@ -257,6 +297,18 @@ function structuredLog(level: 'info' | 'warn' | 'error', traceId: string, messag
   console.log(JSON.stringify(logEntry));
 }
 
+// Async middleware wrapper with connection pool integration
+function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    await connectionPool.acquireConnection();
+    try {
+      await fn(req, res, next);
+    } finally {
+      connectionPool.releaseConnection();
+    }
+  };
+}
+
 // Request logging middleware with trace ID generation
 function loggingMiddleware(req: Request, res: Response, next: NextFunction): void {
   req.traceId = req.headers['x-trace-id'] as string || randomUUID();
@@ -339,7 +391,8 @@ class IdempotencyStore {
 
 export const idempotencyStore = new IdempotencyStore();
 
-// Circuit breaker for external service resilience
+// Circuit breaker for external service resilience (deprecated - use first CircuitBreaker class above)
+/*
 class CircuitBreaker {
   private state: 'closed' | 'open' | 'half-open' = 'closed';
   private failureCount: number = 0;
