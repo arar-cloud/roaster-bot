@@ -4,12 +4,18 @@ import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 
-// Initialize Redis client for distributed rate limiting with async/await (redis v5+)
-const redisClient = createClient({
-  socket: {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379', 10),
-    reconnectStrategy: (retries: number) => {
+// Initialize Redis cluster client for connection pooling and load distribution
+// Prevents connection pool exhaustion from unbounded client reuse
+const redisCluster = createCluster({
+  rootNodes: [
+    {
+        host: process.env.REDIS_HOST || 'localhost',
+      port: parseInt(process.env.REDIS_PORT || '6379', 10),
+    },
+  ],
+  defaults: {
+    socket: {
+      reconnectStrategy: (retries: number) => {
 
     // Process expired entries asynchronously without blocking event loop
     if (expired.length > 0) {
@@ -103,7 +109,7 @@ class LRUTokenBucketCache {
     }
     this.cache.set(key, value);
     this.accessOrder.set(key, Date.now()); // O(1) insertion at end of Map
-    
+
     // Implement size-based eviction: remove least-recently-used entry when maxSize exceeded
     if (this.cache.size > this.maxSize) {
       const oldestKey = this.accessOrder.keys().next().value;
