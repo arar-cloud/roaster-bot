@@ -10,8 +10,86 @@ declare global {
       traceId?: string;
       idempotencyKey?: string;
       startTime?: number;
+      clientId?: string;
+      rateLimiter?: TokenBucketLimiter;
+      connectionPool?: ConnectionPool;
     }
   }
+}
+
+// Middleware: Inject trace ID and client ID
+function traceMiddleware(req: any, res: any, next: any): void {
+  req.traceId = req.get('X-Trace-ID') || randomUUID();
+  req.clientId = req.get('X-Client-ID') || req.ip || 'unknown';
+  req.startTime = Date.now();
+  req.idempotencyKey = req.get('Idempotency-Key');
+  req.rateLimiter = getRateLimiter(req.clientId, req.traceId);
+  const pool = new ConnectionPool(req.traceId, { requestTimeoutMs: 30000 });
+  req.connectionPool = pool;
+  res.set('X-Trace-ID', req.traceId);
+  next();
+}
+
+// Middleware: Rate limiting enforcement
+function rateLimitMiddleware(req: any, res: any, next: any): void {
+  const limiter = req.rateLimiter as TokenBucketLimiter;
+  const result = limiter.tryAcquire(1);
+
+  if (!result.allowed) {
+    structuredLog('warn', req.traceId, 'Rate limit exceeded', { clientId: req.clientId, retryAfterMs: result.retryAfterMs });
+    const errorResponse = createErrorResponse('RATE_LIMITED', 'Rate limit exceeded', req.traceId);
+    res.set('Retry-After', Math.ceil((result.retryAfterMs || 1000) / 1000).toString());
+    res.status(429).json(errorResponse);
+    return;
+  }
+  next();
+}
+
+// Middleware: Idempotency key check for write operations
+function idempotencyMiddleware(req: any, res: any, next: any): void {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    next();
+    return;
+  }
+
+  const idempotencyKey = req.idempotencyKey;
+  if (!idempotencyKey) {
+    structuredLog('warn', req.traceId, 'Missing idempotency key for write operation', { method: req.method });
+  } else {
+    const existing = idempotencyStore.getIfExists(idempotencyKey);
+    if (existing) {
+      structuredLog('info', req.traceId, 'Returning cached response for idempotent request', { idempotencyKey });
+      res.status(existing.responseCode).json(existing.response);
+      return;
+    }
+  }
+  next();
+}
+
+// Middleware: Health check and ready probe endpoints
+function healthCheckMiddleware(req: any, res: any, next: any): void {
+  if (req.path === '/health') {
+    const uptime = Date.now() - healthState.startTime;
+    res.status(200).json({
+      status: 'alive',
+      uptime,
+      traceId: req.traceId
+    });
+    return;
+  }
+
+  if (req.path === '/ready') {
+    const status = getHealthStatus();
+    const statusCode = status.ready ? 200 : 503;
+    res.status(statusCode).json({
+      ready: status.ready,
+      reason: status.reason,
+      traceId: req.traceId
+    });
+    return;
+  }
+
+  next();
 }
 
 // Structured logging utilities
@@ -778,19 +856,19 @@ export const queryCache = new QueryCache();
 
 /**
  * Exponential backoff retry with circuit breaker integration
- * 
+ *
  * Implements resilient retry logic for external service calls:
  * - Exponential backoff: 100ms * 2^attempt, capped at 5s
  * - Circuit breaker: Opens after 5 consecutive failures, re-attempts after 60s
  * - Max retries: 3 attempts (configurable)
  * - Trace ID: Logs all retry attempts with trace ID for debugging
- * 
+ *
  * Failure modes and recovery:
  * - If circuit breaker is open: Throws immediately without retrying
  * - If all retries exhausted: Throws last encountered error
  * - On transient failures (timeout, 5xx): Retries with backoff
  * - On permanent failures (4xx): Fails immediately
- * 
+ *
  * @param fn The async function to retry
  * @param serviceName Identifier for circuit breaker state tracking
  * @param traceId Request trace ID for logging correlation
@@ -1031,22 +1109,22 @@ function idempotencyMiddleware(req: Request, res: Response, next: NextFunction):
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return next();
   }
-  
+
   const idempotencyKey = req.headers['idempotency-key'] as string;
   if (!idempotencyKey) {
     return next();
   }
-  
+
   req.idempotencyKey = idempotencyKey;
   const cacheKey = `${req.method}:${req.path}:${idempotencyKey}`;
-  
+
   // Check for cached response
   const cached = idempotencyCache.get(cacheKey);
   if (cached) {
     structuredLog('info', req.traceId || 'unknown', 'idempotency_cache_hit', { cacheKey });
     return res.status(cached.statusCode).json(cached.responseBody);
   }
-  
+
   // Intercept response to cache it
   const originalSend = res.send.bind(res);
   res.send = function(data: any) {
@@ -1059,7 +1137,7 @@ function idempotencyMiddleware(req: Request, res: Response, next: NextFunction):
     });
     return originalSend(data);
   };
-  
+
   next();
 }
 
@@ -1094,11 +1172,11 @@ function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => P
         path: req.path,
         method: req.method
       });
-      
+
       if (error instanceof ValidationError) {
         return res.status(400).json(createErrorResponse(400, 'Validation failed', [error]));
       }
-      
+
       res.status(500).json(createErrorResponse(500, 'Internal server error', [{
         field: 'server',
         message: 'An unexpected error occurred. Please retry or contact support.'
@@ -1115,15 +1193,15 @@ const GRACEFUL_SHUTDOWN_TIMEOUT = 30000; // 30 seconds
 // Connection tracking middleware
 function connectionTrackingMiddleware(req: Request, res: Response, next: NextFunction): void {
   activeConnections++;
-  
+
   res.on('finish', () => {
     activeConnections--;
   });
-  
+
   if (isShuttingDown) {
     res.set('Connection', 'close');
   }
-  
+
   next();
 }
 
@@ -1137,7 +1215,7 @@ function setupHealthChecks(expressApp: any): void {
       uptime: process.uptime()
     });
   });
-  
+
   // Readiness probe - full service readiness
   expressApp.get('/ready', (req: Request, res: Response) => {
     if (isShuttingDown) {
@@ -1146,7 +1224,7 @@ function setupHealthChecks(expressApp: any): void {
         message: 'Service is gracefully shutting down'
       });
     }
-    
+
     res.status(200).json({
       status: 'ready',
       timestamp: new Date().toISOString(),
@@ -1158,14 +1236,14 @@ function setupHealthChecks(expressApp: any): void {
 // Graceful shutdown handler
 function setupGracefulShutdown(expressApp: any): void {
   const signals = ['SIGTERM', 'SIGINT'];
-  
+
   signals.forEach(signal => {
     process.on(signal, () => {
       const traceId = randomUUID();
       structuredLog('info', traceId, 'shutdown_signal_received', { signal });
-      
+
       isShuttingDown = true;
-      
+
       // Stop accepting new requests
       expressApp.use((req: Request, res: Response) => {
         res.status(503).json({
@@ -1173,13 +1251,13 @@ function setupGracefulShutdown(expressApp: any): void {
           message: 'Please retry your request'
         });
       });
-      
+
       // Wait for active connections to drain
       const shutdownTimeout = setTimeout(() => {
         structuredLog('warn', traceId, 'graceful_shutdown_timeout', { activeConnections });
         process.exit(1);
       }, GRACEFUL_SHUTDOWN_TIMEOUT);
-      
+
       // Check if all connections are done
       const checkConnections = setInterval(() => {
         if (activeConnections === 0) {
