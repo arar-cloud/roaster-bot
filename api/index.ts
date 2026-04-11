@@ -428,6 +428,59 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
+// Idempotency key tracking for request deduplication
+interface IdempotencyEntry {
+  response: any;
+  statusCode: number;
+  timestamp: number;
+}
+
+class IdempotencyKeyTracker {
+  private cache: Map<string, IdempotencyEntry> = new Map();
+  private readonly maxAgeMs: number;
+  private readonly maxCacheSize: number;
+
+  constructor(maxAgeMs: number = 3600000, maxCacheSize: number = 10000) {
+    this.maxAgeMs = maxAgeMs;
+    this.maxCacheSize = maxCacheSize;
+  }
+
+  has(idempotencyKey: string): boolean {
+    const entry = this.cache.get(idempotencyKey);
+    if (!entry) return false;
+
+    if (Date.now() - entry.timestamp > this.maxAgeMs) {
+      this.cache.delete(idempotencyKey);
+      return false;
+    }
+
+    return true;
+  }
+
+  get(idempotencyKey: string): IdempotencyEntry | null {
+    if (!this.has(idempotencyKey)) return null;
+    return this.cache.get(idempotencyKey) || null;
+  }
+
+  set(idempotencyKey: string, response: any, statusCode: number): void {
+    if (this.cache.size >= this.maxCacheSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(idempotencyKey, {
+      response,
+      statusCode,
+      timestamp: Date.now()
+    });
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+export const idempotencyKeyTracker = new IdempotencyKeyTracker();
+
 // Idempotency key middleware for state-changing operations
 export const idempotencyMiddleware = (req: any, res: any, next: any) => {
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
