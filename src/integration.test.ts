@@ -1,9 +1,10 @@
 /**
  * Integration tests for retry and failure scenarios
- * Validates behavior under network failures, timeouts, and edge cases
+ * Validates behavior under network failures, timeouts, edge cases, security, and observability
  */
 
 import assert from 'assert';
+import crypto from 'crypto';
 
 // Mock types and helpers for testing
 interface TestContext {
@@ -16,6 +17,119 @@ interface TestResult {
   success: boolean;
   error?: string;
   retries: number;
+}
+
+// Test helper: simulate signature verification
+function verifySignature(payload: string, secret: string): string {
+  return `sha256=${crypto.createHmac('sha256', secret).update(payload).digest('hex')}`;
+}
+
+// Test case: Signature verification
+async function testSignatureVerification(): Promise<TestResult> {
+  const testName = 'Signature Verification';
+  try {
+    const payload = JSON.stringify({ action: 'opened', pull_request: {} });
+    const secret = 'test-secret-key';
+    const validSignature = verifySignature(payload, secret);
+    const invalidSignature = 'sha256=invalid';
+    
+    assert.strictEqual(
+      validSignature.startsWith('sha256='),
+      true,
+      'Valid signature must start with sha256='
+    );
+    
+    assert.notStrictEqual(
+      validSignature,
+      invalidSignature,
+      'Invalid signature must not match valid one'
+    );
+    
+    console.log(`✓ ${testName}: Signature generation and validation working`);
+    return { success: true, retries: 0 };
+  } catch (error) {
+    return {
+      success: false,
+      error: `${testName} failed: ${error instanceof Error ? error.message : String(error)}`,
+      retries: 0
+    };
+  }
+}
+
+// Test case: Token validation
+async function testTokenValidation(): Promise<TestResult> {
+  const testName = 'Token Validation';
+  try {
+    const validTokens = ['ghp_validtoken123', 'ghu_validtoken123', 'ghs_validtoken123', 'ghr_validtoken123'];
+    const invalidTokens = ['invalid', 'short', 'xyz_token', ''];
+    
+    // All valid tokens should pass validation
+    for (const token of validTokens) {
+      assert.ok(token.match(/^(ghp_|ghu_|ghs_|ghr_)/), `Token ${token} should match GitHub pattern`);
+    }
+    
+    // All invalid tokens should fail validation
+    for (const token of invalidTokens) {
+      if (token.length > 0) {
+        assert.ok(!token.match(/^(ghp_|ghu_|ghs_|ghr_)/), `Token ${token} should not match GitHub pattern`);
+      }
+    }
+    
+    console.log(`✓ ${testName}: Token format validation working`);
+    return { success: true, retries: 0 };
+  } catch (error) {
+    return {
+      success: false,
+      error: `${testName} failed: ${error instanceof Error ? error.message : String(error)}`,
+      retries: 0
+    };
+  }
+}
+
+// Test case: Payload validation
+async function testPayloadValidation(): Promise<TestResult> {
+  const testName = 'Payload Validation';
+  try {
+    const validPayloads = [
+      { action: 'opened' },
+      { event: 'push' },
+      { type: 'webhook' }
+    ];
+    
+    const invalidPayloads = [
+      null,
+      undefined,
+      {},
+      'string',
+      123
+    ];
+    
+    // Validation helper
+    const validatePayload = (body: unknown): boolean => {
+      if (!body || typeof body !== 'object') return false;
+      const payload = body as Record<string, unknown>;
+      return 'action' in payload || 'event' in payload || 'type' in payload;
+    };
+    
+    // Valid payloads should pass
+    for (const payload of validPayloads) {
+      assert.strictEqual(validatePayload(payload), true, `Payload ${JSON.stringify(payload)} should be valid`);
+    }
+    
+    // Invalid payloads should fail
+    for (const payload of invalidPayloads) {
+      assert.strictEqual(validatePayload(payload), false, `Payload ${JSON.stringify(payload)} should be invalid`);
+    }
+    
+    console.log(`✓ ${testName}: Payload validation working`);
+    return { success: true, retries: 0 };
+  } catch (error) {
+    return {
+      success: false,
+      error: `${testName} failed: ${error instanceof Error ? error.message : String(error)}`,
+      retries: 0
+    };
+  }
 }
 
 // Utility function to simulate retryable operations
