@@ -10,6 +10,53 @@ interface RetryOptions {
   jitterFactor?: number;
 }
 
+// Response cache for reducing redundant queries
+class ResponseCache {
+  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private readonly DEFAULT_TTL_MS = 60000; // 60 seconds default TTL
+
+  generateKey(endpoint: string, params: Record<string, any>): string {
+    return `${endpoint}:${JSON.stringify(params)}`;
+  }
+
+  get(key: string, ttlMs: number = this.DEFAULT_TTL_MS): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    const age = Date.now() - entry.timestamp;
+    if (age > ttlMs) {
+      this.cache.delete(key);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  set(key: string, data: any): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+  }
+
+  invalidate(pattern?: string): void {
+    if (!pattern) {
+      this.cache.clear();
+      return;
+    }
+    // Invalidate keys matching pattern
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  getStats(): { size: number; entries: string[] } {
+    return {
+      size: this.cache.size,
+      entries: Array.from(this.cache.keys())
+    };
+  }
+}
+
 // Batch query executor to prevent N+1 queries
 class BatchQueryExecutor {
   private queryBatch: Array<{ id: string; query: () => Promise<any>; resolve: (v: any) => void; reject: (e: any) => void }> = [];
