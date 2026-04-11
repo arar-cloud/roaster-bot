@@ -32,7 +32,32 @@ export class StructuredLogger {
     }));
   }
 
-  error(operation: string, error: Error, metadata?: Record<string, unknown>): void {
+  error(operation: string, error: Error | unknown, metadata?: Record<string, unknown>): void {
+    const err = error instanceof Error ? error : new Error(String(error));
+    const errorContext = {
+      errorName: err.name,
+      errorMessage: err.message,
+      errorStack: err.stack,
+      // Include cause if available (Error.cause in Node.js 16.9+)
+      errorCause: (err as any).cause ? String((err as any).cause) : undefined,
+    };
+    console.error(JSON.stringify({
+      level: 'ERROR',
+      ...this.context,
+      operation,
+      ...errorContext,
+      metadata,
+      timestamp: Date.now(),
+    }));
+  }
+
+  warn(operation: string, message: string, metadata?: Record<string, unknown>): void {
+    console.warn(JSON.stringify({
+      level: 'WARN',
+      ...this.context,
+      operation,
+      message,
+      metadata, Record<string, unknown>): void {
     console.error(JSON.stringify({
       level: 'ERROR',
       ...this.context,

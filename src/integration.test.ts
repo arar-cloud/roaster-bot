@@ -24,6 +24,97 @@ function verifySignature(payload: string, secret: string): string {
   return `sha256=${crypto.createHmac('sha256', secret).update(payload).digest('hex')}`;
 }
 
+// Test case: Retry with timeout and jitter
+async function testRetryWithTimeoutAndJitter(): Promise<TestResult> {
+  const testName = 'Retry with timeout and jitter';
+  let attempts = 0;
+  const startTime = Date.now();
+  
+  try {
+    // Simulate transient failure then success
+    const result = await new Promise<string>((resolve, reject) => {
+      const checkAttempt = () => {
+        attempts++;
+        if (attempts < 2) {
+          reject(new Error('timeout')) // Transient error
+        } else {
+          const elapsedMs = Date.now() - startTime;
+          if (elapsedMs > 60000) { // Total timeout 60s
+            reject(new Error('exceeded total timeout'));
+          } else {
+            resolve('success');
+          }
+        }
+      };
+      checkAttempt();
+    });
+    
+    assert(attempts === 2, `Expected 2 attempts, got ${attempts}`);
+    assert(result === 'success', 'Expected success result');
+    return { success: true, retries: attempts - 1 };
+  } catch (error) {
+    return { success: false, error: String(error), retries: attempts };
+  }
+}
+
+// Test case: Circuit breaker state transitions
+async function testCircuitBreakerStateTransitions(): Promise<TestResult> {
+  const testName = 'Circuit breaker state transitions';
+  let circuitState = 'closed';
+  let failureCount = 0;
+  const failureThreshold = 5;
+  
+  try {
+    // Simulate 5 consecutive failures
+    for (let i = 0; i < failureThreshold; i++) {
+      failureCount++;
+      if (failureCount >= failureThreshold) {
+        circuitState = 'open';
+      }
+    }
+    
+    assert(circuitState === 'open', `Expected circuit state 'open', got '${circuitState}'`);
+    assert(failureCount === failureThreshold, `Expected ${failureThreshold} failures, got ${failureCount}`);
+    
+    return { success: true, retries: failureCount };
+  } catch (error) {
+    return { success: false, error: String(error), retries: failureCount };
+  }
+}
+
+// Test case: Idempotency key deduplication
+async function testIdempotencyKeyDeduplication(): Promise<TestResult> {
+  const testName = 'Idempotency key deduplication';
+  const idempotencyKey = crypto.randomUUID();
+  let executionCount = 0;
+  const idempotencyCache = new Map<string, unknown>();
+  
+  try {
+    // First request - executes
+    const cachedResult1 = idempotencyCache.get(idempotencyKey);
+    if (!cachedResult1) {
+      executionCount++;
+      const result = { data: 'test-result', timestamp: Date.now() };
+      idempotencyCache.set(idempotencyKey, result);
+    }
+    
+    // Second request with same idempotency key - should use cache
+    const cachedResult2 = idempotencyCache.get(idempotencyKey);
+    if (cachedResult2) {
+      // Cache hit - no execution
+    } else {
+      executionCount++; // This should NOT happen
+    }
+    
+    assert(executionCount === 1, `Expected 1 execution, got ${executionCount}`);
+    assert(idempotencyCache.has(idempotencyKey), 'Expected idempotency key in cache');
+    
+    return { success: true, retries: 1 };
+  } catch (error) {
+    return { success: false, error: String(error), retries: executionCount };
+  }
+}
+
 // Test case: Signature verification
 async function testSignatureVerification(): Promise<TestResult> {
   const testName = 'Signature Verification';

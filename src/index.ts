@@ -5,7 +5,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
-// Retry utility with exponential backoff
+// Retry utility with exponential backoff, jitter, timeouts, and enhanced logging
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
@@ -15,7 +15,29 @@ async function retryWithBackoff<T>(
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      return await fn();
+        idempotencyStore.set(`validate-token:${idempotencyKey}`, result);
+      console.log(JSON.stringify({
+        level: 'INFO',
+        type: 'TOKEN_VALIDATED',
+        operation: 'validate-token',
+        idempotencyKey,
+      }));
+      return res.json(result);
+    } else {
+      const result = { error: 'GitHub API error', statusCode: response.status };
+      idempotencyStore.set(`validate-token:${idempotencyKey}`, result);
+      return res.status(500).json(result);
+    }
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error(JSON.stringify({
+      level: 'ERROR',
+      type: 'TOKEN_VALIDATION_ERROR',
+      operation: 'validate-token',
+      idempotencyKey,
+      errorMessage: errorMsg,
+      errorStack: error instanceof Error ? error.stack : undefined,
+    }));return await fn();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt < maxRetries) {
@@ -55,7 +77,50 @@ class StructuredLogger {
       level,
       requestId: this.requestId,
       operation,
-      message,
+      message,const startTime = Date.now();
+  const operationContext = { operation, requestId: crypto.randomUUID(), startTime: new Date().toISOString() };
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const elapsedMs = Date.now() - startTime;
+    if (elapsedMs > totalTimeoutMs) {
+      const timeoutError = new Error(`${operation} exceeded total timeout of ${totalTimeoutMs}ms after ${attempt} attempts`);
+      console.error(JSON.stringify({
+        level: 'ERROR',
+        type: 'OPERATION_TIMEOUT',
+        ...operationContext,
+        attempt: attempt + 1,
+        elapsedMs,
+        errorMessage: timeoutError.message,
+        errorStack: timeoutError.stack,
+      }));
+      throw timeoutError;
+    }
+
+    try {
+      const attemptStartMs = Date.now();
+      // Per-attempt timeout: use remaining total timeout or default
+      const attemptTimeoutMs = Math.min(10000, totalTimeoutMs - elapsedMs); // 10s per attempt
+      const result = await Promise.race([
+        fn(),
+        new Promise<T>((_, reject) =>
+          setTimeout(() => reject(new Error(`Attempt timeout after ${attemptTimeoutMs}ms`)), attemptTimeoutMs)
+        ),
+      ]);
+      const attemptDurationMs = Date.now() - attemptStartMs;
+      console.log(JSON.stringify({
+        level: 'INFO',
+        type: 'OPERATION_SUCCESS',
+        ...operationContext,
+        attempt: attempt) + 1,
+        attemptDurationMs,
+        totalElapsedMs: Date.now() - startTime,
+      }));
+      return result;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const isTransient = isTransientError(lastError);
+      const errorContext = createErrorContext(attempt, maxRetries, operation, lastError);
+
       ...metadata
     }));
   }
@@ -67,6 +132,100 @@ class StructuredLogger {
   }
   error(operation: string, message: string, metadata?: Record<string, unknown>): void {
     this.log('ERROR', operation, message, metadata);
+  }
+}
+
+// Circuit breaker states
+type CircuitState = 'closed' | 'open' | 'half-open';
+
+// Circuit breaker and bulkhead implementation for external API calls
+class CircuitBreaker {
+  private state: CircuitState = 'closed';
+  private failureCount = 0;
+  private successCount = 0;
+  private lastFailureTime: number | null = null;
+  private readonly failureThreshold = 5;
+  private readonly successThreshold = 2;
+  private readonly resetTimeoutMs = 30000; // 30s
+  private activeRequests = 0;
+  private readonly maxConcurrency = 10; // Bulkhead: max concurrent requests
+  private readonly name: string;
+
+  constructor(name: string = 'api-circuit') {
+    this.name = name;
+  }
+
+  async executeAsync<T>(fn: () => Promise<T>, operationName: string = 'operation'): Promise<T> {
+    // Check if circuit should reset
+    if (this.state === 'open' && this.lastFailureTime) {
+      if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
+        this.state = 'half-open';
+        this.successCount = 0;
+        console.info(`[CIRCUIT] ${this.name} transitioning to half-open state`);
+      }
+    }
+
+    // Reject if open
+    if (this.state === 'open') {
+      const error = new Error(`Circuit breaker ${this.name} is OPEN - rejecting request`);
+      console.warn(`[CIRCUIT] ${this.name} is open, rejecting operation: ${operationName}`);
+      throw error;
+    }
+
+    // Bulkhead: enforce max concurrency
+    if (this.activeRequests >= this.maxConcurrency) {
+      const error = new Error(`Circuit breaker ${this.name} bulkhead limit (${this.maxConcurrency}) exceeded`);
+      console.warn(`[CIRCUIT] ${this.name} bulkhead limit reached, rejecting operation: ${operationName}`);
+      throw error;
+    }
+
+    this.activeRequests++;
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (error) {
+      this.onFailure();
+      throw error;
+    } finally {
+      this.activeRequests--;
+    }
+  }
+
+  private onSuccess(): void {
+    if (this.state === 'half-open') {
+      this.successCount++;
+      if (this.successCount >= this.successThreshold) {
+        this.state = 'closed';
+        this.failureCount = 0;
+        this.successCount = 0;
+        this.lastFailureTime = null;
+        console.info(`[CIRCUIT] ${this.name} circuit CLOSED after successful recovery`);
+      }
+    } else if (this.state === 'closed') {
+      this.failureCount = 0;
+    }
+  }
+
+  private onFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = 'open';
+      console.error(`[CIRCUIT] ${this.name} circuit OPEN after ${this.failureCount} failures`);
+    }
+  }
+
+  getState(): CircuitState {
+    return this.state;
+  }
+
+  getMetrics(): { state: CircuitState; failureCount: number; activeRequests: number } {
+    return {
+      state: this.state,
+      failureCount: this.failureCount,
+      activeRequests: this.activeRequests
+    };
   }
 }
 
@@ -112,6 +271,59 @@ try {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Track in-flight requests for graceful shutdown
+let inFlightRequests = 0;
+let isShuttingDown = false;
+
+app.use((req: Request, res: Response, next) => {
+  if (isShuttingDown) {
+    res.status(503).json({ error: 'Server is shutting down' });
+    return;
+  }
+  inFlightRequests++;
+  res.on('finish', () => {
+    inFlightRequests--;
+  });
+  next();
+});
+
+// Initialize circuit breaker for CopilotClient calls
+const copilotCircuitBreaker = new CircuitBreaker('copilot-client');
+
+// Idempotency key cache to prevent duplicate operations
+class IdempotencyKeyStore {
+  private store = new Map<string, { result: unknown; timestamp: number }>();
+  private readonly ttlMs = 300000; // 5 minutes
+
+  set(key: string, result: unknown): void {
+    this.store.set(key, { result, timestamp: Date.now() });
+    if (this.store.size % 1000 === 0) {
+      this.cleanup();
+    }
+  }
+
+  get(key: string): unknown | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry.result;
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store.entries()) {
+      if (now - entry.timestamp > this.ttlMs) {
+        this.store.delete(key);
+      }
+    }
+  }
+}
+
+const idempotencyStore = new IdempotencyKeyStore();
+
 // Apply security middleware
 app.use(helmet());
 app.use((req: Request, res: Response, next) => {
@@ -139,6 +351,18 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req: Request, res: Response) => {
+    const retryAfterSec = Math.ceil(req.rateLimit!.resetTime / 1000 - Date.now() / 1000);
+    res.set('Retry-After', Math.max(1, retryAfterSec).toString());
+    res.status(429).json({
+      error: 'Too many requests, please retry later',
+      retryAfter: Math.max(1, retryAfterSec),
+      resetTime: new Date(req.rateLimit!.resetTime).toISOString(),
+    });
+  },
+  skip: (req: Request) => {
+    return req.path === '/health' || req.path === '/ready';
+  },
 });
 
 // Input validation helper
@@ -172,6 +396,13 @@ app.get('/', limiter, (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // Extract or generate idempotency key for deduplication
+  const idempotencyKey = req.get('Idempotency-Key') || crypto.randomUUID();
+  const cachedResult = idempotencyStore.get(idempotencyKey);
+  if (cachedResult) {
+    console.log(`[DEDUP] Returning cached result for idempotency key: ${idempotencyKey}`);
+    return res.status(200).json(cachedResult);
+  }
   // Webhook signature verification with strict HMAC-SHA256 validation
   try {
     const signature = req.get('X-Hub-Signature-256');
@@ -200,7 +431,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       console.warn('[SECURITY] Webhook signature mismatch - rejecting request');
       return res.status(401).json({ error: 'Invalid signature' });
     }
-    
+
     console.info('[SECURITY] Webhook signature verified successfully');
   } catch (err) {
     console.error('[ERROR] Signature verification failed:', err);
@@ -217,12 +448,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -231,31 +462,31 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const requestId = req.headers['x-request-id'] as string || crypto.randomUUID();
     const logger = new StructuredLogger(requestId);
-    
+
     // Validate webhook payload structure
     if (!validateWebhookPayload(req.body)) {
       logger.warn('parse_validation', 'Invalid webhook payload structure', { body: req.body });
       return res.status(400).json({ error: 'Invalid webhook payload' });
     }
-    
+
     // Extract and validate user messages
     const userMessages = req.body?.messages || req.body?.content || [];
     if (!Array.isArray(userMessages)) {
       logger.warn('parse_validation', 'userMessages is not an array', { userMessages });
       return res.status(400).json({ error: 'Invalid messages format' });
     }
-    
+
     if (userMessages.length === 0) {
       logger.warn('parse_validation', 'No messages provided', {});
       return res.status(400).json({ error: 'No messages to process' });
     }
-    
+
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     if (!lastMessage) {
       logger.warn('parse_validation', 'No user message found in payload', { messageCount: userMessages.length });
       return res.status(400).json({ error: 'No user message found' });
     }
-    
+
     const prompt = lastMessage.content || "Roast me.";
 
     // Create session with retry logic for transient failures
@@ -324,12 +555,12 @@ const server = app.listen(port, () => {
 // Graceful shutdown handler
 function gracefulShutdown(signal: string): void {
   console.log(`[SHUTDOWN] Received ${signal}, starting graceful shutdown`);
-  
+
   server.close(() => {
     console.log('[SHUTDOWN] HTTP server closed');
     process.exit(0);
   });
-  
+
   // Force shutdown after 30 seconds
   setTimeout(() => {
     console.error('[SHUTDOWN] Forced shutdown after timeout');
