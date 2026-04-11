@@ -220,11 +220,12 @@ class CircuitBreaker {
     return this.state;
   }
 
-  getMetrics(): { state: CircuitState; failureCount: number; activeRequests: number } {
+  getMetrics(): { state: CircuitState; failureCount: number; activeRequests: number; maxConcurrency: number } {
     return {
       state: this.state,
       failureCount: this.failureCount,
-      activeRequests: this.activeRequests
+      activeRequests: this.activeRequests,
+      maxConcurrency: this.maxConcurrency
     };
   }
 }
@@ -287,6 +288,53 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+const server = app.listen(port, () => {
+  console.log(JSON.stringify({
+    level: 'INFO',
+    type: 'SERVER_STARTED',
+    port,
+    timestamp: new Date().toISOString(),
+  }));
+});
+
+// Graceful shutdown on SIGTERM
+process.on('SIGTERM', () => {
+  console.log(JSON.stringify({
+    level: 'INFO',
+    type: 'SIGTERM_RECEIVED',
+    timestamp: new Date().toISOString(),
+    inFlightRequests,
+  }));
+  isShuttingDown = true;
+  
+  // Give in-flight requests 30 seconds to complete
+  const shutdownTimeoutMs = 30000;
+  const shutdownStart = Date.now();
+  
+  const drainInterval = setInterval(() => {
+    const elapsedMs = Date.now() - shutdownStart;
+    console.log(JSON.stringify({
+      level: 'INFO',
+      type: 'SHUTDOWN_DRAINING',
+      inFlightRequests,
+      elapsedMs,
+      maxWaitMs: shutdownTimeoutMs,
+    }));
+    
+    if (inFlightRequests === 0 || elapsedMs > shutdownTimeoutMs) {
+      clearInterval(drainInterval);
+      server.close(() => {
+        console.log(JSON.stringify({
+          level: 'INFO',
+          type: 'SERVER_CLOSED',
+          timestamp: new Date().toISOString(),
+        }));
+        process.exit(0);
+      });
+    }
+  }, 1000);
+});
+
 // Initialize circuit breaker for CopilotClient calls
 const copilotCircuitBreaker = new CircuitBreaker('copilot-client');
 
@@ -344,6 +392,29 @@ app.use((req: Request, res: Response, next) => {
     }
   });
   next();
+});
+
+// Health check and readiness probe endpoints
+app.get('/health', (req: Request, res: Response) => {
+  const circuitMetrics = copilotCircuitBreaker.getMetrics();
+  const status = circuitMetrics.state === 'closed' ? 'healthy' : 'degraded';
+  res.status(circuitMetrics.state === 'closed' ? 200 : 503).json({
+    status,
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    circuitBreaker: circuitMetrics,
+  });
+});
+
+app.get('/ready', (req: Request, res: Response) => {
+  const circuitMetrics = copilotCircuitBreaker.getMetrics();
+  // Readiness: circuit breaker not open and concurrency not saturated
+  const isReady = circuitMetrics.state !== 'open' && circuitMetrics.activeRequests < circuitMetrics.maxConcurrency * 0.8;
+  res.status(isReady ? 200 : 503).json({
+    ready: isReady,
+    timestamp: new Date().toISOString(),
+    circuitBreaker: circuitMetrics,
+  });
 });
 
 const limiter = rateLimit({
