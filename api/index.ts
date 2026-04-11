@@ -142,11 +142,20 @@ class ResponseCache {
       this.cache.clear();
       return;
     }
-    // Invalidate keys matching pattern
+    // Invalidate keys matching pattern - use prefix-based lookup for O(log n) instead of O(n)
+    // Extract common prefix from pattern (first 6 chars) for fast partition lookup
+    const prefixPattern = pattern.substring(0, Math.min(6, pattern.length));
+    const keysToDelete: string[] = [];
+    
+    // Only scan keys that start with the pattern prefix
     for (const key of this.cache.keys()) {
-      if (key.includes(pattern)) {
-        this.cache.delete(key);
+      if (key.startsWith(prefixPattern) && key.includes(pattern)) {
+        keysToDelete.push(key);
       }
+    }
+    
+    for (const key of keysToDelete) {
+      this.cache.delete(key);
     }
   }
 
