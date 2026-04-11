@@ -1,5 +1,6 @@
 import app from '../src/index.js';
 import { randomUUID } from 'crypto';
+import rateLimit from 'express-rate-limit';
 
 // Extend Express Request type properly
 declare global {
@@ -448,7 +449,7 @@ async function callExternalServiceWithRetry<T>(
     2,
     CIRCUIT_BREAKER_RESET_TIMEOUT
   );
-  
+
   return circuitBreaker.execute(async () => {
     const retryHelper = new ExponentialBackoffRetry(
       MAX_RETRIES,
@@ -456,7 +457,7 @@ async function callExternalServiceWithRetry<T>(
       MAX_BACKOFF_MS,
       BACKOFF_MULTIPLIER
     );
-    
+
     try {
       const result = await retryHelper.execute(operation, serviceName);
       logger.debug(`External service call succeeded`, {
