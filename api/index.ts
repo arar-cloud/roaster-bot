@@ -10,7 +10,6 @@ const redisClient = createClient({
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
     reconnectStrategy: (retries: number) => {
-    const expired = this.timeoutHeap.popExpired(now);
 
     // Process expired entries asynchronously without blocking event loop
     if (expired.length > 0) {
@@ -22,10 +21,20 @@ const redisClient = createClient({
         return new Error('Redis unavailable');
       }
       return Math.min(retries * 100, 3000);
-      }
-    });
+    }
   },
 });
+
+// Connect Redis client and handle initialization errors
+(async () => {
+  try {
+    await redisClient.connect();
+    console.log('Redis client connected successfully');
+  } catch (error) {
+    console.error('Failed to connect Redis client:', error);
+    process.exit(1);
+  }
+})();
 
 // LRU cache for token bucket entries with TTL-based eviction
 class LRUTokenBucketCache {
