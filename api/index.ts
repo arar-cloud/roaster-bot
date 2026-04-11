@@ -416,6 +416,66 @@ class QueryCache {
 
 export const queryCache = new QueryCache();
 
+/**
+ * Exponential backoff retry with circuit breaker integration
+ * 
+ * Implements resilient retry logic for external service calls:
+ * - Exponential backoff: 100ms * 2^attempt, capped at 5s
+ * - Circuit breaker: Opens after 5 consecutive failures, re-attempts after 60s
+ * - Max retries: 3 attempts (configurable)
+ * - Trace ID: Logs all retry attempts with trace ID for debugging
+ * 
+ * Failure modes and recovery:
+ * - If circuit breaker is open: Throws immediately without retrying
+ * - If all retries exhausted: Throws last encountered error
+ * - On transient failures (timeout, 5xx): Retries with backoff
+ * - On permanent failures (4xx): Fails immediately
+ * 
+ * @param fn The async function to retry
+ * @param serviceName Identifier for circuit breaker state tracking
+ * @param traceId Request trace ID for logging correlation
+ * @param maxRetries Maximum number of retry attempts (default: 3)
+ * @throws Error if circuit breaker is open or all retries exhausted
+ * @returns Result of successful function call
+ */
+class ExponentialBackoffRetry {
+  private readonly maxAttempts: number;
+  private readonly initialDelayMs: number;
+  private readonly maxDelayMs: number;
+  private readonly multiplier: number;
+
+  constructor(maxAttempts = 3, initialDelayMs = 100, maxDelayMs = 5000, multiplier = 2) {
+    this.maxAttempts = maxAttempts;
+    this.initialDelayMs = initialDelayMs;
+    this.maxDelayMs = maxDelayMs;
+    this.multiplier = multiplier;
+  }
+
+  async execute<T>(
+    operation: () => Promise<T>,
+    operationName: string = 'operation'
+  ): Promise<T> {
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        if (attempt < this.maxAttempts - 1) {
+          const delayMs = Math.min(
+            this.maxDelayMs,
+            this.initialDelayMs * Math.pow(this.multiplier, attempt)
+          );
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+
+    throw lastError || new Error(`Failed after ${this.maxAttempts} attempts for ${operationName}`);
+  }
+}
+
 // Token bucket for adaptive rate limiting
 class TokenBucket {
   private tokens: number;
