@@ -4,10 +4,73 @@
  * for web, mobile, and backend components
  */
 
+export interface LogContext {
+  traceId: string;
+  operation: string;
+  platform?: string;
+  timestamp: number;
+  metadata?: Record<string, unknown>;
+}
+
+export class StructuredLogger {
+  private context: LogContext;
+
+  constructor(traceId: string) {
+    this.context = {
+      traceId,
+      operation: 'unknown',
+      timestamp: Date.now(),
+    };
+  }
+
+  info(operation: string, metadata?: Record<string, unknown>): void {
+    console.log(JSON.stringify({
+      level: 'INFO',
+      ...this.context,
+      operation,
+      metadata,
+    }));
+  }
+
+  error(operation: string, error: Error, metadata?: Record<string, unknown>): void {
+    console.error(JSON.stringify({
+      level: 'ERROR',
+      ...this.context,
+      operation,
+      error: { message: error.message, stack: error.stack },
+      metadata,
+    }));
+  }
+
+  warn(operation: string, metadata?: Record<string, unknown>): void {
+    console.warn(JSON.stringify({
+      level: 'WARN',
+      ...this.context,
+      operation,
+      metadata,
+    }));
+  }
+}
+
 export interface StateVersion {
   version: number;
   timestamp: number;
   hash: string;
+  cacheExpireAt?: number; // TTL-based expiration timestamp
+}
+
+export interface CacheEntry<T = unknown> {
+  data: T;
+  version: number;
+  createdAt: number;
+  ttlMs: number;
+  tags?: string[]; // Tags for bulk invalidation
+}
+
+export interface CachePolicy {
+  ttlMs: number; // Time-to-live in milliseconds
+  maxSize?: number; // Maximum cache entries
+  enableVersioning?: boolean;
 }
 
 export interface StateSnapshot {
@@ -22,12 +85,164 @@ export interface ConflictResolutionStrategy {
   compareFn?: (local: StateSnapshot, remote: StateSnapshot) => StateSnapshot;
 }
 
+export class StateCache {
+  private cache: Map<string, CacheEntry> = new Map();
+  private policy: CachePolicy;
+
+  constructor(policy: CachePolicy = { ttlMs: 5 * 60 * 1000 }) {
+    this.policy = policy;
+  }
+
+  set<T>(key: string, value: T, version: number, tags?: string[]): void {
+    const entry: CacheEntry<T> = {
+      data: value,
+      version,
+      createdAt: Date.now(),
+      ttlMs: this.policy.ttlMs,
+      tags,
+    };
+    this.cache.set(key, entry);
+    if (this.policy.maxSize && this.cache.size > this.policy.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey) this.cache.delete(firstKey);
+    }
+  }
+
+  get<T>(key: string): T | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    const isExpired = Date.now() - entry.createdAt > entry.ttlMs;
+    if (isExpired) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.data as T;
+  }
+
+  invalidate(key: string): void {
+    this.cache.delete(key);
+  }
+
+  invalidateByTag(tag: string): void {
+    const keysToDelete: string[] = [];
+    for (const [key, entry] of this.cache.entries()) {
+      if (entry.tags?.includes(tag)) {
+        keysToDelete.push(key);
+      }
+    }
+    keysToDelete.forEach(key => this.cache.delete(key));
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  isExpired(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return true;
+    return Date.now() - entry.createdAt > entry.ttlMs;
+  }
+}
+
 export interface Transaction {
   id: string;
   operations: StateOperation[];
   status: 'pending' | 'committed' | 'rolled_back';
   timestamp: number;
   checksum?: string;
+}
+
+export interface OfflineSnapshot {
+  stateId: string;
+  data: StateSnapshot;
+  createdAt: number;
+  txnQueue: Transaction[];
+}
+
+export class StateRecoveryManager {
+  private offlineSnapshots: Map<string, OfflineSnapshot> = new Map();
+  private reconnectHandlers: Array<() => Promise<void>> = [];
+  private isOnline: boolean = true;
+  private pendingTransactions: Transaction[] = [];
+
+  constructor() {
+    // Setup network event listeners
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', () => this.handleReconnect());
+      window.addEventListener('offline', () => this.handleOffline());
+    }
+  }
+
+  saveOfflineSnapshot(snapshot: StateSnapshot, transactions: Transaction[]): void {
+    const offlineSnapshot: OfflineSnapshot = {
+      stateId: snapshot.id,
+      data: snapshot,
+      createdAt: Date.now(),
+      txnQueue: transactions,
+    };
+    this.offlineSnapshots.set(snapshot.id, offlineSnapshot);
+    console.log(`[StateRecovery] Saved offline snapshot for state ${snapshot.id}`);
+  }
+
+  getOfflineSnapshot(stateId: string): OfflineSnapshot | null {
+    return this.offlineSnapshots.get(stateId) ?? null;
+  }
+
+  async rehydrateState(stateId: string, remoteSnapshot: StateSnapshot): Promise<StateSnapshot> {
+    const offlineSnapshot = this.getOfflineSnapshot(stateId);
+    if (!offlineSnapshot) {
+      console.log(`[StateRecovery] No offline snapshot found, using remote state`);
+      return remoteSnapshot;
+    }
+
+    const merged: StateSnapshot = {
+      ...remoteSnapshot,
+      data: {
+        ...remoteSnapshot.data,
+        ...offlineSnapshot.data.data,
+      },
+      version: {
+        version: Math.max(remoteSnapshot.version.version, offlineSnapshot.data.version.version) + 1,
+        timestamp: Date.now(),
+        hash: this.computeHash({
+          ...remoteSnapshot.data,
+          ...offlineSnapshot.data.data,
+        }),
+      },
+    };
+    console.log(`[StateRecovery] Rehydrated state ${stateId} with ${offlineSnapshot.txnQueue.length} pending transactions`);
+    return merged;
+  }
+
+  registerReconnectHandler(handler: () => Promise<void>): void {
+    this.reconnectHandlers.push(handler);
+  }
+
+  private async handleReconnect(): Promise<void> {
+    console.log(`[StateRecovery] Network reconnected, rehydrating state...`);
+    this.isOnline = true;
+    for (const handler of this.reconnectHandlers) {
+      try {
+        await handler();
+      } catch (error) {
+        console.error(`[StateRecovery] Rehydration handler failed:`, error);
+      }
+    }
+  }
+
+  private handleOffline(): void {
+    console.log(`[StateRecovery] Network offline, preserving state for recovery`);
+    this.isOnline = false;
+  }
+
+  isNetworkOnline(): boolean {
+    return this.isOnline;
+  }
+
+  private computeHash(data: Record<string, unknown>): string {
+    // Simple hash for state versioning
+    return JSON.stringify(data).split('').reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0).toString(16);
+  }
 }
 
 export interface StateOperation {

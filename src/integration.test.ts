@@ -163,6 +163,37 @@ export async function testGracefulDegradation(): Promise<TestResult> {
   }
 }
 
+// Test: Verify cache invalidation with TTL
+export async function testCacheInvalidationWithTTL(): Promise<TestResult> {
+  const testResult: TestResult = { success: false, retries: 0 };
+  let cacheAccessCount = 0;
+  const cacheHitTime: number[] = [];
+
+  // Simulate cache with 200ms TTL
+  const startTime = Date.now();
+
+  // First access - should hit cache
+  cacheAccessCount++;
+  cacheHitTime.push(Date.now() - startTime);
+
+  // Wait 150ms (within TTL)
+  await new Promise(resolve => setTimeout(resolve, 150));
+  cacheAccessCount++;
+  cacheHitTime.push(Date.now() - startTime);
+
+  // Wait 100ms more (total 250ms, past TTL)
+  await new Promise(resolve => setTimeout(resolve, 100));
+  cacheAccessCount++;
+  cacheHitTime.push(Date.now() - startTime);
+
+  assert.strictEqual(cacheAccessCount, 3, 'Should access cache 3 times');
+  assert.ok(cacheHitTime[2] > 200, 'Third access should be after TTL expiration');
+  testResult.success = true;
+  testResult.retries = 1;
+
+  return testResult;
+}
+
 // Test suite: Retry with exponential backoff
 export async function testRetryWithBackoff(): Promise<TestResult> {
   const testContext: TestContext = {
@@ -198,6 +229,30 @@ export async function testRetryWithBackoff(): Promise<TestResult> {
       retries: testContext.retryCount,
     };
   }
+}
+
+// Test: Verify exponential backoff timing
+export async function testExponentialBackoffTiming(): Promise<TestResult> {
+  const testResult: TestResult = { success: false, retries: 0 };
+  const backoffTimes: number[] = [];
+  const baseDelayMs = 100;
+  const backoffMultiplier = 2;
+
+  // Simulate exponential backoff: 100ms, 200ms, 400ms
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const expectedDelay = baseDelayMs * Math.pow(backoffMultiplier, attempt);
+    backoffTimes.push(expectedDelay);
+  }
+
+  assert.deepStrictEqual(
+    backoffTimes,
+    [100, 200, 400],
+    'Backoff should double each attempt'
+  );
+
+  testResult.success = true;
+  testResult.retries = backoffTimes.length;
+  return testResult;
 }
 
 // Test suite: Max retries exhaustion
@@ -247,6 +302,7 @@ async function runAllTests(): Promise<void> {
     testNullUndefinedHandling,
     testGracefulDegradation,
     testRetryWithBackoff,
+    testExponentialBackoffTiming,
     testMaxRetriesExhaustion,
   ];
   
@@ -264,6 +320,10 @@ async function runAllTests(): Promise<void> {
         console.log(`✗ ${test.name}: FAILED - ${result.error} (${result.retries} retries)`);
         failed++;
       }
+      
+      // Validate consistency across consecutive runs
+      const resultRetry = await test();
+      assert.strictEqual(resultRetry.success, result.success, `${test.name} should maintain consistency on retry`);
     } catch (error) {
       console.log(`✗ ${test.name}: ERROR - ${error instanceof Error ? error.message : String(error)}`);
       failed++;

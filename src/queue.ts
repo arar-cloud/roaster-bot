@@ -4,6 +4,40 @@
  * Prevents lost work from fire-and-forget async patterns
  */
 
+interface OperationMetrics {
+  taskId: string;
+  type: string;
+  startTime: number;
+  endTime?: number;
+  durationMs?: number;
+  attempts: number;
+  success: boolean;
+  error?: string;
+}
+
+class MetricsCollector {
+  private metrics: OperationMetrics[] = [];
+
+  record(metric: OperationMetrics): void {
+    this.metrics.push(metric);
+    if (this.metrics.length > 1000) {
+      this.metrics.shift();
+        const durationMs = Date.now() - startTime;
+        console.log(`[Task ${task.id}] Success after ${finalAttempts} attempt(s) in ${durationMs}ms`);
+    }
+  }
+
+  getMetrics(): OperationMetrics[] {
+    return [...this.metrics];
+  }
+
+  getAverageRetries(taskType: string): number {
+    const tasks = this.metrics.filter(m => m.type === taskType);
+    if (tasks.length === 0) return 0;
+    return tasks.reduce((sum, t) => sum + t.attempts, 0) / tasks.length;
+  }
+}
+
 export interface Task<T = unknown> {
   id: string;
   type: string;
@@ -27,10 +61,51 @@ export interface QueueConfig {
   baseDelayMs?: number;
   maxDelayMs?: number;
   backoffMultiplier?: number;
+  retryPolicy?: RetryPolicy;
+}
+
+/**
+ * Calculate exponential backoff delay with jitter and max cap
+ * Prevents thundering herd and distributes retry attempts
+ */
+function calculateBackoffDelay(
+  attempt: number,
+  policy: RetryPolicy
+): number {
+  const exponentialDelay = policy.baseDelayMs * Math.pow(policy.backoffMultiplier, attempt);
+  const cappedDelay = Math.min(exponentialDelay, policy.maxDelayMs);
+  const jitter = cappedDelay * policy.jitterFactor * Math.random();
+  return Math.floor(cappedDelay + jitter);
+}
+
+/**
+ * Determine if error is retryable (transient vs permanent)
+ */
+function isRetryableError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const message = error.message.toLowerCase();
+  // Transient errors: network issues, timeouts, rate limits
+  return (
+    message.includes('econnrefused') ||
+    message.includes('econnreset') ||
+    message.includes('etimedout') ||
+    message.includes('timeout') ||
+    message.includes('429') ||
+    message.includes('503') ||
+    message.includes('socket hang up')
+  );
 }
 
 interface ShutdownOptions {
   gracefulTimeoutMs?: number;
+}
+
+interface RetryPolicy {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  backoffMultiplier: number;
+  jitterFactor: number;
 }
 
 type TaskHandler<T = unknown> = (task: Task<T>) => Promise<TaskResult>;
@@ -162,7 +237,7 @@ export class TaskQueue {
       const task = this.pending.get(id);
       if (!task) continue;
       const priority = priorityOrder[task.priority];
-      if (priority < nextPriority || 
+      if (priority < nextPriority ||
           (priority === nextPriority && task.createdAt < (this.pending.get(nextId)?.createdAt ?? Date.now()))) {
         nextId = id;
         nextPriority = priority;
@@ -173,54 +248,58 @@ export class TaskQueue {
   }
 
   /**
-   * Process individual task with retry logic and structured logging
+   * Process individual task with retry logic and adaptive backoff
    */
   private async processTask(task: Task): Promise<void> {
     const correlationId = this.correlationIds.get(task.id) || `trace-${task.id}`;
-    try {
-      task.attempts++;
-      console.log(`[${correlationId}] Processing task ${task.id} (attempt ${task.attempts}/${task.maxRetries + 1})`);
+    let lastError: Error | null = null;
 
-      const handler = this.handlers.get(task.type);
-      if (!handler) {
-        throw new Error(`No handler registered for task type: ${task.type}`);
-      }
+    for (let attempt = 0; attempt <= task.maxRetries; attempt++) {
+      try {
+        task.attempts = attempt + 1;
+        console.log(`[${correlationId}] Processing task ${task.id} (attempt ${task.attempts}/${task.maxRetries + 1})`);
 
-      const result = await handler(task);
-      console.log(`[${correlationId}] Task ${task.id} succeeded`);
-      this.results.set(task.id, result);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const result: TaskResult = {
-        taskId: task.id,
-        success: false,
-        error: errorMessage,
-        attempts: task.attempts,
-      };
+        if (attempt > 0) {
+          // Apply adaptive backoff on retry
+          const delayMs = calculateBackoffDelay(attempt - 1, this.config.baseDelayMs, this.config.maxDelayMs);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
 
-      if (task.attempts < task.maxRetries) {
-        // Schedule retry with exponential backoff
-        const delayMs = Math.min(
-          this.config.baseDelayMs * Math.pow(this.config.backoffMultiplier, task.attempts - 1),
-          this.config.maxDelayMs
-        );
-        setTimeout(() => {
-          this.pending.set(task.id, task);
-          this.processQueue();
-        }, delayMs);
-      } else {
-        // Max retries exceeded - move to dead letter queue
-        this.deadLetterQueue.set(task.id, {
-          ...task,
-          lastError: errorMessage,
-          failureCount: task.attempts,
-        });
+        const handler = this.handlers.get(task.type);
+        if (!handler) {
+          throw new Error(`No handler registered for task type: ${task.type}`);
+        }
+
+        const result = await handler(task);
+        console.log(`[${correlationId}] Task ${task.id} succeeded`);
         this.results.set(task.id, result);
+        return; // Success - exit retry loop
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.log(`[${correlationId}] Task ${task.id} failed (attempt ${attempt + 1}): ${lastError.message}`);
+
+        // Check if error is retryable
+        if (!isRetryableError(error) || attempt === task.maxRetries) {
+          // Non-retryable or max retries exceeded
+          const result: TaskResult = {
+            taskId: task.id,
+            success: false,
+            error: lastError.message,
+            attempts: task.attempts,
+          };
+          this.deadLetterQueue.set(task.id, {
+            ...task,
+            lastError: lastError.message,
+            failureCount: task.attempts,
+          });
+          this.results.set(task.id, result);
+          break; // Exit retry loop
+        }
       }
-    } finally {
-      this.processing.delete(task.id);
-      this.processQueue();
     }
+
+    this.processing.delete(task.id);
+    this.processQueue();
   }
 
   /**
@@ -296,21 +375,21 @@ export class TaskQueue {
   async shutdown(options?: ShutdownOptions): Promise<void> {
     const gracefulTimeoutMs = options?.gracefulTimeoutMs ?? 30000;
     const startTime = Date.now();
-    
+
     // Signal no new tasks accepted
     let isShuttingDown = true;
-    
+
     // Wait for in-flight tasks to complete
     while (this.processing.size > 0 && Date.now() - startTime < gracefulTimeoutMs) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    
+
     // Force cleanup of remaining tasks
     if (this.processing.size > 0) {
       console.warn(`Shutdown timeout: ${this.processing.size} tasks still processing`);
       this.processing.clear();
     }
-    
+
     // Move pending tasks to dead letter queue
     for (const [taskId, task] of this.pending.entries()) {
       this.deadLetterQueue.set(taskId, {
@@ -319,7 +398,7 @@ export class TaskQueue {
         failureCount: task.attempts,
       });
     }
-    
+
     this.pending.clear();
   }
 }
