@@ -280,9 +280,14 @@ const hybridRateLimitStore = {
   }
 };
 
-// Configure rate limiter with hybrid local-first store
+// Configure rate limiter with RedisStore for async lookups
+const redisStore = new RedisStore({
+  client: redisCluster,
+  prefix: 'rate-limit:',
+});
+
 const limiter = rateLimit({
-  store: hybridRateLimitStore,
+  store: redisStore,
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many requests from this IP, please try again later.',
