@@ -222,9 +222,28 @@ function traceMiddleware(req: any, res: any, next: any): void {
   req.clientId = req.get('X-Client-ID') || req.ip || 'unknown';
   req.startTime = Date.now();
   req.idempotencyKey = req.get('Idempotency-Key');
-  req.rateLimiter = getRateLimiter(req.clientId, req.traceId);
-  const pool = new ConnectionPool(req.traceId, { requestTimeoutMs: 30000 });
-  req.connectionPool = pool;
+  req.rateLimiter = getRateLimiter(req.clientId);
+  req.connectionPool = connectionPool.getConnection(req.clientId);
+  
+  const conn = req.connectionPool;
+  const timeoutHandle = setTimeout(() => {
+    structuredLog('warn', req.traceId, 'Request timeout threshold reached', {
+      clientId: req.clientId,
+      timeoutMs: conn.timeout,
+      elapsed: Date.now() - req.startTime
+    });
+    if (!res.headersSent) {
+      res.status(504).json({ error: 'Request timeout' });
+    }
+  }, conn.timeout);
+  
+  res.on('finish', () => {
+    clearTimeout(timeoutHandle);
+    connectionPool.releaseConnection(req.clientId);
+    const elapsed = Date.now() - req.startTime;
+    structuredLog('info', req.traceId, 'Request completed', { elapsed, clientId: req.clientId });
+  });
+  
   res.set('X-Trace-ID', req.traceId);
   next();
 }
