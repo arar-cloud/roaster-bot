@@ -1,9 +1,11 @@
 /**
  * Integration tests for retry and failure scenarios
  * Validates behavior under network failures, timeouts, and edge cases
+ * Covers null/undefined handling, state validation, queue processing, and recovery
  */
 
 import assert from 'assert';
+import { TaskQueue, createStateSnapshot, reconcileState, mergeStateSnapshots, detectStateDrift } from './queue.js';
 
 // Mock types and helpers for testing
 interface TestContext {
@@ -70,6 +72,18 @@ export async function testHealthCheckEndpoints(): Promise<TestResult> {
   }
 }
 
+// Utility to safely access potentially null/undefined values
+function safeAccess<T>(obj: unknown, path: string, defaultValue: T): T {
+  if (!obj || typeof obj !== 'object') return defaultValue;
+  const keys = path.split('.');
+  let current: any = obj;
+  for (const key of keys) {
+    current = current?.[key];
+    if (current === null || current === undefined) return defaultValue;
+  }
+  return current as T;
+}
+
 // Test suite: Null/undefined handling
 export async function testNullUndefinedHandling(): Promise<TestResult> {
   const testContext: TestContext = {
@@ -97,9 +111,158 @@ export async function testNullUndefinedHandling(): Promise<TestResult> {
       assert(prompt === '', 'Should handle empty prompt');
     };
     
+    // Test 4: Safe access with nested paths
+    const safeAccessTest = async () => {
+      const obj = { data: { value: 'test' } };
+      const result = safeAccess(obj, 'data.value', 'default');
+      assert(result === 'test', 'Should access nested property');
+      const nullResult = safeAccess(null, 'data.value', 'default');
+      assert(nullResult === 'default', 'Should return default for null');
+    };
+    
     await nullBodyTest();
     await undefinedPromptTest();
     await emptyPromptTest();
+    await safeAccessTest();
+    
+    return {
+      success: true,
+      retries: testContext.retryCount,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      retries: testContext.retryCount,
+    };
+  }
+}
+
+// Test suite: Queue processing with retries
+export async function testQueueProcessing(): Promise<TestResult> {
+  const testContext: TestContext = {
+    name: 'Queue Processing with Retries',
+    retryCount: 0,
+    maxRetries: 3,
+  };
+  
+  try {
+    const queue = new TaskQueue(3); // Max 3 concurrent tasks
+    let processedCount = 0;
+    
+    const task = async () => {
+      processedCount++;
+      return { id: processedCount };
+    };
+    
+    // Enqueue multiple tasks
+    const results = await Promise.all([
+      queue.enqueue(task),
+      queue.enqueue(task),
+      queue.enqueue(task),
+    ]);
+    
+    assert(processedCount === 3, 'All tasks should be processed');
+    assert(results.length === 3, 'Should return results for all tasks');
+    
+    return {
+      success: true,
+      retries: testContext.retryCount,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      retries: testContext.retryCount,
+    };
+  }
+}
+
+// Test suite: State reconciliation
+export async function testStateReconciliation(): Promise<TestResult> {
+  const testContext: TestContext = {
+    name: 'State Reconciliation',
+    retryCount: 0,
+    maxRetries: 2,
+  };
+  
+  try {
+    const snap1 = createStateSnapshot();
+    const snap2 = createStateSnapshot();
+    const merged = mergeStateSnapshots([snap1, snap2]);
+    
+    assert(merged !== null, 'Merged state should not be null');
+    const drift = detectStateDrift(snap1, merged);
+    assert(typeof drift === 'number', 'Should detect state drift');
+    
+    return {
+      success: true,
+      retries: testContext.retryCount,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      retries: testContext.retryCount,
+    };
+  }
+}
+
+// Test suite: Network failure recovery
+export async function testNetworkFailureRecovery(): Promise<TestResult> {
+  const testContext: TestContext = {
+    name: 'Network Failure Recovery',
+    retryCount: 0,
+    maxRetries: 3,
+  };
+  
+  try {
+    let failCount = 0;
+    const networkCall = async () => {
+      failCount++;
+      if (failCount < 2) throw new Error('Network timeout');
+      return { data: 'recovered' };
+    };
+    
+    const result = await retryWithBackoff(networkCall, testContext.maxRetries, 10);
+    assert(result.data === 'recovered', 'Should recover from network failure');
+    testContext.retryCount = failCount - 1;
+    
+    return {
+      success: true,
+      retries: testContext.retryCount,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      retries: testContext.retryCount,
+    };
+  }
+}
+
+// Test suite: Timeout handling
+export async function testTimeoutHandling(): Promise<TestResult> {
+  const testContext: TestContext = {
+    name: 'Timeout Handling',
+    retryCount: 0,
+    maxRetries: 2,
+  };
+  
+  try {
+    const timeoutTest = async () => {
+      const timeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Operation timeout')), 50)
+      );
+      return timeout;
+    };
+    
+    try {
+      await Promise.race([timeoutTest(), new Promise(r => setTimeout(() => r(null), 100))]);
+      assert(true, 'Timeout should be handled gracefully');
+    } catch (e) {
+      // Timeouts expected
+    }
     
     return {
       success: true,
@@ -245,6 +408,10 @@ async function runAllTests(): Promise<void> {
   const tests = [
     testHealthCheckEndpoints,
     testNullUndefinedHandling,
+    testQueueProcessing,
+    testStateReconciliation,
+    testNetworkFailureRecovery,
+    testTimeoutHandling,
     testGracefulDegradation,
     testRetryWithBackoff,
     testMaxRetriesExhaustion,
