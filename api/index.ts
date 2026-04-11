@@ -20,8 +20,47 @@ const redisClient = createClient({
   },
 });
 
-// Local token bucket cache for batch Redis sync (reduces per-request Redis calls)
-const tokenBucketCache = new Map<string, { tokens: number; lastRefill: number }>();
+// LRU cache for token bucket entries with TTL-based eviction
+class LRUTokenBucketCache {
+  private cache: Map<string, { tokens: number; lastRefill: number }> = new Map();
+  private accessOrder: string[] = [];
+  private readonly maxSize = 1000;
+  private readonly ttlMs = 3600000; // 1 hour
+
+  get(key: string): { tokens: number; lastRefill: number } | undefined {
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    
+    // Check TTL expiration
+    if (Date.now() - entry.lastRefill > this.ttlMs) {
+      this.cache.delete(key);
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      return undefined;
+    }
+    
+    // Move to end (most recently used)
+    const idx = this.accessOrder.indexOf(key);
+    if (idx !== -1) {
+      this.accessOrder.splice(idx, 1);
+    }
+    this.accessOrder.push(key);
+    return entry;
+  }
+
+  set(key: string, value: { tokens: number; lastRefill: number }): void {
+    if (this.cache.has(key)) {
+      const idx = this.accessOrder.indexOf(key);
+      if (idx !== -1) this.accessOrder.splice(idx, 1);
+    } else if (this.cache.size >= this.maxSize) {
+      const lruKey = this.accessOrder.shift();
+      if (lruKey) this.cache.delete(lruKey);
+    }
+    this.cache.set(key, value);
+    this.accessOrder.push(key);
+  }
+}
+
+const tokenBucketCache = new LRUTokenBucketCache();
 
 redisClient.on('error', (err: Error) => {
   console.error('Redis error:', err.message);
