@@ -21,10 +21,69 @@ const redisCluster = createCluster({
   defaults: {
     socket: {
       reconnectStrategy: (retries: number) => {
+        if (retries > 10) {
+          return new Error('Redis reconnection failed after 10 retries');
+        }
+        // Exponential backoff with 3 second cap: 100ms, 200ms, 400ms... 3000ms
+        return Math.min(retries * 100, 3000);
+      },
+    },
+  },
+  // LRUTokenBucketCache: in-memory token bucket with TTL-based expiration
+  class LRUTokenBucketCache {
+    private cache = new Map<string, { tokens: number; lastRefill: number; expiresAt: number }>();
+    private maxSize: number;
+    private cleanupInterval: NodeJS.Timeout | null = null;
+
+    constructor(maxSize: number = 10000) {
+      this.maxSize = maxSize;
+      // Batch cleanup every 5 seconds instead of per-entry
+      this.cleanupInterval = setInterval(() => this.batchCleanupExpired(), 5000);
+    }
+
+    set(key: string, tokens: number, ttlMs: number = 60000): void {
+      const now = Date.now();
+      const expiresAt = now + ttlMs;
+      this.cache.set(key, { tokens, lastRefill: now, expiresAt });
+      
+      // Lazy size-based LRU eviction: if cache exceeds max, remove oldest entry
+      if (this.cache.size > this.maxSize) {
+        let oldestKey: string | null = null;
+        let oldestTime = Infinity;
+        for (const [k, v] of this.cache.entries()) {
+          if (v.lastRefill < oldestTime) {
+            oldestTime = v.lastRefill;
+            oldestKey = k;
+          }
+        }
+        if (oldestKey) this.cache.delete(oldestKey);
+      }
+    }
+
+    get(key: string): number | null {
+      const entry = this.cache.get(key);
+      if (!entry) return null;
+      if (Date.now() > entry.expiresAt) {
+        this.cache.delete(key);
+        return null;
+      }
+      return entry.tokens;
+    }
+
+    private batchCleanupExpired(): void {
+      const now = Date.now();
+      const expired: string[] = [];
+      for (const [key, entry] of this.cache.entries()) {
+        if (now > entry.expiresAt) {
+          expired.push(key);
+        }
+      }
 
     // Process expired entries asynchronously without blocking event loop
     if (expired.length > 0) {
-      await new Promise(resolve => setImmediate(resolve));
+      setImmediate(() => {
+        expired.forEach(key => this.cache.delete(key));
+      }););
       // Clean up any associated state for expired entries
       expired.forEach(key => {
         tokenBucketCache.has(key) && tokenBucketCache.get(key)  if (retries > 10) {
