@@ -149,13 +149,36 @@ try {
   console.warn('[CopilotClient] Operating in degraded mode - queue tasks will fail gracefully');
 }
 
+// Payload validation for PR review tasks
+interface PRReviewPayload {
+  title: string;
+  headRef: string;
+  body?: string;
+  action?: string;
+  number?: number;
+}
+
+function validatePRReviewPayload(payload: unknown): payload is PRReviewPayload {
+  if (typeof payload !== 'object' || payload === null) return false;
+  const obj = payload as Record<string, unknown>;
+  
+  if (typeof obj.title !== 'string' || obj.title.trim().length === 0) return false;
+  if (typeof obj.headRef !== 'string' || obj.headRef.trim().length === 0) return false;
+  if (obj.body !== undefined && typeof obj.body !== 'string') return false;
+  if (obj.action !== undefined && typeof obj.action !== 'string') return false;
+  if (obj.number !== undefined && typeof obj.number !== 'number') return false;
+  
+  return true;
+}
+
 // Register queue handlers for critical async operations
 globalQueue.registerHandler('process-pr-review', async (task) => {
   try {
-    const { title, body, headRef } = task.payload as any;
-    if (!title || !headRef) {
-      throw new Error('Invalid PR review payload: missing title or headRef');
+    const payload = task.payload as unknown;
+    if (!validatePRReviewPayload(payload)) {
+      throw new Error('Invalid PR review payload: missing or invalid required fields (title, headRef)');
     }
+    const { title, body, headRef } = payload;
 
     if (!copilotClient) {
       throw new Error('CopilotClient not initialized: ' + (copilotInitError?.message || 'unknown reason'));
@@ -293,14 +316,20 @@ app.post('/agent', limiter, queueRateLimiter, async (req: Request, res: Response
       return;
     }
 
-    // Queue the roasting task for reliable processing
+    // Validate and queue the roasting task for reliable processing
+    const queuePayload = {
+      title: 'Roast Request',
+      body: prompt,
+      headRef: 'roast-session',
+    };
+    
+    if (!validatePRReviewPayload(queuePayload)) {
+      throw new Error('Queue payload validation failed: invalid task payload structure');
+    }
+    
     const taskId = await globalQueue.enqueue(
       'process-pr-review',
-      {
-        title: 'Roast Request',
-        body: prompt,
-        headRef: 'roast-session',
-      },
+      queuePayload,
       { maxRetries: 3, priority: 'high', correlationId }
     );
 

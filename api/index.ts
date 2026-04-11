@@ -333,6 +333,20 @@ const circuitBreakers = new Map<string, CircuitBreaker>();
   console.log(JSON.stringify(logEntry));
 }
 
+// Wire up all middleware into app
+function wireMiddleware(appInstance: any): void {
+  appInstance.use(traceMiddleware);
+  appInstance.use(healthCheckMiddleware);
+  appInstance.use(rateLimitMiddleware);
+  appInstance.use(idempotencyMiddleware);
+  appInstance.use(loggingMiddleware);
+  // Error handler must be registered last
+  appInstance.use(errorHandlerMiddleware);
+}
+
+// Initialize middleware on app instance
+wireMiddleware(app);
+
 // Request logging middleware with trace ID generation
 function loggingMiddleware(req: Request, res: Response, next: NextFunction): void {
   req.traceId = req.headers['x-trace-id'] as string || randomUUID();
