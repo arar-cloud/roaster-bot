@@ -33,18 +33,48 @@ class LRUTokenBucketCache {
   private accessOrder: Map<string, number> = new Map(); // O(1) LRU tracking instead of O(n) indexOf
   private readonly maxSize = 1000;
   private readonly ttlMs = 3600000; // 1 hour
+  private cleanupScheduled: boolean = false;
+  private cleanupInterval: number = 5000; // Run cleanup every 5 seconds
+
+  constructor() {
+    this.schedulePeriodicCleanup();
+  }
+
+  private schedulePeriodicCleanup(): void {
+    setInterval(() => this.cleanupExpiredEntries(), this.cleanupInterval);
+  }
+
+  private cleanupExpiredEntries(): void {
+    if (this.cleanupScheduled) return;
+    this.cleanupScheduled = true;
+
+    // Use setImmediate to defer cleanup to next event loop iteration, unblocking requests
+    setImmediate(() => {
+      const now = Date.now();
+      const keysToDelete: string[] = [];
+
+      for (const [key, entry] of this.cache) {
+        if (now - entry.lastRefill > this.ttlMs) {
+          keysToDelete.push(key);
+        }
+      }
+
+      // Batch delete expired entries
+      for (const key of keysToDelete) {
+        this.cache.delete(key);
+        this.accessOrder.delete(key);
+      }
+
+      this.cleanupScheduled = false;
+    });
+  }
 
   get(key: string): { tokens: number; lastRefill: number } | undefined {
     const entry = this.cache.get(key);
     if (!entry) return undefined;
 
-    // Check TTL expiration
-    if (Date.now() - entry.lastRefill > this.ttlMs) {
-      this.cache.delete(key);
-      this.accessOrder.delete(key); // O(1) delete instead of O(n) filter
-      return undefined;
-    }
-
+    // Note: TTL expiration check moved to periodic background cleanup, not checked on every get()
+    // This prevents synchronous blocking on the request path
     // Move to end (most recently used) - O(1) delete and set on Map
     this.accessOrder.delete(key);
     this.accessOrder.set(key, Date.now());
