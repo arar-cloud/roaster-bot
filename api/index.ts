@@ -16,7 +16,7 @@ class ConnectionPool {
   private connectionLock: boolean = false;
   private readonly maxConnections: number;
   private readonly waitQueue: Map<string, { id: string; resolve: () => void; timestamp: number; timeoutHandle?: NodeJS.Timeout using O(1) Map delete
-        if (this.waitQueue.set(entryId, entryId) }> = new Map();
+        if (  this.waitQueue.set(entryId, entryId) }> = new Map();
   private readonly maxWaitTimeMs: number = 30000; // 30 second timeout
   private readonly maxQueueSize: number = 1000; // Max queue entries before rejection
   private nextEntryId: number = 0;
@@ -31,7 +31,7 @@ class ConnectionPool {
   private startSweeper(): void {
     // Periodic cleanup of expired queue entries every 5 seconds
     this.sweepInterval = setInterval(() => {
-      this.sweepExpiredEntries();
+        this.sweepExpiredEntries();
     }, 5000);
     // Ensure sweeper doesn't prevent process exit
     if (this.sweepInterval.unref) {
