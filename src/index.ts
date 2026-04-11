@@ -5,6 +5,27 @@ import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 import { globalQueue } from './queue.js';
 
+// Graceful shutdown handler
+let isShuttingDown = false;
+const gracefulShutdown = async () => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  
+  console.log('Starting graceful shutdown...');
+  
+  try {
+    await globalQueue.shutdown?.();
+    console.log('Queue shutdown complete');
+  } catch (err) {
+    console.error('Queue shutdown error:', err);
+  }
+  
+  process.exit(0);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -14,6 +35,84 @@ declare global {
     }
   }
 }
+
+// Structured logging function
+function structuredLog(level: string, message: string, meta?: Record<string, any>): void {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    level,
+    message,
+    ...meta
+  };
+  console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify(logEntry));
+}
+
+// Initialize CopilotClient with retry logic
+let copilotClient: any = null;
+
+async function initializeCopilotClient(maxRetries: number = 3): Promise<any> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      structuredLog('info', 'Initializing CopilotClient', { attempt, maxRetries });
+      const client = new CopilotClient({
+        token: process.env.GITHUB_TOKEN || '',
+      });
+      structuredLog('info', 'CopilotClient initialized successfully');
+      return client;
+    } catch (err) {
+      const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+      structuredLog('warn', 'CopilotClient initialization failed', {
+        attempt,
+        maxRetries,
+        error: err instanceof Error ? err.message : String(err),
+        backoffMs,
+        nextAttemptIn: `${backoffMs}ms`
+      });
+      
+      if (attempt < maxRetries) {
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
+      } else {
+        structuredLog('error', 'CopilotClient initialization failed after all retries', {
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+  }
+  return null;
+}
+
+(async () => {
+  copilotClient = await initializeCopilotClient();
+  if (!copilotClient) {
+    console.error('Failed to initialize CopilotClient; proceeding without it');
+  }
+})();
+
+// Configure endpoint-specific rate limiters
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const strictLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many requests for this endpoint, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const looseLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 200,
+  message: 'Rate limited',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Versioned cache with TTL and staleness detection
 interface CacheEntry<T = unknown> {
@@ -28,6 +127,7 @@ interface CacheConfig {
   maxSize?: number;
   defaultTtlMs?: number;
   evictionPolicy?: 'LRU' | 'FIFO';
+  staleThresholdPercent?: number;
 }
 
 class VersionedCache {
@@ -39,21 +139,28 @@ class VersionedCache {
     this.config = {
       maxSize: config.maxSize || 1000,
       defaultTtlMs: config.defaultTtlMs || 300000,
-      evictionPolicy: config.evictionPolicy || 'LRU'
+      evictionPolicy: config.evictionPolicy || 'LRU',
+      staleThresholdPercent: config.staleThresholdPercent || 80
     };
   }
 
   set<T>(key: string, value: T, ttlMs?: number): void {
-    if (this.store.size >= this.config.maxSize && !this.store.has(key)) {
+    const entry = this.store.get(key);
+    const isUpdate = !!entry;
+    
+    if (!isUpdate && this.store.size >= this.config.maxSize) {
       this.evictOne();
     }
-    this.store.set(key, {
+    
+    const newEntry = {
       value,
-      version: (this.store.get(key)?.version || 0) + 1,
-      createdAt: Date.now(),
+      version: (entry?.version || 0) + 1,
+      createdAt: entry?.createdAt ?? Date.now(),
       ttlMs: ttlMs || this.config.defaultTtlMs,
       lastAccessedAt: Date.now()
-    });
+    };
+    
+    this.store.set(key, newEntry);
     this.trackAccess(key);
   }
 
@@ -75,7 +182,8 @@ class VersionedCache {
   isStale(key: string): boolean {
     const entry = this.store.get(key);
     if (!entry) return true;
-    return Date.now() - entry.createdAt > entry.ttlMs * 0.8;
+    const thresholdPercent = this.config.staleThresholdPercent ?? 80;
+    return Date.now() - entry.createdAt > entry.ttlMs * (thresholdPercent / 100);
   }
 
   getVersion(key: string): number | null {
@@ -87,14 +195,31 @@ class VersionedCache {
     this.accessOrder = this.accessOrder.filter(k => k !== key);
   }
 
-  invalidatePattern(pattern: RegExp): number {
+  invalidatePattern(pattern: string | RegExp): number {
+    const regex = typeof pattern === 'string' ? new RegExp(pattern) : pattern;
     let count = 0;
+    const keysToDelete: string[] = [];
     for (const key of this.store.keys()) {
-      if (pattern.test(key)) {
-        this.invalidate(key);
-        count++;
+      try {
+        if (regex.test(key)) {
+          keysToDelete.push(key);
+          count++;
+        }
+      } catch (err) {
+        structuredLog({
+          correlationId: 'system',
+          component: 'cache',
+          severity: 'error',
+          message: 'invalidatePattern regex test failed',
+          metadata: {
+            pattern: regex.toString(),
+            key,
+            error: err instanceof Error ? err.message : String(err)
+          }
+        });
       }
     }
+    keysToDelete.forEach(key => this.invalidate(key));
     return count;
   }
 
@@ -283,11 +408,14 @@ function checkQueueCapacity(): boolean {
   return pending < MAX_CONCURRENT_REQUESTS;
 }
 
+// Apply global middleware
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+// Initialize Copilot client with error handling
 
 // Initialize Copilot client with error handling
 let copilotClient: CopilotClient | null = null;

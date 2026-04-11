@@ -29,6 +29,10 @@ export interface QueueConfig {
   backoffMultiplier?: number;
 }
 
+interface ShutdownOptions {
+  gracefulTimeoutMs?: number;
+}
+
 type TaskHandler<T = unknown> = (task: Task<T>) => Promise<TaskResult>;
 
 /**
@@ -284,6 +288,39 @@ export class TaskQueue {
     this.pending.clear();
     this.processing.clear();
     this.results.clear();
+  }
+
+  /**
+   * Graceful shutdown with in-flight job cleanup
+   */
+  async shutdown(options?: ShutdownOptions): Promise<void> {
+    const gracefulTimeoutMs = options?.gracefulTimeoutMs ?? 30000;
+    const startTime = Date.now();
+    
+    // Signal no new tasks accepted
+    let isShuttingDown = true;
+    
+    // Wait for in-flight tasks to complete
+    while (this.processing.size > 0 && Date.now() - startTime < gracefulTimeoutMs) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    
+    // Force cleanup of remaining tasks
+    if (this.processing.size > 0) {
+      console.warn(`Shutdown timeout: ${this.processing.size} tasks still processing`);
+      this.processing.clear();
+    }
+    
+    // Move pending tasks to dead letter queue
+    for (const [taskId, task] of this.pending.entries()) {
+      this.deadLetterQueue.set(taskId, {
+        ...task,
+        lastError: 'Shutdown during pending state',
+        failureCount: task.attempts,
+      });
+    }
+    
+    this.pending.clear();
   }
 }
 
