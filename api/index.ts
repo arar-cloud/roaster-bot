@@ -347,6 +347,32 @@ export const schemaValidation = (schema: RequestSchema) => (req: any, res: any, 
   next();
 };
 
+// Centralized validation middleware for all request types
+export const validationMiddleware = (req: any, res: any, next: any) => {
+  try {
+    // Validate query parameters exist and are not malicious
+    if (req.query && typeof req.query === 'object') {
+      for (const [key, value] of Object.entries(req.query)) {
+        if (typeof value === 'string' && value.length > 2000) {
+          return res.status(400).json({ error: 'Query parameter too long', field: key });
+        }
+      }
+    }
+    // Validate path parameters
+    if (req.params && typeof req.params === 'object') {
+      for (const [key, value] of Object.entries(req.params)) {
+        if (typeof value !== 'string' && typeof value !== 'number') {
+          return res.status(400).json({ error: 'Invalid path parameter type', field: key });
+        }
+      }
+    }
+    next();
+  } catch (error: any) {
+    logger.error('Validation middleware error', { error: error.message });
+    return res.status(400).json({ error: 'Request validation failed' });
+  }
+};
+
 // Simple in-memory LRU cache for query results
 class QueryCache {
   private cache: Map<string, { data: any; expires: number }> = new Map();
@@ -429,6 +455,50 @@ class TokenBucket {
 }
 
 const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
+
+// Input validation functions for request parameters
+function validateEmail(email: string): boolean {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email) && email.length <= 255;
+}
+
+function validateNumber(value: any, fieldName: string, min?: number, max?: number): number {
+  const num = Number(value);
+  if (isNaN(num)) {
+    throw new Error(`${fieldName} must be a valid number`);
+  }
+  if (min !== undefined && num < min) {
+    throw new Error(`${fieldName} must be at least ${min}`);
+  }
+  if (max !== undefined && num > max) {
+    throw new Error(`${fieldName} must be at most ${max}`);
+  }
+  return num;
+}
+
+function validateBoolean(value: any, fieldName: string): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new Error(`${fieldName} must be a boolean`);
+}
+
+function validateArrayNotEmpty<T>(arr: T[], fieldName: string): T[] {
+  if (!Array.isArray(arr) || arr.length === 0) {
+    throw new Error(`${fieldName} must be a non-empty array`);
+  }
+  return arr;
+}
+
+function validateStringLength(str: string, fieldName: string, min: number = 0, max: number = 1000): string {
+  if (typeof str !== 'string') {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  if (str.length < min || str.length > max) {
+    throw new Error(`${fieldName} must be between ${min} and ${max} characters`);
+  }
+  return str;
+}
 
 // Health check endpoint (bypasses rate limiting)
 function setupHealthChecks(expressApp: any): void {
