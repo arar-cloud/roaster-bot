@@ -43,7 +43,7 @@ class LRUTokenBucketCache {
   private readonly maxSize = 1000;
   private readonly ttlMs = 3600000; // 1 hour
   private cleanupScheduled: boolean = false;
-  private cleanupInterval: number = 5000; // Run cleanup every 5 seconds
+  private cleanupInterval: number = 60000; // Run cleanup every 60 seconds (reduced from 5s)
 
   constructor() {
     this.schedulePeriodicCleanup();
@@ -51,7 +51,7 @@ class LRUTokenBucketCache {
 
   private schedulePeriodicCleanup(): void {
     // Reduced cleanup interval from 5s to 60s to minimize event loop overhead and CPU usage
-    setInterval(() => this.cleanupExpiredEntries(), 60000);
+    setInterval(() => this.cleanupExpiredEntries(), this.cleanupInterval);
   }
 
   private cleanupExpiredEntries(): void {
