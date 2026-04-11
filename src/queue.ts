@@ -32,6 +32,15 @@ export interface QueueConfig {
 type TaskHandler<T = unknown> = (task: Task<T>) => Promise<TaskResult>;
 
 /**
+ * Calculate exponential backoff delay with jitter
+ */
+function calculateBackoffDelay(attemptNumber: number, baseDelayMs: number, maxDelayMs: number): number {
+  const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, attemptNumber - 1), maxDelayMs);
+  const jitter = Math.random() * 0.1 * exponentialDelay;
+  return exponentialDelay + jitter;
+}
+
+/**
  * In-memory task queue with exponential backoff retry logic
  */
 export class TaskQueue {
@@ -40,6 +49,8 @@ export class TaskQueue {
   private handlers: Map<string, TaskHandler> = new Map();
   private results: Map<string, TaskResult> = new Map();
   private config: Required<QueueConfig>;
+  private deadLetterQueue: Map<string, Task & { lastError: string; failureCount: number }> = new Map();
+  private correlationIds: Map<string, string> = new Map();
 
   constructor(config: QueueConfig = {}) {
     this.config = {
@@ -48,6 +59,20 @@ export class TaskQueue {
       maxDelayMs: config.maxDelayMs ?? 30000,
       backoffMultiplier: config.backoffMultiplier ?? 2,
     };
+  }
+
+  /**
+   * Get dead-letter queue for inspection and recovery
+   */
+  getDeadLetterQueue() {
+    return Array.from(this.deadLetterQueue.values());
+  }
+
+  /**
+   * Get count of pending tasks (enqueued but not yet completed)
+   */
+  getPendingCount(): number {
+    return this.tasks.size + this.activeCount;
   }
 
   /**
@@ -144,11 +169,13 @@ export class TaskQueue {
   }
 
   /**
-   * Process individual task with retry logic
+   * Process individual task with retry logic and structured logging
    */
   private async processTask(task: Task): Promise<void> {
+    const correlationId = this.correlationIds.get(task.id) || `trace-${task.id}`;
     try {
       task.attempts++;
+      console.log(`[${correlationId}] Processing task ${task.id} (attempt ${task.attempts}/${task.maxRetries + 1})`);
 
       const handler = this.handlers.get(task.type);
       if (!handler) {
@@ -156,6 +183,7 @@ export class TaskQueue {
       }
 
       const result = await handler(task);
+      console.log(`[${correlationId}] Task ${task.id} succeeded`);
       this.results.set(task.id, result);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -177,7 +205,12 @@ export class TaskQueue {
           this.processQueue();
         }, delayMs);
       } else {
-        // Max retries exceeded
+        // Max retries exceeded - move to dead letter queue
+        this.deadLetterQueue.set(task.id, {
+          ...task,
+          lastError: errorMessage,
+          failureCount: task.attempts,
+        });
         this.results.set(task.id, result);
       }
     } finally {

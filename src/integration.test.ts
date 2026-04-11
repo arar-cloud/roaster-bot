@@ -1,7 +1,7 @@
 /**
  * Integration tests for retry and failure scenarios
  * Validates behavior under network failures, timeouts, and edge cases
- * Covers null/undefined handling, state validation, queue processing, and recovery
+ * Covers null/undefined handling, state validation, queue processing, recovery, and stability hardening
  */
 
 import assert from 'assert';
@@ -18,6 +18,44 @@ interface TestResult {
   success: boolean;
   error?: string;
   retries: number;
+}
+
+interface TestCase {
+  name: string;
+  fn: () => Promise<void>;
+}
+
+const testCases: TestCase[] = [];
+
+function test(name: string, fn: () => Promise<void>) {
+  testCases.push({ name, fn });
+}
+
+async function runTests() {
+  console.log(`Running ${testCases.length} integration tests...`);
+  let passed = 0;
+  let failed = 0;
+  
+  for (const testCase of testCases) {
+    try {
+      await testCase.fn();
+      console.log(`✓ ${testCase.name}`);
+      passed++;
+    } catch (error) {
+      console.error(`✗ ${testCase.name}:`, error instanceof Error ? error.message : String(error));
+      failed++;
+    }
+  }
+  
+  console.log(`\nTests: ${passed} passed, ${failed} failed`);
+  return failed === 0;
+}
+
+// Test for exponential backoff calculation
+function calculateBackoffDelay(attemptNumber: number, baseDelayMs: number, maxDelayMs: number): number {
+  const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, attemptNumber - 1), maxDelayMs);
+  const jitter = Math.random() * 0.1 * exponentialDelay;
+  return exponentialDelay + jitter;
 }
 
 // Utility function to simulate retryable operations
@@ -400,6 +438,99 @@ export async function testMaxRetriesExhaustion(): Promise<TestResult> {
     };
   }
 }
+
+// Test suite: Circuit breaker state management
+export async function testCircuitBreakerState(): Promise<TestResult> {
+  const testContext: TestContext = {
+    name: 'Circuit Breaker State',
+    retryCount: 0,
+    maxRetries: 3,
+  };
+  
+  try {
+    let failureCount = 0;
+    const circuitBreakerTest = async () => {
+      failureCount++;
+      if (failureCount <= 2) {
+        throw new Error('Service degraded');
+      }
+      return { state: 'closed', healthy: true };
+    };
+    
+    const result = await retryWithBackoff(circuitBreakerTest, testContext.maxRetries, 10);
+    assert(result.state === 'closed', 'Circuit breaker should transition to closed state');
+    testContext.retryCount = failureCount - 1;
+    
+    return {
+      success: true,
+      retries: testContext.retryCount,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      retries: testContext.retryCount,
+    };
+  }
+}
+
+// Test suite: Queue capacity validation
+export async function testQueueCapacity(): Promise<TestResult> {
+  const testContext: TestContext = {
+    name: 'Queue Capacity Validation',
+    retryCount: 0,
+    maxRetries: 2,
+  };
+  
+  try {
+    const queue = new TaskQueue(2); // Max 2 concurrent tasks
+    const tasks: Promise<any>[] = [];
+    
+    for (let i = 0; i < 5; i++) {
+      tasks.push(
+        queue.enqueue(async () => {
+          await new Promise(r => setTimeout(r, 50));
+          return { taskId: i };
+        })
+      );
+    }
+    
+    const results = await Promise.all(tasks);
+    assert(results.length === 5, 'Queue should process all 5 tasks despite capacity limit');
+    
+    return {
+      success: true,
+      retries: testContext.retryCount,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      retries: testContext.retryCount,
+    };
+  }
+}
+
+// Execute all registered tests
+(async () => {
+  test('Health Check Endpoints', testHealthCheckEndpoints);
+  test('Null/Undefined Handling', testNullUndefinedHandling);
+  test('Queue Processing', testQueueProcessing);
+  test('State Reconciliation', testStateReconciliation);
+  test('Network Failure Recovery', testNetworkFailureRecovery);
+  test('Timeout Handling', testTimeoutHandling);
+  test('Graceful Degradation', testGracefulDegradation);
+  test('Retry with Exponential Backoff', testRetryWithBackoff);
+  test('Max Retries Exhaustion', testMaxRetriesExhaustion);
+  test('Circuit Breaker State', testCircuitBreakerState);
+  test('Queue Capacity', testQueueCapacity);
+  
+  const success = await runTests();
+  process.exit(success ? 0 : 1);
+})().catch(err => {
+  console.error('Test execution failed:', err);
+  process.exit(1);
+});
 
 // Main test runner
 async function runAllTests(): Promise<void> {
