@@ -80,6 +80,16 @@ class LRUTokenBucketCache {
         if (cleaned > 1000) break;
       }
     }
+    
+    // If cache size exceeds max capacity, evict oldest LRU entries
+    if (this.cache.size > this.maxSize) {
+      const excessCount = this.cache.size - this.maxSize;
+      const lruEntries = Array.from(this.accessOrder.keys()).slice(0, excessCount);
+      for (const key of lruEntries) {
+        this.cache.delete(key);
+        this.accessOrder.delete(key);
+      }
+    }
   }
 
   get(key: string): { tokens: number; lastRefill: number } | undefined {
