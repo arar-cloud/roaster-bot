@@ -20,8 +20,57 @@ class ConnectionPool {
   private readonly maxQueueSize: number = 1000; // Max queue entries before rejection
   private nextEntryId: number = 0;
 
+  private sweepInterval?: NodeJS.Timer;
+
   constructor(maxConnections: number = 10) {
     this.maxConnections = maxConnections;
+    this.startSweeper();
+  }
+
+  private startSweeper(): void {
+    // Periodic cleanup of expired queue entries every 5 seconds
+    this.sweepInterval = setInterval(() => {
+      this.sweepExpiredEntries();
+    }, 5000);
+    // Ensure sweeper doesn't prevent process exit
+    if (this.sweepInterval.unref) {
+      this.sweepInterval.unref();
+    }
+  }
+
+  private sweepExpiredEntries(): void {
+    const now = Date.now();
+    const entriesToDelete: string[] = [];
+
+    for (const [entryId, entry] of this.waitQueue) {
+      if (now - entry.timestamp >= this.maxWaitTimeMs) {
+        // Clear timeout handle for garbage collection
+        if (entry.timeoutHandle) {
+          clearTimeout(entry.timeoutHandle);
+          entry.timeoutHandle = undefined;
+        }
+        entriesToDelete.push(entryId);
+      }
+    }
+
+    // Remove expired entries
+    for (const entryId of entriesToDelete) {
+      this.waitQueue.delete(entryId);
+    }
+  }
+
+  destroy(): void {
+    // Clean up sweep interval when pool is destroyed
+    if (this.sweepInterval) {
+      clearInterval(this.sweepInterval);
+    }
+    // Clear all remaining timeouts
+    for (const entry of this.waitQueue.values()) {
+      if (entry.timeoutHandle) {
+        clearTimeout(entry.timeoutHandle);
+      }
+    }
+    this.waitQueue.clear();
   }
 
   async acquireConnection(): Promise<void> {
