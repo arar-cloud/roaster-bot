@@ -5,7 +5,7 @@ import RedisStore from 'rate-limit-redis';
 import { createClient } from 'redis';
 
 // Initialize Redis client for distributed rate limiting with async/await (redis v5+)
-const redisClient, tokenBucketCache = createClient({
+const redisClient = createClient({
   socket: {
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
@@ -18,6 +18,9 @@ const redisClient, tokenBucketCache = createClient({
     }
   },
 });
+
+// Local token bucket cache for batch Redis sync (reduces per-request Redis calls)
+const tokenBucketCache = new Map<string, { tokens: number; lastRefill: number }>();
 
 redisClient.on('error', (err: Error) => {
   console.error('Redis error:', err.message);
