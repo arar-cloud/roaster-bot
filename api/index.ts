@@ -190,12 +190,41 @@ class LRUTokenBucketCache {
       }
     }
   }
+
+  destroy(): void {
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+    this.cache.clear();
+    this.accessOrder.clear();
+  }
 }
 
 const tokenBucketCache = new LRUTokenBucketCache();
 
 redisClient.on('error', (err: Error) => {
   console.error('Redis error:', err.message);
+});
+
+// Graceful shutdown: clean up resources on process termination
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM: shutting down gracefully...');
+  tokenBucketCache.destroy();
+  try {
+    await redisCluster.disconnect();
+  } catch (err) {
+    console.error('Error disconnecting Redis cluster:', err);
+  }
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT: shutting down gracefully...');
+  tokenBucketCache.destroy();
+  try {
+    await redisCluster.disconnect();
+  } catch (err) {
+    console.error('Error disconnecting Redis cluster:', err);
+  }
+  process.exit(0);
 });
 
 // Batch get tokens for multiple keys using Redis pipelining
