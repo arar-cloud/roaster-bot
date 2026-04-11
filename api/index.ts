@@ -13,6 +13,7 @@ interface RetryOptions {
 // Connection pool manager for database connections
 class ConnectionPool {
   private activeConnections: number = 0;
+  private connectionLock: boolean = false;
   private readonly maxConnections: number;
   private readonly waitQueue: Map<string, { id: string; resolve: () => void; timestamp: number; timeoutHandle?: NodeJS.Timeout using O(1) Map delete
         if (this.waitQueue.set(entryId, entryId) }> = new Map();
