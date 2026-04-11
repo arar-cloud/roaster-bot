@@ -10,7 +10,14 @@ const redisClient = createClient({
     host: process.env.REDIS_HOST || 'localhost',
     port: parseInt(process.env.REDIS_PORT || '6379', 10),
     reconnectStrategy: (retries: number) => {
-      if (retries > 10) {
+    const expired = this.timeoutHeap.popExpired(now);
+
+    // Process expired entries asynchronously without blocking event loop
+    if (expired.length > 0) {
+      await new Promise(resolve => setImmediate(resolve));
+      // Clean up any associated state for expired entries
+      expired.forEach(key => {
+        tokenBucketCache.has(key) && tokenBucketCache.get(key)  if (retries > 10) {
         console.warn('Redis reconnection failed after 10 attempts, giving up');
         return new Error('Redis unavailable');
       }
@@ -30,14 +37,14 @@ class LRUTokenBucketCache {
   get(key: string): { tokens: number; lastRefill: number } | undefined {
     const entry = this.cache.get(key);
     if (!entry) return undefined;
-    
+
     // Check TTL expiration
     if (Date.now() - entry.lastRefill > this.ttlMs) {
       this.cache.delete(key);
       this.accessOrder = this.accessOrder.filter(k => k !== key);
       return undefined;
     }
-    
+
     // Move to end (most recently used)
     const idx = this.accessOrder.indexOf(key);
     if (idx !== -1) {
@@ -81,7 +88,7 @@ class RedisBatchStore {
 
   private async flushBatch(): Promise<void> {
     if (this.batchQueue.size === 0) return;
-    
+
     try {
       const pipeline = this.redisClient.multi();
       this.batchQueue.forEach((count, key) => {
@@ -103,7 +110,7 @@ class RedisBatchStore {
   async increment(key: string): Promise<void> {
     const current = this.batchQueue.get(key) || 0;
     this.batchQueue.set(key, current + 1);
-    
+
     if (!this.batchTimer) {
       this.batchTimer = setTimeout(() => {
         this.flushBatch().finally(() => {
@@ -239,7 +246,7 @@ class ConnectionPool {
       const timestamp = Date.now();
       const entryId = String(this.nextEntryId++);
       const entry = { id: entryId, resolve, timestamp };
-      
+
       // Defer queue operation to next event loop tick to prevent blocking
       setImmediate(() => {
         this.waitQueue.set(entryId, entry);
