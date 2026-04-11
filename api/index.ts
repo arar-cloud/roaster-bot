@@ -205,13 +205,14 @@ function loggingMiddleware(req: Request, res: Response, next: NextFunction): voi
   next();
 }
 
-// Idempotency store (in-memory for single instance, should use Redis in production)
+// Idempotency key tracking for write operations
 interface IdempotencyRecord {
   key: string;
   responseCode: number;
   responseBody: any;
   timestamp: number;
   expiresAt: number;
+  requestId: string;
 }
 
 class IdempotencyStore {
@@ -230,7 +231,8 @@ class IdempotencyStore {
       responseCode,
       responseBody,
       timestamp: Date.now(),
-      expiresAt: Date.now() + this.ttlMs
+      expiresAt: Date.now() + this.ttlMs,
+      requestId: randomUUID()
     });
   }
 
