@@ -531,6 +531,47 @@ function idempotencyMiddleware(req: Request, res: Response, next: NextFunction):
 // Cleanup idempotency cache every 10 minutes
 setInterval(cleanupIdempotencyCache, 600000);
 
+// Error handling utilities
+interface ApiError {
+  statusCode: number;
+  message: string;
+  errors?: Array<{ field: string; message: string }>;
+}
+
+function createErrorResponse(statusCode: number, message: string, errors?: any[]): ApiError {
+  return {
+    statusCode,
+    message,
+    errors: errors?.map(e => ({
+      field: e.field || 'unknown',
+      message: e.message || e
+    }))
+  };
+}
+
+function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => Promise<void>) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch((error) => {
+      const traceId = req.traceId || 'unknown';
+      structuredLog('error', traceId, 'unhandled_error', {
+        message: error.message,
+        stack: error.stack,
+        path: req.path,
+        method: req.method
+      });
+      
+      if (error instanceof ValidationError) {
+        return res.status(400).json(createErrorResponse(400, 'Validation failed', [error]));
+      }
+      
+      res.status(500).json(createErrorResponse(500, 'Internal server error', [{
+        field: 'server',
+        message: 'An unexpected error occurred. Please retry or contact support.'
+      }]));
+    });
+  };
+}
+
 // Retry configuration with exponential backoff and circuit breaker
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_RESET_TIMEOUT = 60000; // 60 seconds
