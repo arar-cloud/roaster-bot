@@ -66,7 +66,10 @@ class ConnectionPool {
   }
 
   private startSweeper(): void {
-    // Periodic cleanup of expired queue entries every 5 seconds
+    // Periodic cleanup of expired queue entries (runs every 5 seconds)
+    this.sweepInterval = setInterval(() => {
+      this.sweep();
+    }, 5000); every 5 seconds
     this.sweepInterval = setInterval(() => {
         this.sweepExpiredEntries();
     }, 5000);
