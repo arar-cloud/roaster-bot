@@ -394,6 +394,74 @@ function getHealthStatus(): { ready: boolean; reason?: string } {
   };
 }
 
+// Connection pool configuration
+interface PoolConfig {
+  maxConnections?: number;
+  maxQueueSize?: number;
+  requestTimeoutMs?: number;
+  idleTimeoutMs?: number;
+}
+
+class ConnectionPool {
+  private activeConnections: number = 0;
+  private queuedRequests: number = 0;
+  private readonly maxConnections: number;
+  private readonly maxQueueSize: number;
+  private readonly requestTimeoutMs: number;
+
+  constructor(private traceId: string, config: PoolConfig = {}) {
+    this.maxConnections = config.maxConnections ?? 100;
+    this.maxQueueSize = config.maxQueueSize ?? 50;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? 30000;
+  }
+
+  async acquireConnection<T>(
+    operation: (abortSignal: AbortSignal) => Promise<T>,
+    operationName: string
+  ): Promise<T> {
+    if (this.activeConnections >= this.maxConnections) {
+      this.queuedRequests++;
+      if (this.queuedRequests > this.maxQueueSize) {
+        this.queuedRequests--;
+        throw createErrorResponse('SERVICE_UNAVAILABLE', 'Connection pool queue exceeded', this.traceId, {
+          activeConnections: this.activeConnections,
+          queuedRequests: this.queuedRequests
+        });
+      }
+    }
+
+    this.activeConnections++;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.requestTimeoutMs);
+
+    try {
+      const result = await operation(controller.signal);
+      clearTimeout(timeoutId);
+      return result;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        structuredLog('error', this.traceId, `${operationName} timeout after ${this.requestTimeoutMs}ms`);
+        throw createErrorResponse('TIMEOUT', `${operationName} timeout exceeded`, this.traceId);
+      }
+      throw error;
+    } finally {
+      this.activeConnections--;
+      if (this.queuedRequests > 0) {
+        this.queuedRequests--;
+      }
+    }
+  }
+
+  getStatus(): Record<string, number> {
+    return {
+      activeConnections: this.activeConnections,
+      queuedRequests: this.queuedRequests,
+      maxConnections: this.maxConnections
+    };
+  }
+}
+
 // Structured logging
 class StructuredLogger {
   private logBuffer: any[] = [];
