@@ -31,6 +31,61 @@ function structuredLog(level: 'info' | 'warn' | 'error', traceId: string, messag
     message,
     context
   };
+
+// Retry utility with exponential backoff and jitter
+interface RetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  backoffMultiplier?: number;
+}
+
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  traceId: string,
+  operationName: string,
+  options: RetryOptions = {}
+): Promise<T> {
+  const maxRetries = options.maxRetries ?? 3;
+  const initialDelayMs = options.initialDelayMs ?? 100;
+  const maxDelayMs = options.maxDelayMs ?? 5000;
+  const backoffMultiplier = options.backoffMultiplier ?? 2;
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await operation();
+      if (attempt > 0) {
+        structuredLog('info', traceId, `${operationName} succeeded after ${attempt} retry/retries`);
+      }
+      return result;
+    } catch (error) {
+      lastError = error as Error;
+      if (attempt === maxRetries) {
+        structuredLog('error', traceId, `${operationName} failed after ${maxRetries} retries`, {
+          error: lastError.message,
+          finalAttempt: true
+        });
+        throw lastError;
+      }
+
+      const delayMs = Math.min(
+        initialDelayMs * Math.pow(backoffMultiplier, attempt) + Math.random() * 100,
+        maxDelayMs
+      );
+
+      structuredLog('warn', traceId, `${operationName} attempt ${attempt + 1} failed, retrying in ${delayMs}ms`, {
+        error: lastError.message,
+        attempt: attempt + 1,
+        maxRetries
+      });
+
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError || new Error(`${operationName} failed after ${maxRetries} retries`);
   console.log(JSON.stringify(logEntry));
 }
 
