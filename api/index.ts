@@ -572,6 +572,92 @@ function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => P
   };
 }
 
+// Graceful shutdown state
+let isShuttingDown = false;
+let activeConnections = 0;
+const GRACEFUL_SHUTDOWN_TIMEOUT = 30000; // 30 seconds
+
+// Connection tracking middleware
+function connectionTrackingMiddleware(req: Request, res: Response, next: NextFunction): void {
+  activeConnections++;
+  
+  res.on('finish', () => {
+    activeConnections--;
+  });
+  
+  if (isShuttingDown) {
+    res.set('Connection', 'close');
+  }
+  
+  next();
+}
+
+// Health check endpoints
+function setupHealthChecks(expressApp: any): void {
+  // Liveness probe - basic health check
+  expressApp.get('/health', (req: Request, res: Response) => {
+    res.status(200).json({
+      status: 'alive',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+  
+  // Readiness probe - full service readiness
+  expressApp.get('/ready', (req: Request, res: Response) => {
+    if (isShuttingDown) {
+      return res.status(503).json({
+        status: 'shutting_down',
+        message: 'Service is gracefully shutting down'
+      });
+    }
+    
+    res.status(200).json({
+      status: 'ready',
+      timestamp: new Date().toISOString(),
+      activeConnections
+    });
+  });
+}
+
+// Graceful shutdown handler
+function setupGracefulShutdown(expressApp: any): void {
+  const signals = ['SIGTERM', 'SIGINT'];
+  
+  signals.forEach(signal => {
+    process.on(signal, () => {
+      const traceId = randomUUID();
+      structuredLog('info', traceId, 'shutdown_signal_received', { signal });
+      
+      isShuttingDown = true;
+      
+      // Stop accepting new requests
+      expressApp.use((req: Request, res: Response) => {
+        res.status(503).json({
+          error: 'Service is shutting down',
+          message: 'Please retry your request'
+        });
+      });
+      
+      // Wait for active connections to drain
+      const shutdownTimeout = setTimeout(() => {
+        structuredLog('warn', traceId, 'graceful_shutdown_timeout', { activeConnections });
+        process.exit(1);
+      }, GRACEFUL_SHUTDOWN_TIMEOUT);
+      
+      // Check if all connections are done
+      const checkConnections = setInterval(() => {
+        if (activeConnections === 0) {
+          clearInterval(checkConnections);
+          clearTimeout(shutdownTimeout);
+          structuredLog('info', traceId, 'graceful_shutdown_complete', { signal });
+          process.exit(0);
+        }
+      }, 1000);
+    });
+  });
+}
+
 // Retry configuration with exponential backoff and circuit breaker
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_RESET_TIMEOUT = 60000; // 60 seconds
