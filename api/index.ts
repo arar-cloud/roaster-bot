@@ -176,6 +176,82 @@ function getHttpStatusForErrorCode(code: ErrorCode): number {
   };
   return statusMap[code] || 500;
 }
+
+// Circuit breaker for downstream services
+enum CircuitState {
+  CLOSED = 'CLOSED',
+  OPEN = 'OPEN',
+  HALF_OPEN = 'HALF_OPEN'
+}
+
+interface CircuitBreakerConfig {
+  failureThreshold?: number;
+  resetTimeoutMs?: number;
+  successThreshold?: number;
+}
+
+class CircuitBreaker {
+  private state: CircuitState = CircuitState.CLOSED;
+  private failureCount: number = 0;
+  private successCount: number = 0;
+  private lastFailureTime: number = 0;
+  private readonly failureThreshold: number;
+  private readonly resetTimeoutMs: number;
+  private readonly successThreshold: number;
+
+  constructor(private traceId: string, config: CircuitBreakerConfig = {}) {
+    this.failureThreshold = config.failureThreshold ?? 5;
+    this.resetTimeoutMs = config.resetTimeoutMs ?? 30000;
+    this.successThreshold = config.successThreshold ?? 2;
+  }
+
+  async execute<T>(operation: () => Promise<T>, serviceName: string): Promise<T> {
+    if (this.state === CircuitState.OPEN) {
+      if (Date.now() - this.lastFailureTime > this.resetTimeoutMs) {
+        this.state = CircuitState.HALF_OPEN;
+        this.successCount = 0;
+        structuredLog('info', this.traceId, `Circuit breaker transitioning to HALF_OPEN for ${serviceName}`);
+      } else {
+        throw createErrorResponse('SERVICE_UNAVAILABLE', `Circuit breaker OPEN for ${serviceName}`, this.traceId);
+      }
+    }
+
+    try {
+      const result = await operation();
+      this.recordSuccess(serviceName);
+      return result;
+    } catch (error) {
+      this.recordFailure(serviceName);
+      throw error;
+    }
+  }
+
+  private recordSuccess(serviceName: string): void {
+    this.failureCount = 0;
+    if (this.state === CircuitState.HALF_OPEN) {
+      this.successCount++;
+      if (this.successCount >= this.successThreshold) {
+        this.state = CircuitState.CLOSED;
+        structuredLog('info', this.traceId, `Circuit breaker CLOSED for ${serviceName}`);
+      }
+    }
+  }
+
+  private recordFailure(serviceName: string): void {
+    this.lastFailureTime = Date.now();
+    this.failureCount++;
+    if (this.state === CircuitState.HALF_OPEN) {
+      this.state = CircuitState.OPEN;
+      structuredLog('warn', this.traceId, `Circuit breaker OPEN for ${serviceName} after failure in HALF_OPEN state`);
+    } else if (this.failureCount >= this.failureThreshold) {
+      this.state = CircuitState.OPEN;
+      structuredLog('warn', this.traceId, `Circuit breaker OPEN for ${serviceName}`, { failureCount: this.failureCount });
+    }
+  }
+}
+
+// Global circuit breaker instances per service
+const circuitBreakers = new Map<string, CircuitBreaker>();
   console.log(JSON.stringify(logEntry));
 }
 
