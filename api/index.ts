@@ -166,12 +166,54 @@ class RedisBatchStore {
 
 const redisBatchStore = new RedisBatchStore(redisClient);
 
-// Configure rate limiter with batched Redis store
-const limiter = rateLimit({
-  store: new RedisStore({
+// Configuration for hybrid local-first strategy
+const CLOCK_SKEW_TOLERANCE = 100; // milliseconds - allow local cache hits within this tolerance
+const REDIS_SYNC_INTERVAL = 30000; // milliseconds - sync local cache to Redis every 30 seconds
+const REDIS_SYNC_BATCH_SIZE = 50; // flush to Redis after this many requests
+
+let requestsSinceSync = 0;
+let lastRedisSync = Date.now();
+
+const hybridRateLimitStore = {
+  localCache: tokenBucketCache,
+  redisStore: new RedisStore({
     client: redisClient,
     prefix: 'rl:',
   }),
+
+  async increment(key: string) {
+    const now = Date.now();
+    requestsSinceSync++;
+
+    // Check local cache first (O(1) lookup)
+    const cached = this.localCache.get(key);
+    if (cached && cached.lastRefill + 900000 > now - CLOCK_SKEW_TOLERANCE) {
+      // Cache hit within skew tolerance - use local value without Redis round-trip
+      const newTokens = (cached.tokens || 0) + 1;
+      this.localCache.set(key, { tokens: newTokens, lastRefill: now });
+      return { totalHits: newTokens, resetTime: cached.lastRefill + 900000 };
+    }
+
+    // Cache miss or expired: fetch from Redis
+    const redisVal = await this.redisStore.get(key);
+    const current = redisVal ? parseInt(redisVal, 10) : 0;
+    const newCount = current + 1;
+    this.localCache.set(key, { tokens: newCount, lastRefill: now });
+
+    // Periodic flush to Redis (batched sync, not on every request)
+    if (requestsSinceSync >= REDIS_SYNC_BATCH_SIZE || now - lastRedisSync > REDIS_SYNC_INTERVAL) {
+      await this.redisStore.set(key, newCount, 900);
+      requestsSinceSync = 0;
+      lastRedisSync = now;
+    }
+
+    return { totalHits: newCount, resetTime: now + 900000 };
+  }
+};
+
+// Configure rate limiter with hybrid local-first store
+const limiter = rateLimit({
+  store: hybridRateLimitStore,
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: 'Too many requests from this IP, please try again later.',
