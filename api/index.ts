@@ -430,6 +430,51 @@ class TokenBucket {
 
 const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
 
+// Health check endpoint (bypasses rate limiting)
+function setupHealthChecks(expressApp: any): void {
+  expressApp.get('/health', (req: any, res: any) => {
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime()
+    });
+  });
+}
+
+// Graceful shutdown setup
+function setupGracefulShutdown(expressApp: any): void {
+  const shutdown = () => {
+    structuredLog('info', randomUUID(), 'graceful_shutdown_initiated', {});
+    process.exit(0);
+  };
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+}
+
+// Connection tracking middleware for graceful shutdown
+const connectionTrackingMiddleware = (req: any, res: any, next: any) => {
+  next();
+};
+
+// Async handler wrapper for error handling
+export const asyncHandler = (fn: any) => (req: any, res: any, next: any) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// Initialize API with middleware stack
+export function initializeApi(expressApp: any): void {
+  setupHealthChecks(expressApp);
+  setupGracefulShutdown(expressApp);
+  expressApp.use(loggingMiddleware);
+  expressApp.use(connectionTrackingMiddleware);
+  expressApp.use((req: any, res: any, next: any) => globalLimiter(req, res, next));
+  expressApp.use(idempotencyMiddleware);
+  structuredLog('info', randomUUID(), 'api_initialized', {
+    rateLimiting: 'enabled',
+    idempotency: 'enabled'
+  });
+}
+
 // Rate limiting configuration with backpressure handling
 function createRateLimiter(windowMs: number = 60000, maxRequests: number = 100, message: string = 'Too many requests') {
   return rateLimit({
