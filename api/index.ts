@@ -1506,4 +1506,15 @@ if (app && typeof app.get === 'function') {
   });
 }
 
+// Export performance utilities for use in handlers
+export {
+  BatchQueryExecutor,
+  ResponseCache,
+  ConnectionPool,
+  asyncHandler,
+  batchExecutor,
+  responseCache,
+  connectionPool
+};
+
 export default app;
