@@ -14,7 +14,8 @@ interface RetryOptions {
 class ConnectionPool {
   private activeConnections: number = 0;
   private readonly maxConnections: number;
-  private readonly waitQueue: Map<string, { id: string; resolve: () => void; timestamp: number; timeoutHandle?: NodeJS.Timeout }> = new Map();
+  private readonly waitQueue: Map<string, { id: string; resolve: () => void; timestamp: number; timeoutHandle?: NodeJS.Timeout using O(1) Map delete
+        if (this.waitQueue.set(entryId, entryId) }> = new Map();
   private readonly maxWaitTimeMs: number = 30000; // 30 second timeout
   private readonly maxQueueSize: number = 1000; // Max queue entries before rejection
   private nextEntryId: number = 0;
@@ -95,11 +96,11 @@ class ResponseCache {
   generateKey(endpoint: string, params: Record<string, any>): string {
     // Use fast hash-based key generation instead of JSON.stringify to avoid event loop blocking
     const hash = createHash('sha256');
-    
+
     // Hash endpoint first
     hash.update(endpoint);
     hash.update(':');
-    
+
     // Iterate keys in sorted order for consistency
     const keys = Object.keys(params).sort();
     for (const key of keys) {
@@ -116,7 +117,7 @@ class ResponseCache {
       }
       hash.update('|');
     }
-    
+
     // Return hex digest (fast, non-blocking) instead of full JSON string
     return hash.digest('hex').substring(0, 16);
   }
@@ -147,14 +148,14 @@ class ResponseCache {
     // Extract common prefix from pattern (first 6 chars) for fast partition lookup
     const prefixPattern = pattern.substring(0, Math.min(6, pattern.length));
     const keysToDelete: string[] = [];
-    
+
     // Only scan keys that start with the pattern prefix
     for (const key of this.cache.keys()) {
       if (key.startsWith(prefixPattern) && key.includes(pattern)) {
         keysToDelete.push(key);
       }
     }
-    
+
     for (const key of keysToDelete) {
       this.cache.delete(key);
     }
@@ -185,7 +186,7 @@ class BatchQueryExecutor {
 
       // Reset timer on new batch item
       if (this.batchTimer) clearTimeout(this.batchTimer);
-      
+
       this.batchTimer = setTimeout(() => this.processBatch(), this.BATCH_WINDOW_MS);
     });
   }
@@ -222,7 +223,7 @@ class RetryStrategy {
     context: string = 'operation'
   ): Promise<T> {
     let lastError: Error | null = null;
-    
+
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       try {
         return await fn();
@@ -234,7 +235,7 @@ class RetryStrategy {
         }
       }
     }
-    
+
     const err = lastError || new Error(`${context} failed after ${this.maxAttempts} attempts`);
     throw err;
   }
@@ -301,7 +302,7 @@ class CircuitBreaker {
 
   private onSuccess(): void {
     this.failureCount = 0;
-    
+
     if (this.state === 'HALF_OPEN') {
       this.successCount++;
       if (this.successCount >= this.halfOpenMaxAttempts) {
@@ -314,7 +315,7 @@ class CircuitBreaker {
   private onFailure(): void {
     this.failureCount++;
     this.lastFailureTime = Date.now();
-    
+
     if (this.failureCount >= this.failureThreshold) {
       this.state = 'OPEN';
     }
@@ -911,19 +912,19 @@ export const queryCache = new QueryCache();
 
 /**
  * Exponential backoff retry with circuit breaker integration
- * 
+ *
  * Implements resilient retry logic for external service calls:
  * - Exponential backoff: 100ms * 2^attempt, capped at 5s
  * - Circuit breaker: Opens after 5 consecutive failures, re-attempts after 60s
  * - Max retries: 3 attempts (configurable)
  * - Trace ID: Logs all retry attempts with trace ID for debugging
- * 
+ *
  * Failure modes and recovery:
  * - If circuit breaker is open: Throws immediately without retrying
  * - If all retries exhausted: Throws last encountered error
  * - On transient failures (timeout, 5xx): Retries with backoff
  * - On permanent failures (4xx): Fails immediately
- * 
+ *
  * @param fn The async function to retry
  * @param serviceName Identifier for circuit breaker state tracking
  * @param traceId Request trace ID for logging correlation
@@ -1164,22 +1165,22 @@ function idempotencyMiddleware(req: Request, res: Response, next: NextFunction):
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     return next();
   }
-  
+
   const idempotencyKey = req.headers['idempotency-key'] as string;
   if (!idempotencyKey) {
     return next();
   }
-  
+
   req.idempotencyKey = idempotencyKey;
   const cacheKey = `${req.method}:${req.path}:${idempotencyKey}`;
-  
+
   // Check for cached response
   const cached = idempotencyCache.get(cacheKey);
   if (cached) {
     structuredLog('info', req.traceId || 'unknown', 'idempotency_cache_hit', { cacheKey });
     return res.status(cached.statusCode).json(cached.responseBody);
   }
-  
+
   // Intercept response to cache it
   const originalSend = res.send.bind(res);
   res.send = function(data: any) {
@@ -1192,7 +1193,7 @@ function idempotencyMiddleware(req: Request, res: Response, next: NextFunction):
     });
     return originalSend(data);
   };
-  
+
   next();
 }
 
@@ -1227,11 +1228,11 @@ function asyncHandler(fn: (req: Request, res: Response, next: NextFunction) => P
         path: req.path,
         method: req.method
       });
-      
+
       if (error instanceof ValidationError) {
         return res.status(400).json(createErrorResponse(400, 'Validation failed', [error]));
       }
-      
+
       res.status(500).json(createErrorResponse(500, 'Internal server error', [{
         field: 'server',
         message: 'An unexpected error occurred. Please retry or contact support.'
@@ -1248,15 +1249,15 @@ const GRACEFUL_SHUTDOWN_TIMEOUT = 30000; // 30 seconds
 // Connection tracking middleware
 function connectionTrackingMiddleware(req: Request, res: Response, next: NextFunction): void {
   activeConnections++;
-  
+
   res.on('finish', () => {
     activeConnections--;
   });
-  
+
   if (isShuttingDown) {
     res.set('Connection', 'close');
   }
-  
+
   next();
 }
 
@@ -1270,7 +1271,7 @@ function setupHealthChecks(expressApp: any): void {
       uptime: process.uptime()
     });
   });
-  
+
   // Readiness probe - full service readiness
   expressApp.get('/ready', (req: Request, res: Response) => {
     if (isShuttingDown) {
@@ -1279,7 +1280,7 @@ function setupHealthChecks(expressApp: any): void {
         message: 'Service is gracefully shutting down'
       });
     }
-    
+
     res.status(200).json({
       status: 'ready',
       timestamp: new Date().toISOString(),
@@ -1291,14 +1292,14 @@ function setupHealthChecks(expressApp: any): void {
 // Graceful shutdown handler
 function setupGracefulShutdown(expressApp: any): void {
   const signals = ['SIGTERM', 'SIGINT'];
-  
+
   signals.forEach(signal => {
     process.on(signal, () => {
       const traceId = randomUUID();
       structuredLog('info', traceId, 'shutdown_signal_received', { signal });
-      
+
       isShuttingDown = true;
-      
+
       // Stop accepting new requests
       expressApp.use((req: Request, res: Response) => {
         res.status(503).json({
@@ -1306,13 +1307,13 @@ function setupGracefulShutdown(expressApp: any): void {
           message: 'Please retry your request'
         });
       });
-      
+
       // Wait for active connections to drain
       const shutdownTimeout = setTimeout(() => {
         structuredLog('warn', traceId, 'graceful_shutdown_timeout', { activeConnections });
         process.exit(1);
       }, GRACEFUL_SHUTDOWN_TIMEOUT);
-      
+
       // Check if all connections are done
       const checkConnections = setInterval(() => {
         if (activeConnections === 0) {
