@@ -471,6 +471,66 @@ const DB_CONFIG = {
   }
 };
 
+// Idempotency key management
+interface IdempotencyRecord {
+  key: string;
+  statusCode: number;
+  responseBody: any;
+  timestamp: number;
+}
+
+const idempotencyCache = new Map<string, IdempotencyRecord>();
+const IDEMPOTENCY_CACHE_TTL = 3600000; // 1 hour
+
+function cleanupIdempotencyCache(): void {
+  const now = Date.now();
+  for (const [key, record] of idempotencyCache.entries()) {
+    if (now - record.timestamp > IDEMPOTENCY_CACHE_TTL) {
+      idempotencyCache.delete(key);
+    }
+  }
+}
+
+function idempotencyMiddleware(req: Request, res: Response, next: NextFunction): void {
+  // Only apply to mutation methods
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    return next();
+  }
+  
+  const idempotencyKey = req.headers['idempotency-key'] as string;
+  if (!idempotencyKey) {
+    return next();
+  }
+  
+  req.idempotencyKey = idempotencyKey;
+  const cacheKey = `${req.method}:${req.path}:${idempotencyKey}`;
+  
+  // Check for cached response
+  const cached = idempotencyCache.get(cacheKey);
+  if (cached) {
+    structuredLog('info', req.traceId || 'unknown', 'idempotency_cache_hit', { cacheKey });
+    return res.status(cached.statusCode).json(cached.responseBody);
+  }
+  
+  // Intercept response to cache it
+  const originalSend = res.send.bind(res);
+  res.send = function(data: any) {
+    const responseBody = typeof data === 'string' ? JSON.parse(data) : data;
+    idempotencyCache.set(cacheKey, {
+      key: idempotencyKey,
+      statusCode: res.statusCode,
+      responseBody,
+      timestamp: Date.now()
+    });
+    return originalSend(data);
+  };
+  
+  next();
+}
+
+// Cleanup idempotency cache every 10 minutes
+setInterval(cleanupIdempotencyCache, 600000);
+
 // Retry configuration with exponential backoff and circuit breaker
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_RESET_TIMEOUT = 60000; // 60 seconds
