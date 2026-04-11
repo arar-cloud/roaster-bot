@@ -1,6 +1,8 @@
 import app from '../src/index.js';
 import { randomUUID, createHash } from 'crypto';
 import rateLimit from 'express-rate-limit';
+import RedisStore from 'rate-limit-redis';
+import { createClient } from 'redis';
 
 // Exponential backoff retry strategy
 interface RetryOptions {
