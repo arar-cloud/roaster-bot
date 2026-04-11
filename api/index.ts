@@ -457,6 +457,20 @@ function createRateLimiter(windowMs: number = 60000, maxRequests: number = 100, 
 const globalLimiter = createRateLimiter(60000, 1000, 'Global rate limit exceeded');
 const apiBusyLimiter = createRateLimiter(60000, 100, 'API rate limit exceeded');
 
+// Database connection pool configuration
+const DB_CONFIG = {
+  pool: {
+    min: 2,
+    max: 10,
+    idleTimeoutMillis: 30000, // 30 seconds
+    connectionTimeoutMillis: 5000, // 5 seconds
+  },
+  query: {
+    timeoutMs: 10000, // 10 seconds per query
+    maxAttempts: 3,
+  }
+};
+
 // Retry configuration with exponential backoff and circuit breaker
 const CIRCUIT_BREAKER_THRESHOLD = 5;
 const CIRCUIT_BREAKER_RESET_TIMEOUT = 60000; // 60 seconds
