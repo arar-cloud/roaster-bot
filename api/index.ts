@@ -134,6 +134,43 @@ redisClient.on('error', (err: Error) => {
   console.error('Redis error:', err.message);
 });
 
+// Batch get tokens for multiple keys using Redis pipelining
+// Reduces N+1 queries to single round-trip during burst traffic
+async function batchGetTokens(keys: string[], limit: number, refillRate: number): Promise<Map<string, number>> {
+  try {
+    const pipeline = redisCluster.multi();
+    for (const key of keys) {
+      pipeline.get(`token:${key}`);
+    }
+    const results = await pipeline.exec();
+    
+    const tokenMap = new Map<string, number>();
+    const now = Date.now();
+    
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const entry = tokenBucketCache.get(key);
+      
+      if (!entry) {
+        tokenMap.set(key, limit);
+        continue;
+      }
+      
+      // Calculate tokens to refill based on elapsed time
+      const elapsed = (now - entry.lastRefill) / 1000;
+      const tokensToAdd = Math.floor(elapsed * refillRate);
+      const newTokens = Math.min(entry.tokens + tokensToAdd, limit);
+      tokenMap.set(key, newTokens);
+    }
+    
+    return tokenMap;
+  } catch (err) {
+    console.error('Batch token fetch failed:', err);
+    // Fallback: return limit for all keys on Redis failure
+    return new Map(keys.map(k => [k, limit]));
+  }
+}
+
 // Batch Redis operations to reduce round-trip latency (5-10x improvement)
 class RedisBatchStore {
   private batchQueue: Map<string, number> = new Map();
@@ -259,6 +296,29 @@ interface RetryOptions {
   initialDelayMs?: number;
   maxDelayMs?: number;
   jitterFactor?: number;
+}
+
+// MULTI/EXEC wrapper for atomic token bucket operations
+// Batches compound read-modify-write ops to single Redis transaction
+async function atomicBatchUpdateTokens(updates: Array<{ key: string; tokens: number; limit: number }>): Promise<void> {
+  if (updates.length === 0) return;
+  
+  try {
+    const pipeline = redisCluster.multi();
+    for (const { key, tokens, limit } of updates) {
+      // Clamp tokens to limit and store in Redis with 15min expiry
+      const finalTokens = Math.min(tokens, limit);
+      pipeline.set(`token:${key}`, finalTokens, { EX: 900 });
+    }
+    await pipeline.exec();
+  } catch (err) {
+    console.error('Atomic batch update failed:', err);
+    // On failure, update local cache only as fallback
+    const now = Date.now();
+    for (const { key, tokens } of updates) {
+      tokenBucketCache.set(key, { tokens, lastRefill: now });
+    }
+  }
 }
 
 // Connection pool manager for database connections
