@@ -324,9 +324,19 @@ class RedisBatchStore {
       return 0;
     }
   }
+
+  async reset(key: string): Promise<void> {
+    try {
+      await this.redisClient.del(this.prefix + key);
+      this.batchQueue.delete(key);
+      this.localFallback.delete(key);
+    } catch (err) {
+      console.error('Failed to reset rate limit key:', err);
+    }
+  }
 }
 
-const redisBatchStore = new RedisBatchStore(redisClient);
+const redisBatchStore = new RedisBatchStore(redisCluster);
 
 // Configuration for hybrid local-first strategy
 const CLOCK_SKEW_TOLERANCE = 100; // milliseconds - allow local cache hits within this tolerance
