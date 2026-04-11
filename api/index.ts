@@ -265,7 +265,7 @@ function rateLimitMiddleware(req: any, res: any, next: any): void {
   }
 }
 
-// Middleware: Idempotency key check for write operations
+// Middleware: Idempotency key check for write operations with response validation
 function idempotencyMiddleware(req: any, res: any, next: any): void {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     next();
@@ -278,8 +278,14 @@ function idempotencyMiddleware(req: any, res: any, next: any): void {
   } else {
     const existing = idempotencyStore.getIfExists(idempotencyKey);
     if (existing) {
-      structuredLog('info', req.traceId, 'Returning cached response for idempotent request', { idempotencyKey });
-      res.status(existing.responseCode).json(existing.response);
+      const isSuccessStatus = existing.statusCode >= 200 && existing.statusCode < 300;
+      
+      if (!isSuccessStatus) {
+        structuredLog('warn', req.traceId, 'Returning cached error response', { idempotencyKey, statusCode: existing.statusCode });
+      } else {
+        structuredLog('info', req.traceId, 'Returning cached success response', { idempotencyKey, statusCode: existing.statusCode });
+      }
+      res.status(existing.statusCode).json(existing.response);
       return;
     }
   }
