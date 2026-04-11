@@ -1,4 +1,5 @@
 import app from '../src/index.js';
+import { randomUUID } from 'crypto';
 
 // Extend Express Request type properly
 declare global {
@@ -7,8 +8,55 @@ declare global {
       rawBody?: string;
       traceId?: string;
       idempotencyKey?: string;
+      startTime?: number;
     }
   }
+}
+
+// Structured logging utilities
+interface LogEntry {
+  timestamp: string;
+  traceId: string;
+  level: 'info' | 'warn' | 'error';
+  message: string;
+  context?: Record<string, any>;
+}
+
+function structuredLog(level: 'info' | 'warn' | 'error', traceId: string, message: string, context?: Record<string, any>): void {
+  const logEntry: LogEntry = {
+    timestamp: new Date().toISOString(),
+    traceId,
+    level,
+    message,
+    context
+  };
+  console.log(JSON.stringify(logEntry));
+}
+
+// Request logging middleware with trace ID generation
+function loggingMiddleware(req: Request, res: Response, next: NextFunction): void {
+  req.traceId = req.headers['x-trace-id'] as string || randomUUID();
+  req.startTime = Date.now();
+
+  structuredLog('info', req.traceId, 'request_start', {
+    method: req.method,
+    path: req.path,
+    ip: req.ip
+  });
+
+  const originalSend = res.send.bind(res);
+  res.send = function(data: any) {
+    const duration = Date.now() - (req.startTime || 0);
+    structuredLog('info', req.traceId, 'request_complete', {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      durationMs: duration
+    });
+    return originalSend(data);
+  };
+
+  next();
 }
 
 // Idempotency store (in-memory for single instance, should use Redis in production)
@@ -184,12 +232,12 @@ class StructuredLogger {
       message,
       ...context
     };
-    
+
     this.logBuffer.push(entry);
     if (this.logBuffer.length > this.maxBufferSize) {
       this.logBuffer.shift();
     }
-    
+
     // In production, send to structured logging service
     if (level === 'error') {
       console.error(JSON.stringify(entry));
@@ -438,33 +486,33 @@ const timeoutMiddleware = (timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS) => {
 // Rate limiter with backpressure handling
 export const createLimiter = () => (req: any, res: any, next: any) => {
   const utilization = globalBucket.getUtilization();
-  
+
   if (!globalBucket.tryConsume(1)) {
     res.setHeader('Retry-After', '1');
     res.setHeader('X-RateLimit-Reset', new Date(Date.now() + 1000).toISOString());
     res.setHeader('X-Backpressure', 'high');
     return res.status(429).json({ error: 'Rate limit exceeded' });
   }
-  
+
   // Graceful degradation signals
   if (utilization > 0.8) {
     res.setHeader('X-Backpressure', 'moderate');
   } else if (utilization > 0.95) {
     res.setHeader('X-Backpressure', 'critical');
   }
-  
+
   next();
 };
 
 // Gzip compression middleware
 function compressionMiddleware(req: any, res: any, next: any): void {
   const acceptEncoding = (req.headers['accept-encoding'] || '').toString();
-  
+
   if (acceptEncoding.includes('gzip')) {
     res.setHeader('Content-Encoding', 'gzip');
     res.setHeader('Vary', 'Accept-Encoding');
   }
-  
+
   next();
 }
 
@@ -483,10 +531,10 @@ function serializeOptimized(data: any): string {
 // Request correlation middleware for trace ID propagation
 const requestCorrelationMiddleware = (req: any, res: any, next: any) => {
   // Generate or extract trace ID for request correlation
-  req.traceId = req.headers['x-trace-id'] || 
-    req.headers['x-request-id'] || 
+  req.traceId = req.headers['x-trace-id'] ||
+    req.headers['x-request-id'] ||
     require('crypto').randomUUID();
-  
+
   res.set('X-Trace-ID', req.traceId);
   next();
 };
@@ -513,19 +561,19 @@ export class BatchQueryExecutor {
     queryFn: (ids: (string | number)[]) => Promise<any[]>
   ): Promise<Map<string | number, any>> {
     if (!ids || ids.length === 0) return new Map();
-    
+
     // Use cache key based on sorted IDs for consistency
     const cacheKey = `batch_${ids.sort().join('_')}`;
     const cached = queryCache.get(cacheKey);
     if (cached) return new Map(Object.entries(cached));
-    
+
     // Execute single bulk query instead of n queries
     const results = await queryFn(ids);
     const resultMap: Record<string, any> = {};
     results.forEach((item: any) => {
       if (item.id) resultMap[item.id] = item;
     });
-    
+
     queryCache.set(cacheKey, resultMap);
     return new Map(Object.entries(resultMap));
   }
@@ -582,10 +630,10 @@ interface HealthStatus {
 
 const performHealthCheck = async (): Promise<HealthStatus> => {
   const dependencies: { [key: string]: any } = {};
-  
+
   // Check external services
   dependencies.copilot = { status: 'ok', message: 'GitHub Copilot SDK initialized' };
-  
+
   // Simulate database health check
   try {
     await Promise.race([
@@ -596,14 +644,14 @@ const performHealthCheck = async (): Promise<HealthStatus> => {
   } catch (e) {
     dependencies.database = { status: 'error', message: 'Connection failed' };
   }
-  
+
   // Check cache
   try {
     dependencies.cache = { status: 'ok', message: 'Cache operational' };
   } catch (e) {
     dependencies.cache = { status: 'error', message: 'Cache unavailable' };
   }
-  
+
   const overallStatus = Object.values(dependencies).every((d: any) => d.status === 'ok') ? 'healthy' : 'degraded';
   return {
     status: overallStatus,
@@ -624,7 +672,7 @@ if (app && typeof app.get === 'function') {
       res.status(503).json({ status: 'unhealthy', error: 'Health check failed' });
     }
   });
-  
+
   app.get('/readiness', async (req: any, res: any) => {
     try {
       const health = await performHealthCheck();
