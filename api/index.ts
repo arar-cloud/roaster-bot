@@ -1,5 +1,5 @@
 import app from '../src/index.js';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 import rateLimit from 'express-rate-limit';
 
 // Exponential backoff retry strategy
@@ -56,7 +56,32 @@ class ResponseCache {
   private readonly DEFAULT_TTL_MS = 60000; // 60 seconds default TTL
 
   generateKey(endpoint: string, params: Record<string, any>): string {
-    return `${endpoint}:${JSON.stringify(params)}`;
+    // Use fast hash-based key generation instead of JSON.stringify to avoid event loop blocking
+    const hash = createHash('sha256');
+    
+    // Hash endpoint first
+    hash.update(endpoint);
+    hash.update(':');
+    
+    // Iterate keys in sorted order for consistency
+    const keys = Object.keys(params).sort();
+    for (const key of keys) {
+      hash.update(key);
+      hash.update(':');
+      // Minimize JSON.stringify usage to individual scalar values only
+      const val = params[key];
+      if (val === null || val === undefined) {
+        hash.update('null');
+      } else if (typeof val === 'object') {
+        hash.update(JSON.stringify(val));
+      } else {
+        hash.update(String(val));
+      }
+      hash.update('|');
+    }
+    
+    // Return hex digest (fast, non-blocking) instead of full JSON string
+    return hash.digest('hex').substring(0, 16);
   }
 
   get(key: string, ttlMs: number = this.DEFAULT_TTL_MS): any | null {
