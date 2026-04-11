@@ -15,7 +15,8 @@ const redisClient = createClient({
         return new Error('Redis unavailable');
       }
       return Math.min(retries * 100, 3000);
-    }
+      }
+    });
   },
 });
 
@@ -135,28 +136,28 @@ class ConnectionPool {
       const timestamp = Date.now();
       const entryId = String(this.nextEntryId++);
       const entry = { id: entryId, resolve, timestamp };
-      this.waitQueue.set(entryId, entry);
+      
+      // Defer queue operation to next event loop tick to prevent blocking
+      setImmediate(() => {
+        this.waitQueue.set(entryId, entry);
 
-      // Set timeout to reject if not acquired within maxWaitTimeMs
-      const timeoutHandle = setTimeout(() => {
-        if (this.waitQueue.has(entryId)) {
-          this.waitQueue.delete(entryId);
-        }
-        reject(new Error('Connection acquisition timeout after ' + this.maxWaitTimeMs + 'ms'));
-      }, this.maxWaitTimeMs);
+        // Set timeout to reject if not acquired within maxWaitTimeMs
+        const timeoutHandle = setTimeout(() => {
+          if (this.waitQueue.has(entryId)) {
+            this.waitQueue.delete(entryId);
+          }
+          reject(new Error('Connection acquisition timeout after ' + this.maxWaitTimeMs + 'ms'));
+        }, this.maxWaitTimeMs);
 
-      // Store timeout handle for cleanup
-      entry.timeoutHandle = timeoutHandle;
+        // Store timeout handle for cleanup
+        entry.timeoutHandle = timeoutHandle;
+      });
     });
   }
 
   releaseConnection(): void {
-    // Use same lock pattern as acquireConnection to ensure atomic updates
-    while (this.connectionLock) {
-      // Spin-lock: wait until lock is released
-    }
-    this.connectionLock = true;
-    try {
+    // Defer queue operation to next event loop tick to prevent blocking
+    setImmediate(() => {
       this.activeConnections--;
       // Get first entry from Map and process if not expired
       for (const [entryId, entry] of this.waitQueue) {
@@ -175,9 +176,7 @@ class ConnectionPool {
           this.waitQueue.delete(entryId);
         }
       }
-    } finally {
-      this.connectionLock = false;
-    }
+    });
   }
 
   getStats(): { active: number; max: number; waiting: number } {
