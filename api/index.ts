@@ -156,6 +156,66 @@ function healthCheckMiddleware(req: any, res: any, next: any): void {
 
 const connectionPool = ConnectionPool.getInstance();
 
+// Idempotency store with TTL eviction
+interface IdempotencyEntry {
+  response: any;
+  statusCode: number;
+  createdAt: number;
+  ttlMs: number;
+}
+
+class IdempotencyStore {
+  private store = new Map<string, IdempotencyEntry>();
+  private cleanupIntervalId: any;
+  private readonly defaultTtlMs: number = 3600000; // 1 hour
+  
+  constructor() {
+    this.startCleanupInterval();
+  }
+  
+  set(key: string, response: any, statusCode: number, ttlMs?: number): void {
+    this.store.set(key, {
+      response: JSON.parse(JSON.stringify(response)),
+      statusCode,
+      createdAt: Date.now(),
+      ttlMs: ttlMs ?? this.defaultTtlMs
+    });
+  }
+  
+  getIfExists(key: string): { response: any; statusCode: number } | null {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    
+    const age = Date.now() - entry.createdAt;
+    if (age > entry.ttlMs) {
+      this.store.delete(key);
+      return null;
+    }
+    
+    return { response: entry.response, statusCode: entry.statusCode };
+  }
+  
+  private startCleanupInterval(): void {
+    this.cleanupIntervalId = setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of this.store) {
+        if (now - entry.createdAt > entry.ttlMs) {
+          this.store.delete(key);
+        }
+      }
+    }, 300000);
+  }
+  
+  shutdown(): void {
+    if (this.cleanupIntervalId) {
+      clearInterval(this.cleanupIntervalId);
+    }
+    this.store.clear();
+  }
+}
+
+const idempotencyStore = new IdempotencyStore();
+
 // Middleware: Inject trace ID and client ID
 function traceMiddleware(req: any, res: any, next: any): void {
   req.traceId = req.get('X-Trace-ID') || randomUUID();
