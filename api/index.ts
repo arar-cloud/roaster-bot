@@ -10,6 +10,42 @@ interface RetryOptions {
   jitterFactor?: number;
 }
 
+// Batch query executor to prevent N+1 queries
+class BatchQueryExecutor {
+  private queryBatch: Array<{ id: string; query: () => Promise<any>; resolve: (v: any) => void; reject: (e: any) => void }> = [];
+  private batchTimer: NodeJS.Timeout | null = null;
+  private readonly BATCH_WINDOW_MS = 5; // Collect queries for 5ms before executing
+
+  async executeQuery<T>(query: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queryBatch.push({
+        id: randomUUID(),
+        query,
+        resolve,
+        reject
+      });
+
+      // Reset timer on new batch item
+      if (this.batchTimer) clearTimeout(this.batchTimer);
+      
+      this.batchTimer = setTimeout(() => this.processBatch(), this.BATCH_WINDOW_MS);
+    });
+  }
+
+  private async processBatch(): Promise<void> {
+    const batch = this.queryBatch.splice(0);
+    if (batch.length === 0) return;
+
+    try {
+      // Execute all queries in parallel (not sequential)
+      const results = await Promise.all(batch.map(item => item.query()));
+      batch.forEach((item, idx) => item.resolve(results[idx]));
+    } catch (error) {
+      batch.forEach(item => item.reject(error));
+    }
+  }
+}
+
 class RetryStrategy {
   private maxAttempts: number;
   private initialDelayMs: number;
