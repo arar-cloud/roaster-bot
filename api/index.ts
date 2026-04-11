@@ -14,7 +14,9 @@ interface RetryOptions {
 class ConnectionPool {
   private activeConnections: number = 0;
   private readonly maxConnections: number;
-  private readonly waitQueue: Array<() => void> = [];
+  private readonly waitQueue: Array<{ resolve: () => void; timestamp: number }> = [];
+  private readonly maxWaitTimeMs: number = 30000; // 30 second timeout
+  private readonly maxQueueSize: number = 1000; // Max queue entries before rejection
 
   constructor(maxConnections: number = 10) {
     this.maxConnections = maxConnections;
@@ -25,18 +27,52 @@ class ConnectionPool {
       this.activeConnections++;
       return;
     }
-    return new Promise((resolve) => {
-      this.waitQueue.push(() => {
-        this.activeConnections++;
-        resolve();
-      });
+
+    // Reject if queue is full to prevent unbounded growth
+    if (this.waitQueue.length >= this.maxQueueSize) {
+      throw new Error('Connection pool queue exhausted: max ' + this.maxQueueSize + ' requests waiting');
+    }
+
+    return new Promise((resolve, reject) => {
+      const timestamp = Date.now();
+      const entry = { resolve, timestamp };
+      this.waitQueue.push(entry);
+
+      // Set timeout to reject if not acquired within maxWaitTimeMs
+      const timeoutHandle = setTimeout(() => {
+        const index = this.waitQueue.indexOf(entry);
+        if (index !== -1) {
+          this.waitQueue.splice(index, 1);
+        }
+        reject(new Error('Connection acquisition timeout after ' + this.maxWaitTimeMs + 'ms'));
+      }, this.maxWaitTimeMs);
+
+      // Store timeout handle for cleanup
+      (entry as any).timeoutHandle = timeoutHandle;
     });
   }
 
   releaseConnection(): void {
     this.activeConnections--;
-    const waiter = this.waitQueue.shift();
-    if (waiter) waiter();
+
+    // Find the oldest non-expired waiter
+    while (this.waitQueue.length > 0) {
+      const entry = this.waitQueue.shift();
+      if (!entry) continue;
+
+      // Clean up timeout if still pending
+      if ((entry as any).timeoutHandle) {
+        clearTimeout((entry as any).timeoutHandle);
+      }
+
+      // Check if entry is not expired
+      const age = Date.now() - entry.timestamp;
+      if (age < this.maxWaitTimeMs) {
+        entry.resolve();
+        return;
+      }
+      // Skip expired entries without resolving
+    }
   }
 
   getStats(): { active: number; max: number; waiting: number } {
