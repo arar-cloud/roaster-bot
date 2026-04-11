@@ -169,19 +169,40 @@ function traceMiddleware(req: any, res: any, next: any): void {
   next();
 }
 
-// Middleware: Rate limiting enforcement
+// Middleware: Rate limiting enforcement with exponential backoff guidance
 function rateLimitMiddleware(req: any, res: any, next: any): void {
-  const limiter = req.rateLimiter as TokenBucketLimiter;
-  const result = limiter.tryAcquire(1);
-
-  if (!result.allowed) {
-    structuredLog('warn', req.traceId, 'Rate limit exceeded', { clientId: req.clientId, retryAfterMs: result.retryAfterMs });
-    const errorResponse = createErrorResponse('RATE_LIMITED', 'Rate limit exceeded', req.traceId);
-    res.set('Retry-After', Math.ceil((result.retryAfterMs || 1000) / 1000).toString());
-    res.status(429).json(errorResponse);
-    return;
+  try {
+    const limiter = req.rateLimiter as TokenBucketLimiter;
+    
+    if (!limiter.canConsume(1)) {
+      const retryAfterMs = limiter.getRetryAfterMs();
+      const retryAfterSeconds = Math.ceil(retryAfterMs / 1000);
+      
+      res.set('Retry-After', String(retryAfterSeconds));
+      res.set('X-RateLimit-Reset', String(Date.now() + retryAfterMs));
+      res.set('X-Retry-After-Ms', String(retryAfterMs));
+      
+      structuredLog('warn', req.traceId, 'Rate limit exceeded', {
+        clientId: req.clientId,
+        retryAfterSeconds,
+        retryAfterMs
+      });
+      
+      const errorResponse = createErrorResponse('RATE_LIMITED', 'Rate limit exceeded', req.traceId, {
+        retryAfterSeconds,
+        retryAfterMs,
+        timestamp: Date.now()
+      });
+      res.status(429).json(errorResponse);
+      return;
+    }
+    next();
+  } catch (err) {
+    structuredLog('error', req.traceId, 'Rate limit check failed', {
+      error: err instanceof Error ? err.message : String(err)
+    });
+    res.status(500).json(createErrorResponse('INTERNAL_ERROR', 'Rate limit check failed', req.traceId));
   }
-  next();
 }
 
 // Middleware: Idempotency key check for write operations
