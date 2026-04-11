@@ -2,7 +2,7 @@ import app from '../src/index.js';
 import { randomUUID, createHash } from 'crypto';
 import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
-import { createClient } from 'redis';
+import { createClient, createCluster } from 'redis';
 
 // Initialize Redis cluster client for connection pooling and load distribution
 // Prevents connection pool exhaustion from unbounded client reuse
