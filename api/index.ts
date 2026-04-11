@@ -429,6 +429,54 @@ class TokenBucket {
 
 const globalBucket = new TokenBucket(1000, 100); // 1000 capacity, 100 tokens/sec
 
+// Retry configuration with exponential backoff and circuit breaker
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const CIRCUIT_BREAKER_RESET_TIMEOUT = 60000; // 60 seconds
+const MAX_RETRIES = 3;
+const INITIAL_BACKOFF_MS = 100; // 100ms
+const MAX_BACKOFF_MS = 5000; // 5 seconds
+const BACKOFF_MULTIPLIER = 2;
+
+// Enhanced retry wrapper with circuit breaker and exponential backoff
+async function callExternalServiceWithRetry<T>(
+  operation: () => Promise<T>,
+  serviceName: string,
+  traceId: string
+): Promise<T> {
+  const circuitBreaker = new CircuitBreaker(
+    CIRCUIT_BREAKER_THRESHOLD,
+    2,
+    CIRCUIT_BREAKER_RESET_TIMEOUT
+  );
+  
+  return circuitBreaker.execute(async () => {
+    const retryHelper = new ExponentialBackoffRetry(
+      MAX_RETRIES,
+      INITIAL_BACKOFF_MS,
+      MAX_BACKOFF_MS,
+      BACKOFF_MULTIPLIER
+    );
+    
+    try {
+      const result = await retryHelper.execute(operation, serviceName);
+      logger.debug(`External service call succeeded`, {
+        serviceName,
+        traceId,
+        circuitBreakerState: circuitBreaker.getState()
+      });
+      return result;
+    } catch (error) {
+      logger.error(`External service call failed after retries`, {
+        serviceName,
+        traceId,
+        error: error instanceof Error ? error.message : String(error),
+        circuitBreakerState: circuitBreaker.getState()
+      });
+      throw error;
+    }
+  }, serviceName);
+}
+
 // Request timeout configuration
 const DEFAULT_REQUEST_TIMEOUT_MS = 30000; // 30 seconds
 const LONG_RUNNING_TIMEOUT_MS = 300000; // 5 minutes for background operations
