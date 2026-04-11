@@ -144,6 +144,38 @@ function validateRequest(body: any, schema: ValidationSchema, traceId: string): 
   }
 
   return { valid: errors.length === 0, errors };
+}
+
+// Structured error response format
+type ErrorCode = 'VALIDATION_ERROR' | 'TIMEOUT' | 'SERVICE_UNAVAILABLE' | 'RATE_LIMITED' | 'INTERNAL_ERROR' | 'DEPENDENCY_ERROR';
+
+interface ErrorResponse {
+  code: ErrorCode;
+  message: string;
+  traceId: string;
+  details?: Record<string, any>;
+}
+
+function createErrorResponse(code: ErrorCode, message: string, traceId: string, details?: Record<string, any>): ErrorResponse {
+  return {
+    code,
+    message,
+    traceId,
+    details
+  };
+}
+
+function getHttpStatusForErrorCode(code: ErrorCode): number {
+  const statusMap: Record<ErrorCode, number> = {
+    'VALIDATION_ERROR': 400,
+    'TIMEOUT': 504,
+    'SERVICE_UNAVAILABLE': 503,
+    'RATE_LIMITED': 429,
+    'INTERNAL_ERROR': 500,
+    'DEPENDENCY_ERROR': 502
+  };
+  return statusMap[code] || 500;
+}
   console.log(JSON.stringify(logEntry));
 }
 
