@@ -366,6 +366,34 @@ class ExponentialBackoffRetry {
 const copilotCircuitBreaker = new CircuitBreaker(5, 2, 60000);
 const externalServiceRetry = new ExponentialBackoffRetry(3, 100, 5000, 2);
 
+// Health check state
+interface HealthState {
+  isReady: boolean;
+  dependenciesReady: Record<string, boolean>;
+  uptime: number;
+  startTime: number;
+}
+
+const healthState: HealthState = {
+  isReady: true,
+  dependenciesReady: {},
+  uptime: 0,
+  startTime: Date.now()
+};
+
+function updateDependencyHealth(serviceName: string, isHealthy: boolean): void {
+  healthState.dependenciesReady[serviceName] = isHealthy;
+}
+
+function getHealthStatus(): { ready: boolean; reason?: string } {
+  const dependenciesReady = Object.values(healthState.dependenciesReady).every(v => v !== false);
+  const ready = healthState.isReady && dependenciesReady;
+  return {
+    ready,
+    reason: ready ? undefined : 'One or more dependencies are unhealthy'
+  };
+}
+
 // Structured logging
 class StructuredLogger {
   private logBuffer: any[] = [];
