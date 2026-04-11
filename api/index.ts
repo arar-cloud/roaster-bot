@@ -363,6 +363,47 @@ class ExponentialBackoffRetry {
   }
 }
 
+// Token bucket rate limiter
+interface RateLimiterConfig {
+  tokensPerMinute?: number;
+  maxBurst?: number;
+}
+
+class TokenBucketLimiter {
+  private tokens: number;
+  private lastRefillTime: number = Date.now();
+  private readonly tokensPerMs: number;
+  private readonly maxBurst: number;
+
+  constructor(private traceId: string, config: RateLimiterConfig = {}) {
+    const tokensPerMinute = config.tokensPerMinute ?? 100;
+    this.maxBurst = config.maxBurst ?? tokensPerMinute;
+    this.tokens = this.maxBurst;
+    this.tokensPerMs = tokensPerMinute / 60000;
+  }
+
+  tryAcquire(tokensNeeded: number = 1): { allowed: boolean; retryAfterMs?: number } {
+    this.refillTokens();
+
+    if (this.tokens >= tokensNeeded) {
+      this.tokens -= tokensNeeded;
+      return { allowed: true };
+    }
+
+    const tokensShort = tokensNeeded - this.tokens;
+    const retryAfterMs = Math.ceil(tokensShort / this.tokensPerMs);
+    return { allowed: false, retryAfterMs };
+  }
+
+  private refillTokens(): void {
+    const now = Date.now();
+    const timePassed = now - this.lastRefillTime;
+    const tokensToAdd = timePassed * this.tokensPerMs;
+    this.tokens = Math.min(this.maxBurst, this.tokens + tokensToAdd);
+    this.lastRefillTime = now;
+  }
+}
+
 const copilotCircuitBreaker = new CircuitBreaker(5, 2, 60000);
 const externalServiceRetry = new ExponentialBackoffRetry(3, 100, 5000, 2);
 
