@@ -358,8 +358,101 @@ class ExponentialBackoffRetry {
   }
 }
 
+// Connection pool configuration and timeout management
+interface ConnectionPoolConfig {
+  minConnections: number;
+  maxConnections: number;
+  connectionTimeoutMs: number;
+  idleTimeoutMs: number;
+  validationIntervalMs: number;
+}
+
+class ConnectionPool {
+  private readonly config: ConnectionPoolConfig;
+  private activeConnections: Set<string> = new Set();
+  private idleConnections: string[] = [];
+  private pendingRequests: ((conn: string) => void)[] = [];
+  private validationTimer: NodeJS.Timeout | null = null;
+
+  constructor(config: Partial<ConnectionPoolConfig> = {}) {
+    this.config = {
+      minConnections: config.minConnections ?? 5,
+      maxConnections: config.maxConnections ?? 20,
+      connectionTimeoutMs: config.connectionTimeoutMs ?? 30000,
+      idleTimeoutMs: config.idleTimeoutMs ?? 300000,
+      validationIntervalMs: config.validationIntervalMs ?? 60000
+    };
+    this.initializePool();
+  }
+
+  private initializePool(): void {
+    for (let i = 0; i < this.config.minConnections; i++) {
+      this.idleConnections.push(`conn_${i}_${Date.now()}`);
+    }
+    this.startValidation();
+  }
+
+  async acquire(): Promise<string> {
+    if (this.idleConnections.length > 0) {
+      return this.idleConnections.pop()!;
+    }
+
+    if (this.activeConnections.size < this.config.maxConnections) {
+      const conn = `conn_${this.activeConnections.size}_${Date.now()}`;
+      this.activeConnections.add(conn);
+      return conn;
+    }
+
+    return new Promise((resolve) => {
+      const timeout = setTimeout(() => {
+        this.pendingRequests.splice(this.pendingRequests.indexOf(resolve), 1);
+        throw new Error('Connection pool timeout');
+      }, this.config.connectionTimeoutMs);
+
+      this.pendingRequests.push((conn) => {
+        clearTimeout(timeout);
+        resolve(conn);
+      });
+    });
+  }
+
+  release(conn: string): void {
+    this.activeConnections.delete(conn);
+    if (this.pendingRequests.length > 0) {
+      const resolver = this.pendingRequests.shift()!;
+      resolver(conn);
+    } else {
+      this.idleConnections.push(conn);
+    }
+  }
+
+  private startValidation(): void {
+    this.validationTimer = setInterval(() => {
+      const now = Date.now();
+      this.idleConnections = this.idleConnections.filter((conn) => {
+        const age = now - parseInt(conn.split('_')[2], 10);
+        return age < this.config.idleTimeoutMs;
+      });
+    }, this.config.validationIntervalMs);
+  }
+
+  destroy(): void {
+    if (this.validationTimer) clearInterval(this.validationTimer);
+    this.activeConnections.clear();
+    this.idleConnections = [];
+    this.pendingRequests = [];
+  }
+}
+
 const copilotCircuitBreaker = new CircuitBreaker(5, 2, 60000);
 const externalServiceRetry = new ExponentialBackoffRetry(3, 100, 5000, 2);
+const connectionPool = new ConnectionPool({
+  minConnections: 5,
+  maxConnections: 20,
+  connectionTimeoutMs: 30000,
+  idleTimeoutMs: 300000,
+  validationIntervalMs: 60000
+});
 
 // Structured logging
 class StructuredLogger {
