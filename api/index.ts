@@ -24,18 +24,17 @@ class RetryStrategy {
   private consecutiveOpenEvents: number = 0;
   private maxFailureHistory: number;
   private failureHistory: Array<{ timestamp: number; error: string }> = [];
-  private cleanupInterval: NodeJS.Timer | null = null;
+  private failureHistoryHead: number = 0; // Circular buffer head pointer
+  private failureHistorySize: number = 0; // Current size
 
   constructor(options: RetryOptions = {}) {
-    this.maxAttempts = options.maxAttempts ?? 3;
+    this.maxAttempts = options.maxAttempts ?? 5;
     this.initialDelayMs = options.initialDelayMs ?? 100;
     this.maxDelayMs = options.maxDelayMs ?? 10000;
     this.jitterFactor = options.jitterFactor ?? 0.1;
     this.maxFailureHistory = options.maxFailureHistory ?? 1000;
-
-    // Start periodic cleanup of stale failure history
-    const cleanupInterval = options.failureHistoryCleanupIntervalMs ?? 60000;
-    this.cleanupInterval = setInterval(() => this.pruneFailureHistory(), cleanupInterval);
+    // Pre-allocate circular buffer to fixed size
+    this.failureHistory = new Array(this.maxFailureHistory);
   }
 
   async execute<T>(
@@ -50,11 +49,15 @@ class RetryStrategy {
       } catch (error) {
         lastError = error as Error;
         if (attempt === this.maxAttempts - 1) {
-          // Track final failure in bounded history
-          this.failureHistory.push({
+          // Track final failure in circular buffer with O(1) complexity
+          this.failureHistory[this.failureHistoryHead] = {
             timestamp: Date.now(),
             error: error instanceof Error ? error.message : String(error)
-          });
+          };
+          this.failureHistoryHead = (this.failureHistoryHead + 1) % this.maxFailureHistory;
+          if (this.failureHistorySize < this.maxFailureHistory) {
+            this.failureHistorySize++;
+          }
         }
         if (attempt < this.maxAttempts - 1) {
           const delayMs = this.calculateBackoffDelay(attempt);
@@ -68,22 +71,10 @@ class RetryStrategy {
   }
 
   destroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
+    // Explicit cleanup for graceful shutdown
     this.failureHistory = [];
-  }
-
-  private pruneFailureHistory(): void {
-    // Remove entries older than 5 minutes
-    const cutoffTime = Date.now() - 5 * 60 * 1000;
-    this.failureHistory = this.failureHistory.filter(entry => entry.timestamp > cutoffTime);
-
-    // If still over max, remove oldest entries (circular buffer)
-    if (this.failureHistory.length > this.maxFailureHistory) {
-      this.failureHistory = this.failureHistory.slice(-this.maxFailureHistory);
-    }
+    this.failureHistoryHead = 0;
+    this.failureHistorySize = 0;
   }
 
   private calculateBackoffDelay(attempt: number): number {
