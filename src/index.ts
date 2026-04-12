@@ -1,8 +1,11 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import { promisify } from 'util';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import { CopilotClient } from '@github/copilot-sdk';
+import { streamJsonResponse } from './streaming-response';
 
 // Extend Express Request type properly
 declare global {
@@ -16,12 +19,49 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// CopilotClient singleton pool to avoid repeated instantiation
+class CopilotClientPool {
+  private static instance: CopilotClient | null = null;
+  private static initPromise: Promise<CopilotClient> | null = null;
+
+  static async getInstance(): Promise<CopilotClient> {
+    if (this.instance) {
+      return this.instance;
+    }
+    
+    if (this.initPromise) {
+      return this.initPromise;
+    }
+    
+    this.initPromise = (async () => {
+      const client = new CopilotClient({
+        token: process.env.GITHUB_TOKEN || '',
+      });
+      this.instance = client;
+      return client;
+    })();
+    
+    return this.initPromise;
+  }
+
+  static reset(): void {
+    this.instance = null;
+    this.initPromise = null;
+  }
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Enable compression middleware for all responses
+app.use(compression({
+  level: 6, // Balanced compression level
+  threshold: 1024, // Only compress responses > 1KB
+}));
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
@@ -56,29 +96,24 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
+    // Cache digest computation instead of Promise wrapper
     const hmac = crypto.createHmac('sha256', webhookSecret);
-    // Offload crypto computation to prevent event loop blocking on large payloads
-    const digest = await new Promise<string>((resolve) => {
-      setImmediate(() => {
-        resolve('sha256=' + hmac.update(rawBody).digest('hex'));
-      });
-    });
+    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    if (signature !== digest) {
+      return res.status(401).send('Unauthorized: Invalid signature.');
     }
   }
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Reuse singleton CopilotClient instance instead of per-request instantiation
+  const client = await CopilotClientPool.getInstance();
+  // Override token for this request if provided
+  if (token) {
+    client.setToken(token);
+  }
   
   try {
     const systemPrompt = `
@@ -94,6 +129,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
+
+    // Validate input before creating session (fail fast)
+    if (!prompt) {
+      return res.status(400).json({ error: 'No prompt provided' });
+    }
 
     // Create session following SDK docs
     const session = await client.createSession({
@@ -120,16 +160,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     await session.sendAndWait({ prompt });
 
-    // Ensure async operation completes before closing response
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
-  } finally {
-    await client.stop();
   }
+  // Do NOT close the pooled client instance - it stays alive for reuse
 });
 
 // Graceful shutdown handler to prevent stalled requests and drain pending async operations
