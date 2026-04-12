@@ -6,7 +6,16 @@
  * @param contentType - Response content-type header value
  * @param contentLength - Response body size in bytes
  * @param config - Compression configuration
- * @returns true if compression should be applied
+ * @returns true Stream-based chunked compression: process in 64KB chunks
+        const bodyStr = JSON.stringify(body);
+        let offset = 0;
+        while (offset < bodyStr.length) {
+          const chunk = bodyStr.slice(offset, offset + CHUNK_SIZE);
+          res.write(chunk);
+          offset += CHUNK_SIZE;
+        }
+        res.end();
+        return res; should be applied
  */
 function shouldCompress(
   contentType: string | undefined,
