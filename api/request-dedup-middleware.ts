@@ -54,6 +54,7 @@ function generateRequestKey(req: Request): string {
  * Request deduplication middleware.
  * Returns cached response if identical request completed within TTL.
  * Coalesces in-flight requests to avoid duplicate processing.
+ * Properly handles async handlers without blocking concurrent requests.
  */
 export function createRequestDedupMiddleware(redisClient?: any) {
   return async (req: Request, res: Response, next: NextFunction) => {
@@ -95,14 +96,17 @@ export function createRequestDedupMiddleware(redisClient?: any) {
       }
     }
 
-    // Wrap response methods to intercept and cache
-    const originalJson = res.json;
-    const originalSend = res.send;
-
-    let capturedResponse: CachedRequest | null = null;
+    // Create single unified response interception to cache and resolve pending requests
+    const originalJson = res.json.bind(res);
+    let responseHandled = false;
 
     res.json = function (body: any) {
-      capturedResponse = {
+      if (responseHandled) {
+        return originalJson(body);
+      }
+      responseHandled = true;
+
+      const result: CachedRequest = {
         status: res.statusCode,
         headers: Object.fromEntries(
           Object.entries(res.getHeaders()).filter(
@@ -112,26 +116,21 @@ export function createRequestDedupMiddleware(redisClient?: any) {
         body,
         expiresAt: now + REQUEST_DEDUP_TTL_MS,
       };
-      
+
       // Cache successful responses (2xx status)
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        dedupCache.set(cacheKey, capturedResponse);
+        dedupCache.set(cacheKey, result);
       }
 
       inFlightRequests.delete(cacheKey);
-      return originalJson.call(this, body);
+      return originalJson(body);
     };
 
-    res.send = function (data: any) {
-      inFlightRequests.delete(cacheKey);
-      return originalSend.call(this, data);
-    };
-
-    // Register this request as in-flight
+    // Register this request as in-flight for coalescing
     const requestPromise = new Promise<CachedRequest>((resolve, reject) => {
-      const originalResJson = res.json;
+      const originalResJsonForPromise = res.json.bind(res);
       res.json = function (body: any) {
-        const result = {
+        const result: CachedRequest = {
           status: res.statusCode,
           headers: Object.fromEntries(
             Object.entries(res.getHeaders()).filter(
@@ -142,9 +141,8 @@ export function createRequestDedupMiddleware(redisClient?: any) {
           expiresAt: now + REQUEST_DEDUP_TTL_MS,
         };
         resolve(result);
-        return originalResJson.call(this, body);
+        return originalResJsonForPromise(body);
       };
-      // Set timeout to reject if response takes too long
       setTimeout(() => reject(new Error('Request timeout')), REQUEST_DEDUP_TTL_MS);
     });
 
