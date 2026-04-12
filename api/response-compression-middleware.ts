@@ -18,7 +18,11 @@ function shouldCompress(
     return false;
   }
 
-  // Parse content type (strip charset and parameters)
+  // Parse content type (strip charset and parametersstatus(500).end();
+      });
+
+      gzipStream.pipe(res);
+      gzipStream.end(source)
   const baseContentType = (contentType || 'application/octet-stream').split(';')[0].trim();
 
   // Skip already-compressed formats
