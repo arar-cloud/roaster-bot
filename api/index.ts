@@ -4,6 +4,132 @@ import rateLimit from 'express-rate-limit';
 import { createCompressionMiddleware } from '../api/response-compression-middleware.js';
 import { createQueryCacheMiddleware } from '../api/query-cache-middleware.js';
 
+/**
+ * Connection pool manager for resource-efficient connection reuse.
+ * Maintains min/max bounds and TTL-based recycling.
+ */
+interface PooledConnection {
+  id: string;
+  createdAt: number;
+  lastUsedAt: number;
+  inUse: boolean;
+  resource: any;
+}
+
+class ConnectionPoolManager {
+  private minConnections: number;
+  private maxConnections: number;
+  private connectionTTLMs: number;
+  private pool: Map<string, PooledConnection> = new Map();
+  private activeConnections: number = 0;
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor(
+    minConnections: number = 5,
+    maxConnections: number = 20,
+    connectionTTLMs: number = 300000
+  ) {
+    this.minConnections = minConnections;
+    this.maxConnections = maxConnections;
+    this.connectionTTLMs = connectionTTLMs;
+    // Start background cleanup of expired connections
+    this.cleanupInterval = setInterval(() => this.evictExpiredConnections(), 30000);
+  }
+
+  /**
+   * Acquire a connection from pool or create new if within limits.
+   * Reuses idle connections first, respects max bounds.
+   */
+  public acquire(factory: () => any): PooledConnection {
+    // Find idle connection
+    for (const [id, conn] of this.pool) {
+      if (!conn.inUse && !this.isExpired(conn)) {
+        conn.inUse = true;
+        conn.lastUsedAt = Date.now();
+        return conn;
+      }
+    }
+
+    // Create new if under limit
+    if (this.activeConnections < this.maxConnections) {
+      const id = randomUUID();
+      const newConn: PooledConnection = {
+        id,
+        createdAt: Date.now(),
+        lastUsedAt: Date.now(),
+        inUse: true,
+        resource: factory(),
+      };
+      this.pool.set(id, newConn);
+      this.activeConnections++;
+      return newConn;
+    }
+
+    // All connections busy, wait and retry (caller responsibility)
+    throw new Error('Connection pool exhausted');
+  }
+
+  /**
+   * Release connection back to pool for reuse.
+   */
+  public release(connId: string): void {
+    const conn = this.pool.get(connId);
+    if (conn) {
+      conn.inUse = false;
+      conn.lastUsedAt = Date.now();
+    }
+  }
+
+  /**
+   * Check if connection exceeds TTL.
+   */
+  private isExpired(conn: PooledConnection): boolean {
+    return Date.now() - conn.createdAt > this.connectionTTLMs;
+  }
+
+  /**
+   * Evict expired or idle connections, maintaining min pool size.
+   */
+  private evictExpiredConnections(): void {
+    const now = Date.now();
+    const toDelete: string[] = [];
+
+    for (const [id, conn] of this.pool) {
+      if (!conn.inUse && (this.isExpired(conn) || now - conn.lastUsedAt > 60000)) {
+        toDelete.push(id);
+      }
+    }
+
+    for (const id of toDelete) {
+      const conn = this.pool.get(id);
+      if (conn && conn.resource?.close) {
+        conn.resource.close();
+      }
+      this.pool.delete(id);
+      this.activeConnections--;
+    }
+  }
+
+  /**
+   * Destroy pool and cleanup all connections.
+   */
+  public destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    for (const [, conn] of this.pool) {
+      if (conn.resource?.close) {
+        conn.resource.close();
+      }
+    }
+    this.pool.clear();
+    this.activeConnections = 0;
+  }
+}
+
+// Global pool instance
+const connectionPool = new ConnectionPoolManager(5, 20, 300000);
+
 // Exponential backoff retry strategy
 interface RetryOptions {
   maxAttempts?: number;
@@ -39,12 +165,17 @@ class RetryStrategy {
 
   async execute<T>(
     fn: () => Promise<T>,
-    context: string = 'operation'
+    context: string = 'operation',
+    pooledConnId?: string
   ): Promise<T> {
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < this.maxAttempts; attempt++) {
       try {
+        // Release connection from previous failed attempt
+        if (pooledConnId && attempt > 0) {
+          connectionPool.release(pooledConnId);
+        }
         return await fn();
       } catch (error) {
         lastError = error as Error;
@@ -57,6 +188,10 @@ class RetryStrategy {
           this.failureHistoryHead = (this.failureHistoryHead + 1) % this.maxFailureHistory;
           if (this.failureHistorySize < this.maxFailureHistory) {
             this.failureHistorySize++;
+          }
+          // Final cleanup
+          if (pooledConnId) {
+            connectionPool.release(pooledConnId);
           }
         }
         if (attempt < this.maxAttempts - 1) {
