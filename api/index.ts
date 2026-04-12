@@ -10,6 +10,8 @@ interface RetryOptions {
   initialDelayMs?: number;
   maxDelayMs?: number;
   jitterFactor?: number;
+  maxFailureHistory?: number;
+  failureHistoryCleanupIntervalMs?: number;
 }
 
 class RetryStrategy {
@@ -17,12 +19,20 @@ class RetryStrategy {
   private initialDelayMs: number;
   private maxDelayMs: number;
   private jitterFactor: number;
+  private maxFailureHistory: number;
+  private failureHistory: Array<{ timestamp: number; error: string }> = [];
+  private cleanupInterval: NodeJS.Timer | null = null;
 
   constructor(options: RetryOptions = {}) {
     this.maxAttempts = options.maxAttempts ?? 3;
     this.initialDelayMs = options.initialDelayMs ?? 100;
     this.maxDelayMs = options.maxDelayMs ?? 10000;
     this.jitterFactor = options.jitterFactor ?? 0.1;
+    this.maxFailureHistory = options.maxFailureHistory ?? 1000;
+    
+    // Start periodic cleanup of stale failure history
+    const cleanupInterval = options.failureHistoryCleanupIntervalMs ?? 60000;
+    this.cleanupInterval = setInterval(() => this.pruneFailureHistory(), cleanupInterval);
   }
 
   async execute<T>(
@@ -36,6 +46,13 @@ class RetryStrategy {
         return await fn();
       } catch (error) {
         lastError = error as Error;
+        if (attempt === this.maxAttempts - 1) {
+          // Track final failure in bounded history
+          this.failureHistory.push({
+            timestamp: Date.now(),
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
         if (attempt < this.maxAttempts - 1) {
           const delayMs = this.calculateBackoffDelay(attempt);
           await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -45,6 +62,25 @@ class RetryStrategy {
 
     const err = lastError || new Error(`${context} failed after ${this.maxAttempts} attempts`);
     throw err;
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.failureHistory = [];
+  }
+
+  private pruneFailureHistory(): void {
+    // Remove entries older than 5 minutes
+    const cutoffTime = Date.now() - 5 * 60 * 1000;
+    this.failureHistory = this.failureHistory.filter(entry => entry.timestamp > cutoffTime);
+    
+    // If still over max, remove oldest entries (circular buffer)
+    if (this.failureHistory.length > this.maxFailureHistory) {
+      this.failureHistory = this.failureHistory.slice(-this.maxFailureHistory);
+    }
   }
 
   private calculateBackoffDelay(attempt: number): number {
