@@ -62,7 +62,9 @@ export function scheduleChunkedCleanup<K, V>(
 }
 
 /**
- * Schedule periodic cleanup with fixed interval.
+ * Schedule periodic cleanup with fixed interval and concurrency control.
+ * Prevents overlapping cleanup runs to avoid concurrent I/O contention.
+ * Uses async/await for proper non-blocking event loop handling.
  * @param cleanupFn - Async cleanup function
  * @param intervalMs - Cleanup interval in milliseconds
  * @returns Cleanup interval ID for cancellation
@@ -71,11 +73,21 @@ export function schedulePeriodicCleanup(
   cleanupFn: () => Promise<void>,
   intervalMs: number = 5000
 ): NodeJS.Timeout {
+  let isRunning = false;
+
   return setInterval(async () => {
+    // Skip if cleanup already running - prevents concurrent overlaps
+    if (isRunning) {
+      return;
+    }
+
+    isRunning = true;
     try {
       await cleanupFn();
     } catch (error) {
       console.error('Periodic cleanup error:', error);
+    } finally {
+      isRunning = false;
     }
   }, intervalMs);
 }
