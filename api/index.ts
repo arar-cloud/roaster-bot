@@ -12,6 +12,7 @@ interface RetryOptions {
   jitterFactor?: number;
   maxFailureHistory?: number;
   failureHistoryCleanupIntervalMs?: number;
+  maxResetTimeoutMs?: number;
 }
 
 class RetryStrategy {
@@ -19,6 +20,8 @@ class RetryStrategy {
   private initialDelayMs: number;
   private maxDelayMs: number;
   private jitterFactor: number;
+  private maxResetTimeoutMs: number;
+  private consecutiveOpenEvents: number = 0;
   private maxFailureHistory: number;
   private failureHistory: Array<{ timestamp: number; error: string }> = [];
   private cleanupInterval: NodeJS.Timer | null = null;
@@ -29,7 +32,7 @@ class RetryStrategy {
     this.maxDelayMs = options.maxDelayMs ?? 10000;
     this.jitterFactor = options.jitterFactor ?? 0.1;
     this.maxFailureHistory = options.maxFailureHistory ?? 1000;
-    
+
     // Start periodic cleanup of stale failure history
     const cleanupInterval = options.failureHistoryCleanupIntervalMs ?? 60000;
     this.cleanupInterval = setInterval(() => this.pruneFailureHistory(), cleanupInterval);
@@ -76,7 +79,7 @@ class RetryStrategy {
     // Remove entries older than 5 minutes
     const cutoffTime = Date.now() - 5 * 60 * 1000;
     this.failureHistory = this.failureHistory.filter(entry => entry.timestamp > cutoffTime);
-    
+
     // If still over max, remove oldest entries (circular buffer)
     if (this.failureHistory.length > this.maxFailureHistory) {
       this.failureHistory = this.failureHistory.slice(-this.maxFailureHistory);
@@ -98,6 +101,7 @@ interface CircuitBreakerOptions {
   failureThreshold?: number;
   resetTimeoutMs?: number;
   halfOpenMaxAttempts?: number;
+  maxResetTimeoutMs?: number;
 }
 
 type CircuitBreakerState = 'CLOSED' | 'OPEN' | 'HALF_OPEN';
@@ -108,7 +112,9 @@ class CircuitBreaker {
   private successCount: number = 0;
   private failureThreshold: number;
   private resetTimeoutMs: number;
+  private maxResetTimeoutMs: number;
   private halfOpenMaxAttempts: number;
+  private consecutiveOpenEvents: number = 0;
   private lastFailureTime: number | null = null;
   private readonly serviceName: string;
 
@@ -116,7 +122,16 @@ class CircuitBreaker {
     this.serviceName = serviceName;
     this.failureThreshold = options.failureThreshold ?? 5;
     this.resetTimeoutMs = options.resetTimeoutMs ?? 30000;
+    this.maxResetTimeoutMs = options.maxResetTimeoutMs ?? 300000; // 5 minute cap
     this.halfOpenMaxAttempts = options.halfOpenMaxAttempts ?? 2;
+    this.consecutiveOpenEvents = 0;
+  }
+
+  private getAdaptiveResetTimeout(): number {
+    // Exponential backoff: double the timeout for each consecutive open event (with cap)
+    // This reduces cascading storms during recovery
+    const adaptiveTimeout = this.resetTimeoutMs * Math.pow(2, this.consecutiveOpenEvents);
+    return Math.min(adaptiveTimeout, this.maxResetTimeoutMs);
   }
 
   async execute<T>(
@@ -151,6 +166,7 @@ class CircuitBreaker {
       if (this.successCount >= this.halfOpenMaxAttempts) {
         this.state = 'CLOSED';
         this.successCount = 0;
+        this.consecutiveOpenEvents = 0; // Reset adaptive timeout counter on successful recovery
       }
     }
   }
@@ -161,12 +177,14 @@ class CircuitBreaker {
 
     if (this.failureCount >= this.failureThreshold) {
       this.state = 'OPEN';
+      this.consecutiveOpenEvents++; // Track consecutive open transitions for adaptive backoff
     }
   }
 
   private shouldAttemptReset(): boolean {
     if (!this.lastFailureTime) return true;
-    return Date.now() - this.lastFailureTime >= this.resetTimeoutMs;
+    const adaptiveTimeout = this.getAdaptiveResetTimeout();
+    return Date.now() - this.lastFailureTime >= adaptiveTimeout;
   }
 
   private getRetryAfterMs(): number {
