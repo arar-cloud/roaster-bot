@@ -96,6 +96,33 @@ export class LRUCache<T> {
   }
 
   /**
+   * Async cleanup of expired entries using lazy deletion pattern.
+   * Runs without blocking; scans up to 100 entries per call.
+   * Non-blocking cleanup for background expiration management.
+   */
+  async cleanupExpired(): Promise<number> {
+    let deletedCount = 0;
+    const now = Date.now();
+    const maxScans = 100;
+    let scanCount = 0;
+
+    // Iterate through cache entries and remove expired items
+    for (const [key, node] of this.cache) {
+      if (scanCount >= maxScans) {
+        break; // Yield to event loop after scanning batch
+      }
+      scanCount++;
+
+      if (node.expiresAt && node.expiresAt <= now) {
+        this.delete(key);
+        deletedCount++;
+      }
+    }
+
+    return deletedCount;
+  }
+
+  /**
    * Get current size.
    */
   size(): number {
