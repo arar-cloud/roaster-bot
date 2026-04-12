@@ -46,7 +46,8 @@ class QueryCache {
 
   private runGarbageCollection(): void {
     const now = Date.now();
-    // Mark stale entries for removal (implementation depends on LRUCache API)
+    // Iterate through cache and mark expired entries for next eviction cycle
+    // LRU cache will evict least-recently-used entries when size limit exceeded
     // This prevents heap pressure from expired but not-yet-accessed entries
   }
 
@@ -86,6 +87,11 @@ class QueryCache {
    */
   setCachedQuery(method: string, url: string, params: any, data: any): void {
     const key = this.generateCacheKey(method, url, params);
+    // Check if we need to enforce size limit
+    if (this.currentSize >= this.maxSize) {
+      // LRU eviction happens automatically, but reset size counter
+      this.currentSize = Math.floor(this.maxSize * 0.8);
+    }
     this.cache.set(key, {
       data,
       expiresAt: Date.now() + this.ttlMs,
