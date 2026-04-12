@@ -42,11 +42,13 @@ class ConnectionPoolManager {
    * Reuses idle connections first, respects max bounds.
    */
   public acquire(factory: () => any): PooledConnection {
-    // Find idle connection
-    for (const [id, conn] of this.pool) {
-      if (!conn.inUse && !this.isExpired(conn)) {
+    // O(1) lookup: check idle queue first instead of iterating pool
+    for (const id of this.idleQueue) {
+      const conn = this.pool.get(id);
+      if (conn && !conn.inUse && !this.isExpired(conn)) {
         conn.inUse = true;
         conn.lastUsedAt = Date.now();
+        this.idleQueue.delete(id);
         return conn;
       }
     }
@@ -78,6 +80,7 @@ class ConnectionPoolManager {
     if (conn) {
       conn.inUse = false;
       conn.lastUsedAt = Date.now();
+      this.idleQueue.add(connId);
     }
   }
 
