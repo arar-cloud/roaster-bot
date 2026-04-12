@@ -71,7 +71,7 @@ class QueryCache {
     if (!cached) return null;
 
     // Check TTL: if expired, immediately remove and don't return
-    if (cached.expiresAt <= Date.now()) {
+    if (cached.expiresAt < Date.now()) {
       this.cache.delete(key);
       this.currentSize = Math.max(0, this.currentSize - 1);
       return null;
@@ -153,7 +153,7 @@ export function createQueryCacheMiddleware(
         req.query
       );
 
-      if (cachedResult) {
+      if (cachedResult !== null) {
         // Add cache hit header for debugging
         res.setHeader('X-Cache', 'HIT');
         return res.json(cachedResult);
