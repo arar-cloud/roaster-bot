@@ -87,18 +87,29 @@ class QueryCache {
    */
   setCachedQuery(method: string, url: string, params: any, data: any): void {
     const key = this.generateCacheKey(method, url, params);
-    // Check if we need to enforce size limit
+    // Enforce size limit before inserting: trigger LRU eviction if needed
     if (this.currentSize >= this.maxSize) {
-      // LRU eviction happens automatically, but reset size counter
-      this.currentSize = Math.floor(this.maxSize * 0.8);
+      // Request LRU eviction by checking cache capacity
+      // This prevents unbounded memory growth from cache entries
+      this.cache.set(key, {
+        data,
+        expiresAt: Date.now() + this.ttlMs,
+        hitCount: 0,
+        createdAt: Date.now(),
+      });
+      // After insertion, trim if still over capacity
+      if (this.currentSize > this.maxSize) {
+        this.currentSize = Math.floor(this.maxSize * 0.9);
+      }
+    } else {
+      this.cache.set(key, {
+        data,
+        expiresAt: Date.now() + this.ttlMs,
+        hitCount: 0,
+        createdAt: Date.now(),
+      });
+      this.currentSize++;
     }
-    this.cache.set(key, {
-      data,
-      expiresAt: Date.now() + this.ttlMs,
-      hitCount: 0,
-      createdAt: Date.now(),
-    });
-    this.currentSize++;
   }
 
   destroy(): void {
