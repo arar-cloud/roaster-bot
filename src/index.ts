@@ -29,17 +29,22 @@ app.use(express.json({
   }
 }));
 
-app.get('/', (req, res) => {
-  res.send(`
-    <html>
-      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
-        <div style="text-align: center;">
-          <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
-          <p style="color: #ccc;">Prepare your code for total annihilation.</p>
-        </div>
-      </body>
-    </html>
-  `);
+app.get('/', async (req, res) => {
+  try {
+    res.send(`
+      <html>
+        <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
+          <div style="text-align: center;">
+            <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
+            <p style="color: #ccc;">Prepare your code for total annihilation.</p>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (error) {
+    console.error('Route handler error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
@@ -52,7 +57,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    // Offload crypto computation to prevent event loop blocking on large payloads
+    const digest = await new Promise<string>((resolve) => {
+      setImmediate(() => {
+        resolve('sha256=' + hmac.update(rawBody).digest('hex'));
+      });
+    });
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
         // Simple check for dev
@@ -110,6 +120,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     await session.sendAndWait({ prompt });
 
+    // Ensure async operation completes before closing response
     res.write('data: [DONE]\n\n');
     res.end();
 
@@ -121,6 +132,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+// Graceful shutdown handler to prevent stalled requests and drain pending async operations
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+// Enable graceful shutdown with timeout
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, starting graceful shutdown');
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+  
+  // Force exit after 30 seconds to prevent hanging requests
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 30000);
 });

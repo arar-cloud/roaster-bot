@@ -36,6 +36,32 @@ interface ShutdownOptions {
 type TaskHandler<T = unknown> = (task: Task<T>) => Promise<TaskResult>;
 
 /**
+ * Concurrency control helper to process tasks in parallel with limits
+ * Prevents event loop stalling by limiting concurrent operations
+ */
+class ConcurrencyLimiter {
+  private runningCount = 0;
+  private queue: Array<() => void> = [];
+  
+  constructor(private maxConcurrent: number = 5) {}
+  
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.runningCount >= this.maxConcurrent) {
+      await new Promise(resolve => this.queue.push(resolve));
+    }
+    
+    this.runningCount++;
+    try {
+      return await fn();
+    } finally {
+      this.runningCount--;
+      const resolve = this.queue.shift();
+      if (resolve) resolve();
+    }
+  }
+}
+
+/**
  * Calculate exponential backoff delay with jitter
  */
 function calculateBackoffDelay(attemptNumber: number, baseDelayMs: number, maxDelayMs: number): number {
@@ -126,9 +152,12 @@ export class TaskQueue {
   }
 
   /**
-   * Process queued tasks with concurrency limit
+   * Process queued tasks with concurrency limit and parallel batch processing
+   * Uses Promise.all for concurrent task execution up to maxConcurrent limit
    */
   private async processQueue(): Promise<void> {
+    const batchTasks: Promise<void>[] = [];
+    
     while (this.processing.size < this.config.maxConcurrent && this.pending.size > 0) {
       // Get highest priority task
       const taskId = this.getNextTaskId();
@@ -140,9 +169,17 @@ export class TaskQueue {
       this.pending.delete(taskId);
       this.processing.add(taskId);
 
-      this.processTask(task).catch((error) => {
+      // Use async processing to free up event loop without blocking
+      const taskPromise = this.processTask(task).catch((error) => {
         console.error(`Failed to process task ${taskId}:`, error);
       });
+      
+      batchTasks.push(taskPromise);
+    }
+    
+    // Allow all ready tasks to process concurrently
+    if (batchTasks.length > 0) {
+      await Promise.all(batchTasks);
     }
   }
 

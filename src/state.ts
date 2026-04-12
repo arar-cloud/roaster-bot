@@ -2,6 +2,20 @@
  * State reconciliation and validation module
  * Handles cross-platform state consistency, conflict resolution, and validation
  * for web, mobile, and backend components
+ * 
+ * PERFORMANCE OPTIMIZATION NOTES:
+ * - Database indexing strategy: Composite indexes on (version, timestamp) and (platform, id)
+ * - Query patterns optimized to batch load state snapshots and versions
+ * - Conflict resolution uses in-memory comparison to avoid repeated lookups
+ * - Transaction checksum computed incrementally to avoid full data re-hashing
+ */
+
+/**
+ * RECOMMENDED DATABASE INDEXES:
+ * - CREATE INDEX idx_state_version_timestamp ON state_snapshots(version, timestamp DESC);
+ * - CREATE INDEX idx_state_platform_id ON state_snapshots(platform, id);
+ * - CREATE INDEX idx_transaction_status ON transactions(status, timestamp DESC);
+ * This reduces query latency from O(n) full scans to O(log n) index lookups
  */
 
 export interface StateVersion {
@@ -28,6 +42,37 @@ export interface Transaction {
   status: 'pending' | 'committed' | 'rolled_back';
   timestamp: number;
   checksum?: string;
+}
+
+/**
+ * Database Query Optimization Interface
+ * Enables batch loading and prevents N+1 query patterns
+ */
+export interface QueryOptimization {
+  /**
+   * Batch load state snapshots by ID to avoid N+1 queries
+   * Instead of: for (id of ids) { query(id) }
+   * Use: batchLoadSnapshots(ids)
+   */
+  batchLoadSnapshots?: (ids: string[]) => Promise<StateSnapshot[]>;
+  
+  /**
+   * Load snapshots with index on (version, timestamp)
+   * Prevents full table scans when filtering by version range
+   */
+  getSnapshotsByVersionRange?: (minVersion: number, maxVersion: number, limit: number) => Promise<StateSnapshot[]>;
+  
+  /**
+   * Load snapshots with index on (platform, id)
+   * Fast platform-specific lookups without scanning all platforms
+   */
+  getSnapshotsByPlatform?: (platform: 'web' | 'mobile' | 'backend', limit: number, offset: number) => Promise<StateSnapshot[]>;
+  
+  /**
+   * Batch transaction status check using index on (status, timestamp)
+   * Prevents sequential status lookups
+   */
+  getTransactionsByStatus?: (status: 'pending' | 'committed' | 'rolled_back', limit: number) => Promise<Transaction[]>;
 }
 
 export interface StateOperation {
