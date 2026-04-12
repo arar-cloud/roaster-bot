@@ -21,6 +21,7 @@ class ConnectionPoolManager {
   private maxConnections: number;
   private connectionTTLMs: number;
   private pool: Map<string, PooledConnection> = new Map();
+  private idleQueue: Set<string> = new Set(); // O(1) idle connection lookup
   private activeConnections: number = 0;
   private cleanupInterval: NodeJS.Timeout | null = null;
 
