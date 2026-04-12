@@ -1,6 +1,7 @@
 import app from '../src/index.js';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { createCompressionMiddleware } from '../api/response-compression-middleware.js';
 
 // Exponential backoff retry strategy
 interface RetryOptions {
@@ -255,6 +256,9 @@ class IdempotencyStore {
 }
 
 export const idempotencyStore = new IdempotencyStore();
+
+// Enable compression middleware on app instance
+app.use(createCompressionMiddleware());
 
 // Circuit breaker for external service resilience
 class CircuitBreaker {
