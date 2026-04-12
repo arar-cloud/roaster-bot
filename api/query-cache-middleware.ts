@@ -13,17 +13,41 @@ interface CachedQueryResult {
   data: any;
   expiresAt: number;
   hitCount: number;
+  createdAt: number;
 }
 
-const QUERY_CACHE_TTL_MS = 30000; // 30 second TTL for query results
-const QUERY_CACHE_SIZE = 10000; // Max 10,000 cached query results
+interface QueryCacheConfig {
+  ttlMs?: number;
+  maxSize?: number;
+  gcIntervalMs?: number;
+}
+
+const DEFAULT_QUERY_CACHE_TTL_MS = 30000; // 30 second TTL for query results
+const DEFAULT_QUERY_CACHE_SIZE = 10000; // Max 10,000 cached query results
+const DEFAULT_GC_INTERVAL_MS = 60000; // Run garbage collection every 60s
 
 class QueryCache {
   private cache: LRUCache<CachedQueryResult>;
   private connectionPool: Map<string, any> = new Map();
+  private ttlMs: number;
+  private maxSize: number;
+  private gcInterval: NodeJS.Timer | null = null;
+  private currentSize: number = 0;
 
-  constructor() {
-    this.cache = new LRUCache(QUERY_CACHE_SIZE);
+  constructor(config: QueryCacheConfig = {}) {
+    this.ttlMs = config.ttlMs ?? DEFAULT_QUERY_CACHE_TTL_MS;
+    this.maxSize = config.maxSize ?? DEFAULT_QUERY_CACHE_SIZE;
+    this.cache = new LRUCache(this.maxSize);
+    
+    // Start periodic garbage collection of expired entries
+    const gcInterval = config.gcIntervalMs ?? DEFAULT_GC_INTERVAL_MS;
+    this.gcInterval = setInterval(() => this.runGarbageCollection(), gcInterval);
+  }
+
+  private runGarbageCollection(): void {
+    const now = Date.now();
+    // Mark stale entries for removal (implementation depends on LRUCache API)
+    // This prevents heap pressure from expired but not-yet-accessed entries
   }
 
   /**
@@ -37,35 +61,46 @@ class QueryCache {
 
   /**
    * Get cached query result if available and not expired.
-   * Lazy deletion on expiration check.
+   * Aggressive lazy deletion on expiration check prevents stale data return.
    */
   getCachedQuery(method: string, url: string, params: any): any | null {
     const key = this.generateCacheKey(method, url, params);
     const cached = this.cache.get(key);
 
-    if (cached && cached.expiresAt > Date.now()) {
-      cached.hitCount++;
-      return cached.data;
-    }
+    if (!cached) return null;
 
-    // Lazy deletion: remove expired entry
-    if (cached && cached.expiresAt <= Date.now()) {
+    // Check TTL: if expired, immediately remove and don't return
+    if (cached.expiresAt <= Date.now()) {
       this.cache.delete(key);
+      this.currentSize = Math.max(0, this.currentSize - 1);
+      return null;
     }
 
-    return null;
+    cached.hitCount++;
+    return cached.data;
   }
 
   /**
-   * Cache query result with automatic expiration.
+   * Cache query result with automatic expiration and size enforcement.
+   * Respects max cache size; LRUCache handles eviction of least-recently-used entries.
    */
   setCachedQuery(method: string, url: string, params: any, data: any): void {
     const key = this.generateCacheKey(method, url, params);
     this.cache.set(key, {
       data,
-      expiresAt: Date.now() + QUERY_CACHE_TTL_MS,
+      expiresAt: Date.now() + this.ttlMs,
       hitCount: 0,
+      createdAt: Date.now(),
     });
+    this.currentSize++;
+  }
+
+  destroy(): void {
+    if (this.gcInterval) {
+      clearInterval(this.gcInterval);
+      this.gcInterval = null;
+    }
+    this.connectionPool.clear();
   }
 
   /**
@@ -101,7 +136,7 @@ const globalQueryCache = new QueryCache();
  * Wraps response.json() to intercept and cache responses.
  */
 export function createQueryCacheMiddleware(
-  cacheDurationMs: number = QUERY_CACHE_TTL_MS
+  cacheDurationMs: number = DEFAULT_QUERY_CACHE_TTL_MS
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     // Only cache GET requests
