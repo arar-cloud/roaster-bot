@@ -1,6 +1,9 @@
 import app from '../src/index.js';
 import { randomUUID } from 'crypto';
 import rateLimit from 'express-rate-limit';
+import { createRequestDedupMiddleware } from './request-dedup-middleware.js';
+import { createCompressionMiddleware, setCompressionHeaders } from './response-compression-middleware.js';
+import { createPaginationMiddleware, createStreamingMiddleware } from './pagination-streaming-middleware.js';
 
 // Exponential backoff retry strategy
 interface RetryOptions {
@@ -255,6 +258,21 @@ class IdempotencyStore {
 }
 
 export const idempotencyStore = new IdempotencyStore();
+
+/**
+ * Register performance optimization middleware.
+ * Order matters: dedup → compression → pagination
+ * 1. Request deduplication: coalesce duplicate concurrent requests
+ * 2. Response compression: gzip/brotli compression + cache headers
+ * 3. Pagination helpers: cursor-based pagination + streaming support
+ */
+function registerPerformanceMiddleware(): void {
+  app.use(createRequestDedupMiddleware());
+  app.use(createCompressionMiddleware());
+  app.use(setCompressionHeaders);
+  app.use(createPaginationMiddleware());
+  app.use(createStreamingMiddleware());
+}
 
 // Circuit breaker for external service resilience
 class CircuitBreaker {
