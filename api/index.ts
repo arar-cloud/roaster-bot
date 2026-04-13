@@ -269,6 +269,17 @@ const queryCacheMiddleware = createQueryCacheMiddleware({
 });
 app.use(queryCacheMiddleware);
 
+// Enable pagination middleware for optimized mobile payloads (issue-6a10d6b55a)
+app.use((req: any, res: any, next: any) => {
+  const { limit, cursor, fields } = req.query;
+  res.locals.pagination = {
+    limit: Math.min(parseInt(limit as string) || 50, 500),
+    cursor: cursor as string || undefined,
+    fields: fields ? (fields as string).split(',') : undefined
+  };
+  next();
+});
+
 // Initialize connection pool manager (connection pooling for issue-83a2af25c2)
 const poolManager = new ConnectionPool({
   minConnections: 5,
