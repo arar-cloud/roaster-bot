@@ -259,7 +259,8 @@ class IdempotencyStore {
 export const idempotencyStore = new IdempotencyStore();
 
 // Enable compression middleware on app instance
-app.use(createCompressionMiddleware());
+const compressionMiddleware = createCompressionMiddleware();
+app.use(compressionMiddleware);
 
 // Enable query cache middleware for automatic GET request caching and mutation invalidation
 const queryCacheMiddleware = createQueryCacheMiddleware({
