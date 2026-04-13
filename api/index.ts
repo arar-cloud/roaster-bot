@@ -262,7 +262,12 @@ export const idempotencyStore = new IdempotencyStore();
 app.use(createCompressionMiddleware());
 
 // Enable query cache middleware for automatic GET request caching and mutation invalidation
-app.use(createQueryCacheMiddleware());
+const queryCacheMiddleware = createQueryCacheMiddleware({
+  ttlMs: 30000, // 30 second cache for query results
+  maxSize: 10000, // Store up to 10k cached queries
+  gcIntervalMs: 60000 // Garbage collect every 60 seconds
+});
+app.use(queryCacheMiddleware);
 
 // Initialize connection pool manager (connection pooling for issue-83a2af25c2)
 const poolManager = new ConnectionPool({
