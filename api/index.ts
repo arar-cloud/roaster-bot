@@ -264,6 +264,30 @@ app.use(createCompressionMiddleware());
 // Enable query cache middleware for automatic GET request caching and mutation invalidation
 app.use(createQueryCacheMiddleware());
 
+// Initialize connection pool manager (connection pooling for issue-83a2af25c2)
+const poolManager = new ConnectionPool({
+  minConnections: 5,
+  maxConnections: 20,
+  connectionTimeoutMs: 30000,
+  idleTimeoutMs: 300000, // 5 min TTL for idle connections
+  validationIntervalMs: 60000
+});
+
+// Apply connection pool middleware to all requests
+app.use((req: any, res: any, next: any) => {
+  poolManager.acquire().then((connection: string) => {
+    req.pooledConnection = connection;
+    res.on('finish', () => {
+      if (req.pooledConnection) {
+        poolManager.release(req.pooledConnection);
+      }
+    });
+    next();
+  }).catch((err: Error) => {
+    next(err);
+  });
+});
+
 // Circuit breaker for external service resilience
 class CircuitBreaker {
   private state: 'closed' | 'open' | 'half-open' = 'closed';
