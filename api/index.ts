@@ -79,7 +79,7 @@ setInterval(() => {
   const now = Date.now();
   let cleaned = 0;
   for (const [key, entry] of tokenCache.entries()) {
-    if (entry.expiresAt < now) {
+    if (isTokenExpired(entry.expiresAt, now)) {
       tokenCache.delete(key);
       cleaned++;
     }
@@ -89,11 +89,17 @@ setInterval(() => {
   }
 }, CACHE_CLEANUP_INTERVAL);
 
+// Unified utility for checking token expiry to avoid redundant Date.now() calls
+function isTokenExpired(expiresAt: number, now: number): boolean {
+  return expiresAt < now;
+}
+
 function getTokenFromCache(token: string): boolean | null {
+  const now = Date.now();
   const cached = tokenCache.get(token);
   if (!cached) return null;
   
-  if (cached.expiresAt < Date.now()) {
+  if (isTokenExpired(cached.expiresAt, now)) {
     tokenCache.delete(token);
     return null;
   }
