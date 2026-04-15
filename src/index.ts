@@ -1,6 +1,88 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import { promisify } from 'util';
+
+// Async crypto operations to prevent thread pool saturation
+const pbkdf2Async = promisify(crypto.pbkdf2);
+
+// Batch crypto operation queue for efficient processing
+interface CryptoTask {
+  data: Buffer | string;
+  resolve: (value: Buffer) => void;
+  reject: (error: Error) => void;
+}
+
+const cryptoBatchQueue: CryptoTask[] = [];
+let batchProcessing = false;
+const BATCH_SIZE = 10;
+const BATCH_DELAY = 50; // milliseconds
+
+function enqueueCryptoTask(data: Buffer | string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    cryptoBatchQueue.push({ data, resolve, reject });
+    if (!batchProcessing && cryptoBatchQueue.length >= BATCH_SIZE) {
+      processCryptoBatch();
+    } else if (!batchProcessing && cryptoBatchQueue.length > 0) {
+      setTimeout(processCryptoBatch, BATCH_DELAY);
+    }
+  });
+}
+
+async function processCryptoBatch(): Promise<void> {
+  if (batchProcessing || cryptoBatchQueue.length === 0) return;
+  
+  batchProcessing = true;
+  const batch = cryptoBatchQueue.splice(0, BATCH_SIZE);
+  
+  try {
+    const results = await Promise.all(
+      batch.map(task =>
+        pbkdf2Async(task.data, 'salt', 100000, 64, 'sha256')
+          .then(result => ({ result, task }))
+          .catch(error => ({ error, task }))
+      )
+    );
+
+    results.forEach(({ result, error, task }) => {
+      if (error) {
+        task.reject(error);
+      } else {
+        task.resolve(result);
+      }
+    });
+  } finally {
+    batchProcessing = false;
+    if (cryptoBatchQueue.length > 0) {
+      setTimeout(processCryptoBatch, 0);
+    }
+  }
+}
+
+// Async hash function replaces sync crypto.createHash
+async function hashAsync(data: string | Buffer, algorithm: string = 'sha256'): Promise<string> {
+  const hash = crypto.createHash(algorithm);
+  hash.update(data);
+  return hash.digest('hex');
+}
+
+// Async PBKDF2 with batching for key derivation
+async function deriveKeyAsync(password: string | Buffer, salt: string | Buffer, iterations: number = 100000): Promise<Buffer> {
+  try {
+    return await pbkdf2Async(password, salt, iterations, 64, 'sha256');
+  } catch (error) {
+    throw new Error(`Key derivation failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
+}
+
+// Batch key derivation for multiple passwords (useful for login verification at scale)
+async function deriveBatchKeys(passwords: (string | Buffer)[], salt: string | Buffer, iterations: number = 100000): Promise<Buffer[]> {
+  return Promise.all(
+    passwords.map(password => pbkdf2Async(password, salt, iterations, 64, 'sha256'))
+  );
+}
+
+export { hashAsync, deriveKeyAsync, deriveBatchKeys, enqueueCryptoTask };
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
