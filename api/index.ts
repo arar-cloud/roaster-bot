@@ -15,15 +15,14 @@ const REFILL_INTERVAL = 60000; // 1 minute in ms
 const ENTRY_TTL = 300000; // 5 minutes in ms - evict idle entries
 const CLEANUP_INTERVAL = 30000; // Run cleanup every 30 seconds
 
-// Periodic cleanup to prevent unbounded Map growth
-setInterval(() => {
-  const now = Date.now();
-  for (const [clientIp, entry] of rateLimitStore.entries()) {
-    if (now - entry.lastAccess > ENTRY_TTL) {
-      rateLimitStore.delete(clientIp);
-    }
+// Lazy TTL eviction: check and delete expired entries only on access
+// This eliminates O(n) cleanup scans and replaces them with O(1) per-request checks
+function evictExpiredEntry(clientIp: string, now: number): void {
+  const entry = rateLimitStore.get(clientIp);
+  if (entry && now - entry.lastAccess > ENTRY_TTL) {
+    rateLimitStore.delete(clientIp);
   }
-}, CLEANUP_INTERVAL);
+}
 
 function getClientIp(req: Request): string {
   return (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
