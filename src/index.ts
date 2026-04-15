@@ -64,8 +64,14 @@ async function processCryptoBatch(): Promise<void> {
   }
 }
 
-// Async hash function replaces sync crypto.createHash
+// Async hash function uses batch queue to prevent thread pool contention
 async function hashAsync(data: string | Buffer, algorithm: string = 'sha256'): Promise<string> {
+  if (algorithm === 'sha256') {
+    // Use batch queue for sha256 to leverage enqueueCryptoTask batching
+    const buffer = await enqueueCryptoTask(data);
+    return buffer.toString('hex');
+  }
+  // Fallback for non-sha256 algorithms
   const hash = crypto.createHash(algorithm);
   hash.update(data);
   return hash.digest('hex');
