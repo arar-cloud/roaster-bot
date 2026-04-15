@@ -43,12 +43,12 @@ function evictExpiredEntry(clientIp: string, now: number): void {
 
 function getClientIp(req: Request): string {
   // Cache parsed client IP in request object to avoid repeated string operations
-  let cachedIp = (req as any)._cachedClientIp;
-  if (!cachedIp) {
-    cachedIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
-    (req as any)._cachedClientIp = cachedIp;
-  }
-  return cachedIp;
+  const cachedIp = (req as any)._cachedClientIp;
+  if (cachedIp) return cachedIp;
+  
+  const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  (req as any)._cachedClientIp = ip;
+  return ip;
 }
 
 function isRateLimited(clientIp: string): boolean {
