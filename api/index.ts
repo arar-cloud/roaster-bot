@@ -5,12 +5,25 @@ import express, { Request, Response, NextFunction } from 'express';
 interface RateLimitEntry {
   tokens: number;
   lastRefill: number;
+  lastAccess: number; // Track last access time for TTL eviction
 }
 
 const rateLimitStore = new Map<string, RateLimitEntry>();
 const MAX_TOKENS = 100;
 const TOKENS_PER_MINUTE = 100;
 const REFILL_INTERVAL = 60000; // 1 minute in ms
+const ENTRY_TTL = 300000; // 5 minutes in ms - evict idle entries
+const CLEANUP_INTERVAL = 30000; // Run cleanup every 30 seconds
+
+// Periodic cleanup to prevent unbounded Map growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [clientIp, entry] of rateLimitStore.entries()) {
+    if (now - entry.lastAccess > ENTRY_TTL) {
+      rateLimitStore.delete(clientIp);
+    }
+  }
+}, CLEANUP_INTERVAL);
 
 function getClientIp(req: Request): string {
   return (req.headers['x-forwarded-for'] as string)?.split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
@@ -21,7 +34,7 @@ function isRateLimited(clientIp: string): boolean {
   let entry = rateLimitStore.get(clientIp);
 
   if (!entry) {
-    rateLimitStore.set(clientIp, { tokens: MAX_TOKENS - 1, lastRefill: now });
+    rateLimitStore.set(clientIp, { tokens: MAX_TOKENS - 1, lastRefill: now, lastAccess: now });
     return false;
   }
 
@@ -29,6 +42,7 @@ function isRateLimited(clientIp: string): boolean {
   const tokensToAdd = (timePassed / REFILL_INTERVAL) * TOKENS_PER_MINUTE;
   entry.tokens = Math.min(MAX_TOKENS, entry.tokens + tokensToAdd);
   entry.lastRefill = now;
+  entry.lastAccess = now; // Update access time for TTL tracking
 
   if (entry.tokens >= 1) {
     entry.tokens -= 1;
