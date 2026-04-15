@@ -14,6 +14,23 @@ const TOKENS_PER_MINUTE = 100;
 const REFILL_INTERVAL = 60000; // 1 minute in ms
 const ENTRY_TTL = 300000; // 5 minutes in ms - evict idle entries
 const CLEANUP_INTERVAL = 30000; // Run cleanup every 30 seconds
+let cleanupTimer: NodeJS.Timeout | null = null;
+
+// Active periodic cleanup to prevent Map unbounded growth
+function startCleanupTimer(): void {
+  if (cleanupTimer) return;
+  cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    let evicted = 0;
+    for (const [ip, entry] of rateLimitStore.entries()) {
+      if (now - entry.lastAccess > ENTRY_TTL) {
+        rateLimitStore.delete(ip);
+        evicted++;
+      }
+    }
+  }, CLEANUP_INTERVAL);
+  cleanupTimer.unref(); // Allow process to exit if only this timer remains
+}
 
 // Lazy TTL eviction: check and delete expired entries only on access
 // This eliminates O(n) cleanup scans and replaces them with O(1) per-request checks
@@ -36,6 +53,8 @@ function getClientIp(req: Request): string {
 
 function isRateLimited(clientIp: string): boolean {
   const now = Date.now();
+  // Initialize cleanup timer on first rate-limit check
+  startCleanupTimer();
   // Lazily evict expired entries on access instead of full-map scans
   evictExpiredEntry(clientIp, now);
   let entry = rateLimitStore.get(clientIp);
