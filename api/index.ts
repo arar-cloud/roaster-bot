@@ -66,7 +66,9 @@ function isRateLimited(clientIp: string): boolean {
 
   const timePassed = now - entry.lastRefill;
   const tokensToAdd = (timePassed / REFILL_INTERVAL) * TOKENS_PER_MINUTE;
-  entry.tokens = Math.min(MAX_TOKENS, entry.tokens + tokensToAdd);
+  // Replace Math.min() with conditional for hot-path branch prediction optimization
+  const newTokens = entry.tokens + tokensToAdd;
+  entry.tokens = newTokens > MAX_TOKENS ? MAX_TOKENS : newTokens;
   entry.lastRefill = now;
   entry.lastAccess = now; // Update access time for TTL tracking
 
