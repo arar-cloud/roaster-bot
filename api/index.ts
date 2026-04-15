@@ -49,4 +49,51 @@ const rateLimitMiddleware = (req: Request, res: Response, next: NextFunction): v
 // Apply rate limiting to all routes
 app.use(rateLimitMiddleware);
 
+// Token cache with TTL to reduce validation overhead
+interface CacheEntry {
+  isValid: boolean;
+  expiresAt: number;
+  validatedAt: number;
+}
+
+const tokenCache = new Map<string, CacheEntry>();
+const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 minutes
+
+// Periodic cleanup of expired cache entries
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [key, entry] of tokenCache.entries()) {
+    if (entry.expiresAt < now) {
+      tokenCache.delete(key);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    console.log(`Cache cleanup: removed ${cleaned} expired entries`);
+  }
+}, CACHE_CLEANUP_INTERVAL);
+
+function getTokenFromCache(token: string): boolean | null {
+  const cached = tokenCache.get(token);
+  if (!cached) return null;
+  
+  if (cached.expiresAt < Date.now()) {
+    tokenCache.delete(token);
+    return null;
+  }
+  
+  return cached.isValid;
+}
+
+function setTokenInCache(token: string, isValid: boolean): void {
+  tokenCache.set(token, {
+    isValid,
+    expiresAt: Date.now() + TOKEN_CACHE_TTL,
+    validatedAt: Date.now()
+  });
+}
+
 export default app;
+export { rateLimitMiddleware, getTokenFromCache, setTokenInCache };
