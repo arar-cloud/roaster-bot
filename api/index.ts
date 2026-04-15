@@ -36,6 +36,8 @@ function getClientIp(req: Request): string {
 
 function isRateLimited(clientIp: string): boolean {
   const now = Date.now();
+  // Lazily evict expired entries on access instead of full-map scans
+  evictExpiredEntry(clientIp, now);
   let entry = rateLimitStore.get(clientIp);
 
   if (!entry) {
