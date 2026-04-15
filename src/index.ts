@@ -36,21 +36,26 @@ async function processCryptoBatch(): Promise<void> {
   const batch = cryptoBatchQueue.splice(0, BATCH_SIZE);
   
   try {
-    const results = await Promise.all(
-      batch.map(task =>
-        pbkdf2Async(task.data, 'salt', 100000, 64, 'sha256')
-          .then(result => ({ result, task }))
-          .catch(error => ({ error, task }))
-      )
-    );
+    // Pre-allocate result array to avoid reallocation during batch processing
+    const promises: Promise<Buffer>[] = new Array(batch.length);
+    
+    // Direct promise creation without wrapper function overhead
+    for (let i = 0; i < batch.length; i++) {
+      promises[i] = pbkdf2Async(batch[i].data, 'salt', 100000, 64, 'sha256');
+    }
 
-    results.forEach(({ result, error, task }) => {
-      if (error) {
-        task.reject(error);
+    // Use allSettled with indexed result handling to eliminate per-task Promise wrapper allocation
+    const results = await Promise.allSettled(promises);
+    
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const task = batch[i];
+      if (result.status === 'fulfilled') {
+        task.resolve(result.value);
       } else {
-        task.resolve(result);
+        task.reject(result.reason);
       }
-    });
+    }
   } finally {
     batchProcessing = false;
     if (cryptoBatchQueue.length > 0) {
