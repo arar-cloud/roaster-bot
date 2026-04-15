@@ -73,7 +73,7 @@ const tokenCache = new Map<string, CacheEntry>();
 const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const CACHE_CLEANUP_INTERVAL = 10 * 60 * 1000; // 10 minutes
 
-// Periodic cleanup of expired cache entries
+// Periodic cleanup of expired cache entries - prevents unbounded memory growth
 setInterval(() => {
   const now = Date.now();
   let cleaned = 0;
@@ -84,7 +84,7 @@ setInterval(() => {
     }
   }
   if (cleaned > 0) {
-    console.log(`Cache cleanup: removed ${cleaned} expired entries`);
+    console.log(`[PERF] Token cache cleanup: removed ${cleaned} expired entries, current size: ${tokenCache.size}`);
   }
 }, CACHE_CLEANUP_INTERVAL);
 
