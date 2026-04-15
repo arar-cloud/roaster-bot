@@ -24,14 +24,12 @@ function enqueueCryptoTask(data: Buffer | string): Promise<Buffer> {
     cryptoBatchQueue.push({ data, resolve, reject });
     if (!batchProcessing && cryptoBatchQueue.length >= BATCH_SIZE) {
       processCryptoBatch();
-    } else {
-      // Clear timer when queue becomes empty
-      if (batchTimer) {
-        clearTimeout(batchTimer);
+    } else if (!batchProcessing && !batchTimer) {
+      // Only schedule if no timer is already pending
+      batchTimer = setTimeout(() => {
         batchTimer = null;
-      }
-    } else if (!batchProcessing && cryptoBatchQueue.length > 0) {
-      setTimeout(processCryptoBatch, BATCH_DELAY);
+        processCryptoBatch();
+      }, BATCH_DELAY);
     }
   });
 }
@@ -68,7 +66,10 @@ async function processCryptoBatch(): Promise<void> {
   } finally {
     batchProcessing = false;
     if (cryptoBatchQueue.length > 0) {
-      setTimeout(processCryptoBatch, 0);
+      batchTimer = setTimeout(processCryptoBatch, 0);
+    } else if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
     }
   }
 }
