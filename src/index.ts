@@ -98,7 +98,7 @@ async function deriveKeyAsync(password: string | Buffer, salt: string | Buffer, 
 // Batch key derivation for multiple passwords (useful for login verification at scale)
 async function deriveBatchKeys(passwords: (string | Buffer)[], salt: string | Buffer, iterations: number = 100000): Promise<Buffer[]> {
   return Promise.all(
-    passwords.map(password => pbkdf2Async(password, salt, iterations, 64, 'sha256'))
+    passwords.map((password) => pbkdf2Async(password, salt, iterations, 64, 'sha256'))
   );
 }
 
