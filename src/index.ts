@@ -24,6 +24,12 @@ function enqueueCryptoTask(data: Buffer | string): Promise<Buffer> {
     cryptoBatchQueue.push({ data, resolve, reject });
     if (!batchProcessing && cryptoBatchQueue.length >= BATCH_SIZE) {
       processCryptoBatch();
+    } else {
+      // Clear timer when queue becomes empty
+      if (batchTimer) {
+        clearTimeout(batchTimer);
+        batchTimer = null;
+      }
     } else if (!batchProcessing && cryptoBatchQueue.length > 0) {
       setTimeout(processCryptoBatch, BATCH_DELAY);
     }
@@ -32,14 +38,14 @@ function enqueueCryptoTask(data: Buffer | string): Promise<Buffer> {
 
 async function processCryptoBatch(): Promise<void> {
   if (batchProcessing || cryptoBatchQueue.length === 0) return;
-  
+
   batchProcessing = true;
   const batch = cryptoBatchQueue.splice(0, BATCH_SIZE);
-  
+
   try {
     // Pre-allocate result array to avoid reallocation during batch processing
     const promises: Promise<Buffer>[] = new Array(batch.length);
-    
+
     // Direct promise creation without wrapper function overhead
     for (let i = 0; i < batch.length; i++) {
       promises[i] = pbkdf2Async(batch[i].data, 'salt', 100000, 64, 'sha256');
@@ -47,7 +53,7 @@ async function processCryptoBatch(): Promise<void> {
 
     // Use allSettled with indexed result handling to eliminate per-task Promise wrapper allocation
     const results = await Promise.allSettled(promises);
-    
+
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       const task = batch[i];
@@ -163,12 +169,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
