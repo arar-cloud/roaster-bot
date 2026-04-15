@@ -15,6 +15,7 @@ interface CryptoTask {
 
 const cryptoBatchQueue: CryptoTask[] = [];
 let batchProcessing = false;
+let batchTimer: NodeJS.Timeout | null = null;
 const BATCH_SIZE = 10;
 const BATCH_DELAY = 50; // milliseconds
 
