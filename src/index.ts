@@ -48,7 +48,9 @@ async function processCryptoBatch(): Promise<void> {
 
     // Direct promise creation without wrapper function overhead
     for (let i = 0; i < batch.length; i++) {
-      promises[i] = pbkdf2Async(batch[i].data, 'salt', 100000, 64, 'sha256');
+      // Generate cryptographically secure salt per-request instead of hardcoded string
+      const salt = crypto.randomBytes(32);
+      promises[i] = pbkdf2Async(batch[i].data, salt, 100000, 64, 'sha256');
     }
 
     // Use allSettled with indexed result handling to eliminate per-task Promise wrapper allocation
