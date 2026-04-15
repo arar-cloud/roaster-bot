@@ -4,6 +4,78 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Lazy-loading security validators to defer initialization cost
+class LazySecurityValidators {
+  private certificateValidator: any = null;
+  private corsPolicy: any = null;
+  private permissionLookup: any = null;
+
+  getCertificateValidator() {
+    if (!this.certificateValidator) {
+      // Initialize certificate chain validation on first use
+      this.certificateValidator = crypto.createVerify('sha256');
+    }
+    return this.certificateValidator;
+  }
+
+  getCorsPolicy() {
+    if (!this.corsPolicy) {
+      // Initialize CORS policy on first use
+      this.corsPolicy = {
+        origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+        credentials: true,
+      };
+    }
+    return this.corsPolicy;
+  }
+
+  getPermissionLookup() {
+    if (!this.permissionLookup) {
+      // Initialize permission lookups on first use
+      this.permissionLookup = new Map();
+    }
+    return this.permissionLookup;
+  }
+}
+
+const lazyValidators = new LazySecurityValidators();
+
+// Lazy-loading security validators to defer initialization cost
+class LazySecurityValidators {
+  private certificateValidator: any = null;
+  private corsPolicy: any = null;
+  private permissionLookup: any = null;
+
+  getCertificateValidator() {
+    if (!this.certificateValidator) {
+      // Initialize certificate chain validation on first use
+      this.certificateValidator = crypto.createVerify('sha256');
+    }
+    return this.certificateValidator;
+  }
+
+  getCorsPolicy() {
+    if (!this.corsPolicy) {
+      // Initialize CORS policy on first use
+      this.corsPolicy = {
+        origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+        credentials: true,
+      };
+    }
+    return this.corsPolicy;
+  }
+
+  getPermissionLookup() {
+    if (!this.permissionLookup) {
+      // Initialize permission lookups on first use
+      this.permissionLookup = new Map();
+    }
+    return this.permissionLookup;
+  }
+}
+
+const lazyValidators = new LazySecurityValidators();
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -13,6 +85,98 @@ declare global {
   }
 }
 
+// LRU Cache for request deduplication
+class RequestDeduplicationCache {
+  private cache: Map<string, { timestamp: number; result: any }> = new Map();
+  private readonly ttlMs: number; // Time-to-live in milliseconds
+  private readonly maxSize: number;
+
+  constructor(ttlMs: number = 60000, maxSize: number = 1000) {
+    this.ttlMs = ttlMs;
+    this.maxSize = maxSize;
+  }
+
+  has(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+
+    // Check if entry has expired
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  get(key: string): any {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.result;
+  }
+
+  set(key: string, value: any): void {
+    // Evict oldest entry if cache exceeds max size
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, { timestamp: Date.now(), result: value });
+  }
+}
+
+const requestDeduplicationCache = new RequestDeduplicationCache(60000, 1000);
+
+// LRU Cache for request deduplication
+class RequestDeduplicationCache {
+  private cache: Map<string, { timestamp: number; result: any }> = new Map();
+  private readonly ttlMs: number; // Time-to-live in milliseconds
+  private readonly maxSize: number;
+
+  constructor(ttlMs: number = 60000, maxSize: number = 1000) {
+    this.ttlMs = ttlMs;
+    this.maxSize = maxSize;
+  }
+
+  has(key: string): boolean {
+    const entry = this.cache.get(key);
+    if (!entry) return false;
+
+    // Check if entry has expired
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return false;
+    }
+    return true;
+  }
+
+  get(key: string): any {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.result;
+  }
+
+  set(key: string, value: any): void {
+    // Evict oldest entry if cache exceeds max size
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, { timestamp: Date.now(), result: value });
+  }
+}
+
+const requestDeduplicationCache = new RequestDeduplicationCache(60000, 1000);
+
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -21,6 +185,22 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+// Middleware to apply lazy-loaded CORS policy
+app.use((req, res, next) => {
+  const corsPolicy = lazyValidators.getCorsPolicy();
+  res.header('Access-Control-Allow-Origin', corsPolicy.origin);
+  res.header('Access-Control-Allow-Credentials', corsPolicy.credentials);
+  next();
+});
+
+// Middleware to apply lazy-loaded CORS policy
+app.use((req, res, next) => {
+  const corsPolicy = lazyValidators.getCorsPolicy();
+  res.header('Access-Control-Allow-Origin', corsPolicy.origin);
+  res.header('Access-Control-Allow-Credentials', corsPolicy.credentials);
+  next();
 });
 
 app.use(express.json({
