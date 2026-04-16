@@ -10,13 +10,39 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Extend Express Request type properly
+// TTL-based cache for security validation results
+class SecurityValidationCache {
+  private cache = new Map<string, { result: boolean; timestamp: number }>();
+  private ttlMs = 5 * 60 * 1000; // 5 minutes
+  private maxSize = 1000;
+
+  get(signature: string): boolean | null {
+    const entry = this.cache.get(signature);
+    if (!entry) return null;
+    
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(signature);
+      return null;
+    }
+    return entry.result;
+  }
+
+  set(signature: string, result: boolean): void {
+    this.cache.set(signature, { result, timestamp: Date.now() });
+    if (this.cache.size > this.maxSize) {
+      const oldestKey = this.cache.keys().next().value;
+      if (oldestKey) this.cache.delete(oldestKey);
+    }
+  }
+}
+
+const securityValidationCache = new SecurityValidationCache();
+
 declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    }return null;
     }
-    const now = Date.now();
   }
 }
 
@@ -348,10 +374,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       return processCryptoBatch();
     };
 
-    // Async signature verification with backpressure and circuit-breaker
+    // Async signature verification with caching to eliminate repeated crypto ops
     const verifySignatureAsync = (data, sig, secret) => {
       return new Promise((resolve, reject) => {
-        enqueueCryptoOperation({ data, sig, secret, resolve }).catch(reject);
+        // Check cache first to avoid redundant crypto operations
+        const cacheKey = sig; // Use signature as cache key
+        const cached = securityValidationCache.get(cacheKey);
+        if (cached !== null) {
+          resolve(cached);
+          return;
+        }
+        
+        enqueueCryptoOperation({ data, sig, secret, resolve: (result) => {
+          // Cache the validation result
+          securityValidationCache.set(cacheKey, result);
+          resolve(result);
+        } }).catch(reject);
       });
     };
 
