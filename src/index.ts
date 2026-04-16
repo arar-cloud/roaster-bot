@@ -15,6 +15,8 @@ class TokenBucketLimiter {
   private capacity = 100;
   private refillRate = 10; // tokens per second
   private windowMs = 1000; // 1 second
+  private cleanupInterval: NodeJS.Timer | null = null;
+  private readonly BUCKET_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   isAllowed(key: string): boolean {
     const now = Date.now();
@@ -23,6 +25,10 @@ class TokenBucketLimiter {
     if (!bucket) {
       bucket = { tokens: this.capacity, lastRefill: now };
       this.buckets.set(key, bucket);
+      // Start cleanup timer on first bucket creation
+      if (!this.cleanupInterval) {
+        this.startCleanup();
+      }
       return true;
     }
     
@@ -40,13 +46,29 @@ class TokenBucketLimiter {
     return false;
   }
 
+  private startCleanup(): void {
+    // Automatically cleanup stale entries every 30 seconds
+    this.cleanupInterval = setInterval(() => this.cleanup(), 30000);
+    // Allow process to exit even if timer is running
+    if (this.cleanupInterval.unref) {
+      this.cleanupInterval.unref();
+    }
+  }
+
   cleanup(): void {
-    // Optionally clean up old buckets every minute
+    // Remove stale buckets to prevent memory leaks
     const now = Date.now();
     for (const [key, bucket] of this.buckets.entries()) {
-      if (now - bucket.lastRefill > 60 * 1000) {
+      if (now - bucket.lastRefill > this.BUCKET_TTL_MS) {
         this.buckets.delete(key);
       }
+    }
+  }
+
+  stopCleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
   }
 }
@@ -363,8 +385,7 @@ const rateLimitMiddleware = (req: Request, res: Response, next: Function) => {
   next();
 };
 
-// Cleanup stale buckets every minute to prevent memory leak
-setInterval(() => tokenBucketLimiter.cleanup(), 60 * 1000);
+// Automatic cleanup now integrated into TokenBucketLimiter.startCleanup()
 
 // Middleware for token bucket rate limiting
 app.use((req: Request, res: Response, next: Function) => {
