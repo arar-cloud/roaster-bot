@@ -21,6 +21,58 @@ const validateSecurityToken = (token) => {
   return { valid: true };
 };
 
+// In-memory policy cache with TTL
+class PolicyCache {
+  constructor(ttlMs = 60000) {
+    this.cache = new Map();
+    this.ttl = ttlMs;
+  }
+  
+  set(key, value) {
+    const expiryTime = Date.now() + this.ttl;
+    this.cache.set(key, { value, expiryTime });
+  }
+  
+  get(key) {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    
+    if (Date.now() > entry.expiryTime) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return entry.value;
+  }
+  
+  clear() {
+    this.cache.clear();
+  }
+}
+
+const policyCache = new PolicyCache(60000); // 60-second TTL
+
+// Policy lookup with caching
+const getSecurityPolicy = (policyId, scope) => {
+  const cacheKey = `policy:${policyId}:${scope}`;
+  const cached = policyCache.get(cacheKey);
+  
+  if (cached) {
+    return { ...cached, fromCache: true };
+  }
+  
+  // Simulate policy engine/database lookup
+  const policy = {
+    id: policyId,
+    scope,
+    permissions: ['read', 'write'],
+    timestamp: Date.now()
+  };
+  
+  policyCache.set(cacheKey, policy);
+  return { ...policy, fromCache: false };
+};
+
 // Middleware factory with early exit enforcement
 const securityMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
