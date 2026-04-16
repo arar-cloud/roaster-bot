@@ -42,7 +42,8 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Persistent crypto batch processor
+// Persistent crypto batch processor with max size limit
+const MAX_QUEUE_SIZE = 1000; // Prevent unbounded accumulation under high load
 const globalCryptoQueue: any[] = [];
 let batchTimeout: NodeJS.Timeout | null = null;
 
@@ -74,7 +75,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     
     // Async signature verification with batching support
     const verifySignatureAsync = (data, sig, secret) => {
-      return new Promise((resolve) => {
+      return new Promise((resolve, reject) => {
+        // Reject if queue exceeds max size to prevent OOM
+        if (cryptoQueue.length >= MAX_QUEUE_SIZE) {
+          reject(new Error('Crypto queue at capacity - rejecting request'));
+          return;
+        }
         cryptoQueue.push({ data, sig, secret, resolve });
         processCryptoBatch();
       });
