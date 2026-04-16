@@ -351,6 +351,21 @@ class CachedRateLimiter {
 
 const cachedLimiter = new CachedRateLimiter();
 
+// Token bucket rate limiter middleware for O(1) throughput under burst traffic
+const tokenBucketLimiter = new TokenBucketLimiter();
+
+const rateLimitMiddleware = (req: Request, res: Response, next: Function) => {
+  const key = `${req.ip}-${cachedLimiter.getWindowStart()}`;
+  if (!tokenBucketLimiter.isAllowed(key)) {
+    res.status(429).json({ error: 'Too many requests' });
+    return;
+  }
+  next();
+};
+
+// Cleanup stale buckets every minute to prevent memory leak
+setInterval(() => tokenBucketLimiter.cleanup(), 60 * 1000);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
