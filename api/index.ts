@@ -20,6 +20,9 @@ class BoundedLRUCache {
   private maxSize = 500;
   private ttlMs = 10 * 60 * 1000; // 10 minutes
   private invalidationCallbacks = new Set<(key: string) => void>();
+  private taskQueue: Array<{ fn: () => Promise<any>; resolve: (v: any) => void; reject: (e: any) => void }> = [];
+  private activeWorkerCount = 0;
+  private poolSize = 4;
 
   // Worker pool metrics and observability
   getMetrics() {
@@ -153,6 +156,8 @@ class BoundedLRUCache {
       clearInterval(this.cleanupIntervalId);
       this.cleanupIntervalId = null;
     }
+    this.taskQueue = [];
+    this.activeWorkerCount = 0;
   }
 }
 
