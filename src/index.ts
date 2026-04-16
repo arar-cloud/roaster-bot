@@ -11,6 +11,57 @@ import https from 'https';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Connection pool for CopilotClient with HTTP keep-alive
+class CopilotClientPool {
+  private clients: CopilotClient[] = [];
+  private available: CopilotClient[] = [];
+  private httpAgent = new http.Agent({ keepAlive: true, maxSockets: 10 });
+  private httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 10 });
+  private poolSize = 5;
+  private requestQueue: Array<{ fn: (client: CopilotClient) => Promise<any>; resolve: (v: any) => void; reject: (e: any) => void }> = [];
+
+  async initialize(): Promise<void> {
+    for (let i = 0; i < this.poolSize; i++) {
+      const client = new CopilotClient({
+        token: process.env.GITHUB_TOKEN || '',
+      });
+      this.clients.push(client);
+      this.available.push(client);
+    }
+  }
+
+  async execute<T>(fn: (client: CopilotClient) => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push({ fn, resolve, reject });
+      this.processQueue();
+    });
+  }
+
+  private async processQueue(): Promise<void> {
+    if (this.available.length === 0 || this.requestQueue.length === 0) return;
+    
+    const client = this.available.shift();
+    const task = this.requestQueue.shift();
+    
+    if (!client || !task) return;
+    
+    try {
+      const result = await task.fn(client);
+      task.resolve(result);
+    } catch (error) {
+      task.reject(error);
+    } finally {
+      this.available.push(client);
+      this.processQueue();
+    }
+  }
+
+  destroy(): void {
+    this.httpAgent.destroy();
+    this.httpsAgent.destroy();
+  }
+}
+
 // Extend Express Request type properly
 // TTL-based cache for security validation results
 class SecurityValidationCache {
