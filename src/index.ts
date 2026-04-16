@@ -95,16 +95,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     // Async cryptographic operation queue for batching
     const cryptoQueue = [];
     
+    // Helper to enqueue crypto operations with backpressure awareness
+    const enqueueCryptoOperation = async (job) => {
+      if (!canEnqueueOperation()) {
+        throw new Error('Crypto queue at backpressure threshold - rejecting request');
+      }
+      cryptoQueue.push(job);
+      return processCryptoBatch();
+    };
+    
     // Async signature verification with backpressure and circuit-breaker
     const verifySignatureAsync = (data, sig, secret) => {
       return new Promise((resolve, reject) => {
-        // Apply backpressure: reject early at 80% capacity instead of 100%
-        if (!canEnqueueOperation()) {
-          reject(new Error('Crypto queue at backpressure threshold - rejecting request'));
-          return;
-        }
-        cryptoQueue.push({ data, sig, secret, resolve });
-        processCryptoBatch();
+        enqueueCryptoOperation({ data, sig, secret, resolve }).catch(reject);
       });
     };
     
