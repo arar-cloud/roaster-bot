@@ -97,6 +97,41 @@ class CryptoWorkerPool {
 
 const cryptoPool = new CryptoWorkerPool(4);
 
+// Priority queue for crypto operations
+class PriorityCryptoQueue {
+  private queue: Array<{ priority: number; job: any; id: string }> = [];
+  private nextId = 0;
+
+  enqueue(job: any, priority: number = 0): string {
+    const id = `job-${this.nextId++}`;
+    const entry = { priority, job, id };
+    
+    // Insert in sorted position (O(n) but minimal for typical queue sizes)
+    let inserted = false;
+    for (let i = 0; i < this.queue.length; i++) {
+      if (priority > this.queue[i].priority) {
+        this.queue.splice(i, 0, entry);
+        inserted = true;
+        break;
+      }
+    }
+    if (!inserted) {
+      this.queue.push(entry);
+    }
+    return id;
+  }
+
+  dequeue(): any | undefined {
+    return this.queue.shift()?.job;
+  }
+
+  size(): number {
+    return this.queue.length;
+  }
+}
+
+const priorityQueue = new PriorityCryptoQueue();
+
 // Cached rate limiter window to reduce Date.now() syscalls
 class CachedRateLimiter {
   private windowMs = 15 * 60 * 1000;
