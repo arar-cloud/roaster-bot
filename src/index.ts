@@ -51,11 +51,35 @@ function cacheValidatedToken(token: string, payload: any): void {
   });
 }
 
+// Global rate limiter for all requests
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS', // Skip preflight
+});
+
+// Stricter rate limiter for authenticated endpoints
+const authLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  limit: 30, // 30 requests per minute for auth endpoints
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Rate limit by token if available, fallback to IP
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.split(' ')[1];
+      return `token:${token}`;
+    }
+    return req.ip || 'unknown';
+  },
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Too many requests. Please try again later.',
+    });
+  },
 });
 
 // Lightweight validation middleware: fail fast on invalid token format
