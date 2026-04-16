@@ -29,6 +29,15 @@ const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 function validateTokenCached(token: string): { valid: boolean; payload?: any } {
   const cached = tokenCache.get(token);
   const now = Date.now();
+  
+  // Lazy deletion: remove one expired entry per lookup to distribute cleanup cost
+  for (const [key, data] of tokenCache.entries()) {
+    if (data.expiresAt < now) {
+      tokenCache.delete(key);
+      break; // Delete only one per request to limit overhead
+    }
+  }
+  
   if (cached && cached.expiresAt > now) {
     return { valid: true, payload: cached.payload };
   }
