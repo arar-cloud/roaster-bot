@@ -51,14 +51,15 @@ const flushCryptoBatch = async () => {
   if (globalCryptoQueue.length === 0) return;
   const batch = globalCryptoQueue.splice(0, 10);
   
-  setImmediate(() => {
+  const BATCH_INTERVAL_MS = 10;
+  setTimeout(() => {
     batch.forEach(job => {
       const hmac = crypto.createHmac('sha256', job.secret);
       const digest = 'sha256=' + hmac.update(job.data).digest('hex');
       const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
       job.resolve(isValid);
     });
-  });
+  }, BATCH_INTERVAL_MS);
 };
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
@@ -91,14 +92,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       const batch = cryptoQueue.splice(0, 10);
       
       // Process batch in next tick to allow queueing
-      setImmediate(() => {
+      const BATCH_INTERVAL_MS = 10;
+      setTimeout(() => {
         batch.forEach(job => {
           const hmac = crypto.createHmac('sha256', job.secret);
           const digest = 'sha256=' + hmac.update(job.data).digest('hex');
           const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
           job.resolve(isValid);
         });
-      });
+      }, BATCH_INTERVAL_MS);
     };
     
     const isValid = await verifySignatureAsync(rawBody, signature, webhookSecret);
