@@ -49,6 +49,7 @@ const CIRCUIT_BREAKER_RESET_MS = 5000;
 const globalCryptoQueue: any[] = [];
 let batchTimeout: NodeJS.Timeout | null = null;
 let lastFlushTime = Date.now();
+let batchTimestamp = Date.now(); // Cache timestamp once per batch window to reduce syscalls
 let circuitBreakerOpen = false;
 let circuitBreakerResetTimeout: NodeJS.Timeout | null = null;
 const BATCH_TIMEOUT_MS = 50; // Max latency for any queued request
@@ -116,7 +117,8 @@ const flushCryptoBatch = async (): Promise<void> => {
     
     try {
       while (globalCryptoQueue.length > 0) {
-        lastFlushTime = Date.now();
+        batchTimestamp = Date.now(); // Update cached timestamp once per batch
+        lastFlushTime = batchTimestamp;
         const batch = globalCryptoQueue.splice(0, 10);
         
         // Process batch with async crypto operations to avoid event loop blocking
@@ -154,6 +156,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     
     // Helper to enqueue crypto operations with backpressure awareness
     const enqueueCryptoOperation = async (job) => {
+      // Refresh batch timestamp if batch window exceeded, otherwise reuse cached value
+      if (Date.now() - lastFlushTime > BATCH_TIMEOUT_MS) {
+        batchTimestamp = Date.now();
+        lastFlushTime = batchTimestamp;
+      }
       if (!priorityCryptoQueue.enqueue(job, 10)) { // Priority 10 for webhook signatures
         res.status(503).send('Crypto queue saturated. Retry-After: 1');
         throw new Error('Queue saturated - 503 response sent');
