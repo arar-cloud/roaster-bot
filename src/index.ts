@@ -97,11 +97,38 @@ class CryptoWorkerPool {
 
 const cryptoPool = new CryptoWorkerPool(4);
 
+// Cached rate limiter window to reduce Date.now() syscalls
+class CachedRateLimiter {
+  private windowMs = 15 * 60 * 1000;
+  private cachedWindowStart = Math.floor(Date.now() / this.windowMs) * this.windowMs;
+  private lastCacheUpdate = Date.now();
+
+  getWindowStart(): number {
+    const now = Date.now();
+    // Only recalculate if we've crossed a window boundary
+    if (now - this.lastCacheUpdate > 1000) { // Update cache every 1 second max
+      const newWindow = Math.floor(now / this.windowMs) * this.windowMs;
+      if (newWindow !== this.cachedWindowStart) {
+        this.cachedWindowStart = newWindow;
+      }
+      this.lastCacheUpdate = now;
+    }
+    return this.cachedWindowStart;
+  }
+}
+
+const cachedLimiter = new CachedRateLimiter();
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use cached window calculation
+    const windowStart = cachedLimiter.getWindowStart();
+    return `${req.ip}-${windowStart}`;
+  },
 });
 
 app.use(express.json({
