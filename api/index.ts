@@ -17,21 +17,27 @@ class BoundedLRUCache {
   private invalidationCallbacks = new Set<(key: string) => void>();
 
   private moveToEnd(node: LRUNode): void {
-    if (node === this.tail) return; // Already at end
-    // Update head key if moving the head node
-    if (node === this.head && node.next) {
+    if (!node || node === this.tail) return;
+    // Unlink from current position
+    if (node.prev) {
+      node.prev.next = node.next;
+    } else {
       this.head = node.next;
-      this.headKey = node.next.key;
+      if (this.head) this.headKey = this.head.key;
     }
-    if (node.prev) node.prev.next = node.next;
-          this.headKey = this.head.key;
-    if (node.next) node.next.prev = node.prev;
-    if (node === this.head) this.head = node.next;
-    node.prev = this.tail;
+    if (node.next) {
+      node.next.prev = node.prev;
+    }
+    // Link to tail
+    if (this.tail) {
+      this.tail.next = node;
+      node.prev = this.tail;
+    } else {
+      this.head = node;
+      this.headKey = node.key;
+    }
     node.next = null;
-    if (this.tail) this.tail.next = node;
     this.tail = node;
-    if (!this.head) this.head = node;
   }
 
   private removeNode(node: LRUNode): void {
@@ -64,9 +70,11 @@ class BoundedLRUCache {
       }
       const newNode: LRUNode = { key, value, prev: this.tail, next: null };
       if (this.tail) this.tail.next = newNode;
-      this.timestamps.set(key, newNode);
       this.cache.set(key, value);
       this.timestamps.set(key, now);
+      this.nodeMap.set(key, newNode);
+      if (!this.head) this.head = newNode;
+      this.tail = newNode;
     }
   }
 
