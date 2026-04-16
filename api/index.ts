@@ -1,4 +1,5 @@
 import app from '../src/index.js';
+import { verifySignatureAsync } from '../src/index.js';
 
 // Early-exit validation middleware with fail-fast pattern
 const validateSecurityToken = (token) => {
@@ -73,8 +74,8 @@ const getSecurityPolicy = (policyId, scope) => {
   return { ...policy, fromCache: false };
 };
 
-// Middleware factory with early exit enforcement
-const securityMiddleware = (req, res, next) => {
+// Middleware factory with early exit enforcement and async crypto
+const securityMiddleware = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   const validation = validateSecurityToken(token);
   
@@ -82,7 +83,19 @@ const securityMiddleware = (req, res, next) => {
     return res.status(validation.statusCode).json({ error: validation.error });
   }
   
-  next();
+  try {
+    const publicKey = process.env.PUBLIC_KEY || 'default-key';
+    const isSignatureValid = await verifySignatureAsync(token, token, publicKey);
+    
+    if (!isSignatureValid) {
+      return res.status(401).json({ error: 'Invalid token signature' });
+    }
+    
+    req.token = token;
+    next();
+  } catch (err) {
+    return res.status(500).json({ error: 'Crypto verification failed', details: err.message });
+  }
 };
 
 app.use(securityMiddleware);
