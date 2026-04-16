@@ -173,16 +173,9 @@ app.use(express.json({
 }));
 
 app.get('/', (req, res) => {
-  res.send(`
-    <html>
-      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
-        <div style="text-align: center;">
-          <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
-          <p style="color: #ccc;">Prepare your code for total annihilation.</p>
-        </div>
-      </body>
-    </html>
-  `);
+  const html='<html><body style="background:#1a1a1a;color:#ff4444;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh"><div style="text-align:center"><h1 style="font-size:3rem">🔥 The Roaster is Online 🔥</h1><p style="color:#ccc">Prepare your code for total annihilation.</p></div></body></html>';
+  res.setHeader('Content-Type','text/html;charset=utf-8');
+  res.send(html);
 });
 
 // Persistent crypto batch processor with max size limit and backpressure
