@@ -104,7 +104,24 @@ class CopilotClientPool {
   }
 }
 
-// Extend Express Request type properly
+// Declare rawBody extension for Request
+declare global {
+  namespace Express {
+    interface Request {
+      rawBody?: string;
+    }
+  }
+}
+
+// Streaming signature verification without buffering entire body
+function createStreamVerifier(publicKey: string): { verifier: crypto.Verify; update: (chunk: Buffer) => void; verify: (signature: Buffer) => boolean } {
+  const verifier = crypto.createVerify('sha256');
+  return {
+    verifier,
+    update: (chunk: Buffer) => verifier.update(chunk),
+    verify: (signature: Buffer) => verifier.verify(publicKey, signature)
+  };
+}
 // TTL-based cache for security validation results
 class SecurityValidationCache {
   private cache = new Map<string, { result: boolean; timestamp: number }>();
