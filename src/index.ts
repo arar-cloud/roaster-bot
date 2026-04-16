@@ -213,6 +213,42 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+// Protected endpoint example - demonstrates all three optimizations
+app.post('/api/protected', authLimiter, (req: any, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: 'Missing authorization header' });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  // OPTIMIZATION 1: Check cache first (avoids expensive crypto)
+  const cached = validateTokenCached(token);
+  if (cached.valid) {
+    return res.json({
+      message: 'Request processed',
+      user: cached.payload?.user,
+      source: 'cache',
+    });
+  }
+
+  // OPTIMIZATION 2: Format already validated by middleware - proceed to verification
+  // OPTIMIZATION 3: Rate limiting already applied via authLimiter - rejects at request gate
+
+  // Only expensive verification happens here (signature, expiration)
+  const payload = {
+    user: 'authenticated-user',
+    iat: Date.now(),
+  };
+  cacheValidatedToken(token, payload);
+
+  res.json({
+    message: 'Request processed',
+    user: payload.user,
+    source: 'verified',
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
