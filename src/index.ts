@@ -16,6 +16,42 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// LRU cache for CopilotClient query results
+class QueryResponseCache {
+  private cache = new Map<string, { result: any; timestamp: number }>();
+  private maxSize = 100;
+  private ttlMs = 5 * 60 * 1000; // 5 minutes
+  private accessOrder: string[] = [];
+
+  get(key: string): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      return null;
+    }
+    // Move to end (most recently used)
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.accessOrder.push(key);
+    return entry.result;
+  }
+
+  set(key: string, value: any): void {
+    if (this.cache.has(key)) {
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+    }
+    this.cache.set(key, { result: value, timestamp: Date.now() });
+    this.accessOrder.push(key);
+    if (this.cache.size > this.maxSize) {
+      const lruKey = this.accessOrder.shift();
+      if (lruKey) this.cache.delete(lruKey);
+    }
+  }
+}
+
+const queryCache = new QueryResponseCache();
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
