@@ -1,6 +1,10 @@
 import app from '../src/index.js';
 import { verifySignatureAsync } from '../src/index.js';
 
+// Pre-compiled token validation regex to eliminate multiple startsWith() calls
+const TOKEN_REGEX = /^(sk_|pk_)[a-zA-Z0-9_-]{17,}$/; // Minimum 20 chars total
+const tokenMetadataCache = new Map(); // Cache token validation metadata
+
 // Early-exit validation middleware with fail-fast pattern
 const validateSecurityToken = (token) => {
   // Early exit 1: Check token existence
@@ -8,14 +12,16 @@ const validateSecurityToken = (token) => {
     return { valid: false, error: 'Token missing', statusCode: 401 };
   }
   
-  // Early exit 2: Check token format before crypto ops
-  if (typeof token !== 'string' || token.length < 20) {
-    return { valid: false, error: 'Invalid token format', statusCode: 400 };
+  // Check metadata cache first to avoid repeated validation
+  if (tokenMetadataCache.has(token)) {
+    return tokenMetadataCache.get(token);
   }
   
-  // Early exit 3: Check token prefix/structure without crypto
-  if (!token.startsWith('sk_') && !token.startsWith('pk_')) {
-    return { valid: false, error: 'Invalid token prefix', statusCode: 400 };
+  // Early exit 2: Single regex check replaces multiple startsWith() + typeof/length checks
+  if (!TOKEN_REGEX.test(token)) {
+    const result = { valid: false, error: 'Invalid token format or prefix', statusCode: 400 };
+    tokenMetadataCache.set(token, result);
+    return result;
   }
   
   // Only run expensive crypto operations after basic checks pass
