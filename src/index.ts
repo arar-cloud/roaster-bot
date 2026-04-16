@@ -74,40 +74,67 @@ class QueryResponseCache {
 
 const queryCache = new QueryResponseCache();
 
-// Worker pool for parallel crypto verification
+// Worker pool for parallel crypto verification with batching
 class CryptoWorkerPool {
   private workers: Worker[] = [];
   private queue: Array<{ task: any; resolve: Function; reject: Function }> = [];
+  private batchBuffer: any[] = [];
   private activeWorkers = 0;
   private poolSize: number;
+  private batchTimeout: NodeJS.Timeout | null = null;
+  private readonly BATCH_SIZE = 5;
+  private readonly BATCH_TIMEOUT_MS = 10;
 
   constructor(poolSize: number = 4) {
     this.poolSize = Math.min(poolSize, require('os').cpus().length);
+    this.initializeWorkers();
+  }
+
+  private initializeWorkers(): void {
+    for (let i = 0; i < this.poolSize; i++) {
+      try {
+        const worker = new Worker(path.join(__dirname, 'crypto-worker.js'));
+        worker.on('message', (result) => {
+          this.activeWorkers--;
+          if (result.id >= 0 && this.queue[result.id]) {
+            const task = this.queue[result.id];
+            if (result.error) {
+              task.reject(new Error(result.error));
+            } else {
+              task.resolve(result.verified);
+            }
+          }
+          this.processBatch();
+        });
+        this.workers.push(worker);
+      } catch (e) {
+        console.error('Worker initialization failed, falling back to main thread');
+      }
+    }
   }
 
   async verify(data: string, signature: string, publicKey: string): Promise<boolean> {
     return new Promise((resolve, reject) => {
       this.queue.push({ task: { data, signature, publicKey }, resolve, reject });
-      this.processQueue();
+      this.batchBuffer.push({ data, signature, publicKey });
+      
+      if (this.batchBuffer.length >= this.BATCH_SIZE) {
+        this.processBatch();
+      } else if (!this.batchTimeout) {
+        this.batchTimeout = setTimeout(() => this.processBatch(), this.BATCH_TIMEOUT_MS);
+      }
     });
   }
 
-  private processQueue(): void {
-    if (this.queue.length === 0 || this.activeWorkers >= this.poolSize) return;
+  private processBatch(): void {
+    if (this.batchBuffer.length === 0 || this.activeWorkers >= this.poolSize) return;
+    if (this.batchTimeout) clearTimeout(this.batchTimeout);
 
-    const { task, resolve, reject } = this.queue.shift()!;
-    this.activeWorkers++;
-
-    try {
-      const verifier = crypto.createVerify('RSA-SHA256');
-      verifier.update(task.data);
-      const result = verifier.verify(task.publicKey, Buffer.from(task.signature, 'hex'));
-      resolve(result);
-    } catch (err) {
-      reject(err);
-    } finally {
-      this.activeWorkers--;
-      this.processQueue();
+    const batch = this.batchBuffer.splice(0, this.BATCH_SIZE);
+    if (this.workers.length > 0 && this.activeWorkers < this.poolSize) {
+      this.activeWorkers++;
+      const worker = this.workers[this.activeWorkers % this.poolSize];
+      worker.postMessage({ batch, id: this.queue.length - batch.length });
     }
   }
 }
