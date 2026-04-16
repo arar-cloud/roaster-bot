@@ -16,6 +16,41 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Token cache: Map<token, { payload, expiresAt }>
+const tokenCache = new Map<string, { payload: any; expiresAt: number }>();
+const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Clean expired tokens periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of tokenCache.entries()) {
+    if (data.expiresAt < now) {
+      tokenCache.delete(token);
+    }
+  }
+}, 60 * 1000); // Run every minute
+
+// Helper to validate/cache token with TTL
+function validateTokenCached(token: string): { valid: boolean; payload?: any } {
+  const cached = tokenCache.get(token);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { valid: true, payload: cached.payload };
+  }
+  // Token not in cache or expired - remove if expired
+  if (cached) {
+    tokenCache.delete(token);
+  }
+  return { valid: false };
+}
+
+// Helper to cache validated token
+function cacheValidatedToken(token: string, payload: any): void {
+  tokenCache.set(token, {
+    payload,
+    expiresAt: Date.now() + TOKEN_CACHE_TTL,
+  });
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
