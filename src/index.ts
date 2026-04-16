@@ -118,6 +118,9 @@ app.use(express.json({
 
 app.use(validateTokenFormat);
 
+// Apply rate limiter to all routes
+app.use(limiter);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
