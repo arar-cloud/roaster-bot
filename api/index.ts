@@ -8,36 +8,84 @@ const TOKEN_REGEX = /^(sk_|pk_)[a-zA-Z0-9_-]{17,}$/; // Minimum 20 chars total
 class BoundedLRUCache {
   private cache = new Map();
   private timestamps = new Map();
-  private accessOrder = [];
+  private nodeMap = new Map<string, LRUNode>();
+  private head: LRUNode | null = null;
+  private tail: LRUNode | null = null;
   private maxSize = 500;
   private ttlMs = 10 * 60 * 1000; // 10 minutes
+  private invalidationCallbacks = new Set<(key: string) => void>();
+
+  private moveToEnd(node: LRUNode): void {
+    if (node === this.tail) return; // Already at end
+    if (node.prev) node.prev.next = node.next;
+    if (node.next) node.next.prev = node.prev;
+    if (node === this.head) this.head = node.next;
+    node.prev = this.tail;
+    node.next = null;
+    if (this.tail) this.tail.next = node;
+    this.tail = node;
+    if (!this.head) this.head = node;
+  }
+
+  private removeNode(node: LRUNode): void {
+    if (node.prev) node.prev.next = node.next;
+    if (node.next) node.next.prev = node.prev;
+    if (node === this.head) this.head = node.next;
+    if (node === this.tail) this.tail = node.prev;
+  }
 
   set(key, value) {
     const now = Date.now();
-    if (this.cache.has(key)) {
-      this.accessOrder = this.accessOrder.filter(k => k !== key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Evict least recently used entry
-      const lru = this.accessOrder.shift();
-      this.cache.delete(lru);
-      this.timestamps.delete(lru);
+    if (this.nodeMap.has(key)) {
+      const node = this.nodeMap.get(key)!;
+      node.value = value;
+      this.timestamps.set(key, now);
+      this.moveToEnd(node);
+    } else {
+      if (this.cache.size >= this.maxSize && this.head) {
+        // Evict least recently used entry
+        const lruKey = Array.from(this.nodeMap.entries()).find(([_, n]) => n === this.head)?.[0];
+        if (lruKey) {
+          this.cache.delete(lruKey);
+          this.tail = newNode;
+      if (!this.head) this.head = newNode;
+      this.nodeMap.delete(lruKey);
+          const node = this.nodeMap.get(lruKey)!;
+          this.removeNode(node);
+          this.nodeMap.delete(lruKey);
+        }
+      }
+      const newNode: LRUNode = { key, value, prev: this.tail, next: null };
+      if (this.tail) this.tail.next = newNode;
+      this.timestamps.set(key, newNode);
+      this.cache.set(key, value);
+      this.timestamps.set(key, now);
     }
-    this.cache.set(key, value);
-    this.timestamps.set(key, now);
-    this.accessOrder.push(key);
   }
 
   get(key) {
     if (!this.cache.has(key)) return null;
     const timestamp = this.timestamps.get(key);
-    if (Date.now() - timestamp > this.ttlMs) {
-      this.cache.delete(key);
-      this.timestamps.delete(key);
-      this.accessOrder = this.accessOrder.filter(k => k !== key);
-      return null;
+    if (Date.now() - timestamp! > this.ttlMs) {
+      this._evict(key);
+      return undefined;
+    }
+    const node = this.nodeMap.get(key)!;
+    this.moveToEnd(node);
+    return this.cache.get(key);
+  }
+
+  _hasOnly(key): boolean {
+    if (!this.cache.has(key)) return false;
+    const now = Date.now();
+    const timestamp = this.timestamps.get(key);
+    if (now - timestamp! > this.ttlMs) {
+      this._evict(key);
+      return false;
     }
     // Update access order for LRU
-    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.cache.delete(key);
+    this.timestamps.delete(k key);
     this.accessOrder.push(key);
     return this.cache.get(key);
   }
@@ -55,19 +103,19 @@ const validateSecurityToken = (token) => {
   if (!token) {
     return { valid: false, error: 'Token missing', statusCode: 401 };
   }
-  
+
   // Check metadata cache first to avoid repeated validation
   if (tokenMetadataCache.has(token)) {
     return tokenMetadataCache.get(token);
   }
-  
+
   // Early exit 2: Single regex check replaces multiple startsWith() + typeof/length checks
   if (!TOKEN_REGEX.test(token)) {
     const result = { valid: false, error: 'Invalid token format or prefix', statusCode: 400 };
     tokenMetadataCache.set(token, result);
     return result;
   }
-  
+
   // Only run expensive crypto operations after basic checks pass
   return { valid: true };
 };
@@ -78,24 +126,24 @@ class PolicyCache {
     this.cache = new Map();
     this.ttl = ttlMs;
   }
-  
+
   set(key, value) {
     const expiryTime = Date.now() + this.ttl;
     this.cache.set(key, { value, expiryTime });
   }
-  
+
   get(key) {
     const entry = this.cache.get(key);
     if (!entry) return null;
-    
+
     if (Date.now() > entry.expiryTime) {
       this.cache.delete(key);
       return null;
     }
-    
+
     return entry.value;
   }
-  
+
   clear() {
     this.cache.clear();
   }
@@ -107,11 +155,11 @@ const policyCache = new PolicyCache(60000); // 60-second TTL
 const getSecurityPolicy = (policyId, scope) => {
   const cacheKey = `policy:${policyId}:${scope}`;
   const cached = policyCache.get(cacheKey);
-  
+
   if (cached) {
     return cached; // Return reference directly instead of spreading
   }
-  
+
   // Simulate policy engine/database lookup
   const policy = {
     id: policyId,
@@ -119,7 +167,7 @@ const getSecurityPolicy = (policyId, scope) => {
     permissions: ['read', 'write'],
     timestamp: Date.now()
   };
-  
+
   policyCache.set(cacheKey, policy);
   return policy;
 };
@@ -128,19 +176,19 @@ const getSecurityPolicy = (policyId, scope) => {
 const securityMiddleware = async (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1];
   const validation = validateSecurityToken(token);
-  
+
   if (!validation.valid) {
     return res.status(validation.statusCode).json({ error: validation.error });
   }
-  
+
   try {
     const publicKey = process.env.PUBLIC_KEY || 'default-key';
     const isSignatureValid = await verifySignatureAsync(token, token, publicKey);
-    
+
     if (!isSignatureValid) {
       return res.status(401).json({ error: 'Invalid token signature' });
     }
-    
+
     req.token = token;
     next();
   } catch (err) {
