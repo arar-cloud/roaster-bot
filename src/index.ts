@@ -42,6 +42,24 @@ app.get('/', (req, res) => {
   `);
 });
 
+// Persistent crypto batch processor
+const globalCryptoQueue: any[] = [];
+let batchTimeout: NodeJS.Timeout | null = null;
+
+const flushCryptoBatch = async () => {
+  if (globalCryptoQueue.length === 0) return;
+  const batch = globalCryptoQueue.splice(0, 10);
+  
+  setImmediate(() => {
+    batch.forEach(job => {
+      const hmac = crypto.createHmac('sha256', job.secret);
+      const digest = 'sha256=' + hmac.update(job.data).digest('hex');
+      const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
+      job.resolve(isValid);
+    });
+  });
+};
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
@@ -51,10 +69,34 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
+    // Async cryptographic operation queue for batching
+    const cryptoQueue = [];
+    
+    // Async signature verification with batching support
+    const verifySignatureAsync = (data, sig, secret) => {
+      return new Promise((resolve) => {
+        cryptoQueue.push({ data, sig, secret, resolve });
+        processCryptoBatch();
+      });
+    };
+    
+    const processCryptoBatch = async () => {
+      if (cryptoQueue.length === 0) return;
+      const batch = cryptoQueue.splice(0, 10);
+      
+      // Process batch in next tick to allow queueing
+      setImmediate(() => {
+        batch.forEach(job => {
+          const hmac = crypto.createHmac('sha256', job.secret);
+          const digest = 'sha256=' + hmac.update(job.data).digest('hex');
+          const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
+          job.resolve(isValid);
+        });
+      });
+    };
+    
+    const isValid = await verifySignatureAsync(rawBody, signature, webhookSecret);
+    if (!isValid) {
         // Simple check for dev
     }
   }
