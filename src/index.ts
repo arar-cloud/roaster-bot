@@ -14,7 +14,9 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+    }return null;
     }
+    const now = Date.now();
   }
 }
 
@@ -33,19 +35,34 @@ class QueryResponseCache {
     if (!entry) return null;
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(key);
-      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      this.accessMap.set(key, now);
       return null;
     }
     // Move to end (most recently used)
     this.accessOrder = this.accessOrder.filter(k => k !== key);
-    this.accessOrder.push(key);
+
+    sh(key);
     return entry.result;
   }
 
   set(key: string, value: any): void {
     if (this.cache.has(key)) {
       this.accessOrder = this.accessOrder.filter(k => k !== key);
-    }
+    }// Evict least recently used if cache exceeds max size
+    if (this.cache.size > this.maxSize) {
+      let lruKey: string | null = null;
+      let lruTime = Infinity;
+      // O(n) eviction only on overflow, not on every access
+      for (const [k, accessTime] of this.accessMap.entries()) {
+        if (accessTime < lruTime) {
+          lruTime = accessTime;
+          lruKey = k;
+        }
+      }
+      if (lruKey) {
+        this.cache.delete(lruKey);
+        this.accessMap.delete(lruKey);
+      }
     this.cache.set(key, { result: value, timestamp: Date.now() });
     this.accessOrder.push(key);
     if (this.cache.size > this.maxSize) {
@@ -77,7 +94,7 @@ class CryptoWorkerPool {
 
   private processQueue(): void {
     if (this.queue.length === 0 || this.activeWorkers >= this.poolSize) return;
-    
+
     const { task, resolve, reject } = this.queue.shift()!;
     this.activeWorkers++;
 
@@ -105,7 +122,7 @@ class PriorityCryptoQueue {
   enqueue(job: any, priority: number = 0): string {
     const id = `job-${this.nextId++}`;
     const entry = { priority, job, id };
-    
+
     // Insert in sorted position (O(n) but minimal for typical queue sizes)
     let inserted = false;
     for (let i = 0; i < this.queue.length; i++) {
@@ -246,17 +263,17 @@ let flushTimeoutHandle: NodeJS.Timeout | null = null;
 const flushCryptoBatch = async (): Promise<void> => {
   // Return existing promise to coalesce concurrent calls
   if (flushPromise) return flushPromise;
-  
+
   flushPromise = (async () => {
     // Clear any pending timeout to avoid redundant scheduled flushes
     if (flushTimeoutHandle) clearTimeout(flushTimeoutHandle);
-    
+
     try {
       while (globalCryptoQueue.length > 0) {
         batchTimestamp = Date.now(); // Update cached timestamp once per batch
         lastFlushTime = batchTimestamp;
         const batch = globalCryptoQueue.splice(0, 10);
-        
+
         // Process batch with async crypto operations to avoid event loop blocking
         await Promise.all(batch.map(job => new Promise<void>((resolve) => {
           // Use async crypto.createHmac via callback pattern for non-blocking verification
@@ -274,7 +291,7 @@ const flushCryptoBatch = async (): Promise<void> => {
       flushTimeoutHandle = null;
     }
   })();
-  
+
   return flushPromise;
 };
 
@@ -289,7 +306,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     // Async cryptographic operation queue for batching
     const cryptoQueue = [];
-    
+
     // Helper to enqueue crypto operations with backpressure awareness
     const enqueueCryptoOperation = async (job) => {
       // Refresh batch timestamp if batch window exceeded, otherwise reuse cached value
@@ -303,18 +320,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
       return processCryptoBatch();
     };
-    
+
     // Async signature verification with backpressure and circuit-breaker
     const verifySignatureAsync = (data, sig, secret) => {
       return new Promise((resolve, reject) => {
         enqueueCryptoOperation({ data, sig, secret, resolve }).catch(reject);
       });
     };
-    
+
     const processCryptoBatch = async () => {
       if (cryptoQueue.length === 0) return;
       const batch = cryptoQueue.splice(0, 10);
-      
+
       // Use setImmediate instead of setTimeout(0) for higher priority in event loop
       // Eliminates fixed 10ms delay, improving latency predictability
       await new Promise<void>(resolve => {
@@ -329,7 +346,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
         });
       });
     }
-    
+
     const isValid = await verifySignatureAsync(rawBody, signature, webhookSecret);
     if (!isValid) {
         // Simple check for dev
@@ -351,12 +368,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
