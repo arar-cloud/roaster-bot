@@ -67,20 +67,42 @@ const canEnqueueOperation = () => {
   return true;
 };
 
-const flushCryptoBatch = async () => {
-  if (globalCryptoQueue.length === 0) return;
-  lastFlushTime = Date.now();
-  const batch = globalCryptoQueue.splice(0, 10);
+let flushPromise: Promise<void> | null = null;
+let flushTimeoutHandle: NodeJS.Timeout | null = null;
+
+const flushCryptoBatch = async (): Promise<void> => {
+  // Return existing promise to coalesce concurrent calls
+  if (flushPromise) return flushPromise;
   
-  const BATCH_INTERVAL_MS = 10;
-  setTimeout(() => {
-    batch.forEach(job => {
-      const hmac = crypto.createHmac('sha256', job.secret);
-      const digest = 'sha256=' + hmac.update(job.data).digest('hex');
-      const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
-      job.resolve(isValid);
-    });
-  }, BATCH_INTERVAL_MS);
+  flushPromise = (async () => {
+    // Clear any pending timeout to avoid redundant scheduled flushes
+    if (flushTimeoutHandle) clearTimeout(flushTimeoutHandle);
+    
+    try {
+      while (globalCryptoQueue.length > 0) {
+        lastFlushTime = Date.now();
+        const batch = globalCryptoQueue.splice(0, 10);
+        
+        // Process batch with minimal scheduler overhead
+        await new Promise<void>(resolve => {
+          setImmediate(() => {
+            batch.forEach(job => {
+              const hmac = crypto.createHmac('sha256', job.secret);
+              const digest = 'sha256=' + hmac.update(job.data).digest('hex');
+              const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
+              job.resolve(isValid);
+            });
+            resolve();
+          });
+        });
+      }
+    } finally {
+      flushPromise = null;
+      flushTimeoutHandle = null;
+    }
+  })();
+  
+  return flushPromise;
 };
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
@@ -115,17 +137,20 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       if (cryptoQueue.length === 0) return;
       const batch = cryptoQueue.splice(0, 10);
       
-      // Process batch in next tick to allow queueing
-      const BATCH_INTERVAL_MS = 10;
-      setTimeout(() => {
-        batch.forEach(job => {
-          const hmac = crypto.createHmac('sha256', job.secret);
-          const digest = 'sha256=' + hmac.update(job.data).digest('hex');
-          const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
-          job.resolve(isValid);
+      // Use setImmediate instead of setTimeout(0) for higher priority in event loop
+      // Eliminates fixed 10ms delay, improving latency predictability
+      await new Promise<void>(resolve => {
+        setImmediate(() => {
+          batch.forEach(job => {
+            const hmac = crypto.createHmac('sha256', job.secret);
+            const digest = 'sha256=' + hmac.update(job.data).digest('hex');
+            const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
+            job.resolve(isValid);
+          });
+          resolve();
         });
-      }, BATCH_INTERVAL_MS);
-    };
+      });
+    }
     
     const isValid = await verifySignatureAsync(rawBody, signature, webhookSecret);
     if (!isValid) {
