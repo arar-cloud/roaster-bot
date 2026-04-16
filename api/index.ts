@@ -1,8 +1,13 @@
 import app from '../src/index.js';
 import { verifySignatureAsync } from '../src/index.js';
 
-// Pre-compiled token validation regex to eliminate multiple startsWith() calls
+// Pre-compiled token validation regex to eliminate alls
 const TOKEN_REGEX = /^(sk_|pk_)[a-zA-Z0-9_-]{17,}$/; // Minimum 20 chars total
+
+// O(1) token validation using single regex match instead of multiple startsWith() calls
+function validateTokenFormat(token: string): boolean {
+  return TOKEN_REGEX.test(token);
+}
 
 // LRU Cache with TTL and max size bound to prevent memory leaks
 class BoundedLRUCache {
