@@ -9,7 +9,8 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    }
+    // Use pre-computed token from middleware instead of parsing
+    return req.cachedToken || 'unknown'}
   }
 }
 
@@ -29,7 +30,7 @@ const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 function validateTokenCached(token: string): { valid: boolean; payload?: any } {
   const cached = tokenCache.get(token);
   const now = Date.now();
-  
+
   // Lazy deletion: remove one expired entry per lookup to distribute cleanup cost
   for (const [key, data] of tokenCache.entries()) {
     if (data.expiresAt < now) {
@@ -37,7 +38,7 @@ function validateTokenCached(token: string): { valid: boolean; payload?: any } {
       break; // Delete only one per request to limit overhead
     }
   }
-  
+
   if (cached && cached.expiresAt > now) {
     return { valid: true, payload: cached.payload };
   }
@@ -166,12 +167,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
