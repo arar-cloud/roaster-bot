@@ -67,8 +67,27 @@ class BoundedLRUCache {
     if (node === this.tail) this.tail = node.prev;
   }
 
+  private cleanupExpired(): void {
+    const now = Date.now();
+    const keysToDelete: string[] = [];
+    
+    for (const [key, timestamp] of this.timestamps.entries()) {
+      if (now - timestamp > this.ttlMs) {
+        keysToDelete.push(key);
+      }
+    }
+    
+    for (const key of keysToDelete) {
+      this._evict(key);
+    }
+  }
+
   set(key, value) {
     const now = Date.now();
+    
+    // Lazy eviction: clean expired entries before inserting new ones
+    this.cleanupExpired();
+    
     if (this.nodeMap.has(key)) {
       const node = this.nodeMap.get(key)!;
       node.value = value;
@@ -127,6 +146,13 @@ class BoundedLRUCache {
 
   has(key) {
     return this.get(key) !== null;
+  }
+
+  destroy(): void {
+    if (this.cleanupIntervalId) {
+      clearInterval(this.cleanupIntervalId);
+      this.cleanupIntervalId = null;
+    }
   }
 }
 
