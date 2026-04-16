@@ -65,7 +65,7 @@ const getSecurityPolicy = (policyId, scope) => {
   const cached = policyCache.get(cacheKey);
   
   if (cached) {
-    return { ...cached, fromCache: true };
+    return cached; // Return reference directly instead of spreading
   }
   
   // Simulate policy engine/database lookup
@@ -77,7 +77,7 @@ const getSecurityPolicy = (policyId, scope) => {
   };
   
   policyCache.set(cacheKey, policy);
-  return { ...policy, fromCache: false };
+  return policy;
 };
 
 // Middleware factory with early exit enforcement and async crypto
