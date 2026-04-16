@@ -6,6 +6,8 @@ import { CopilotClient } from '@github/copilot-sdk';
 import { Worker } from 'worker_threads';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import http from 'http';
+import https from 'https';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
