@@ -42,12 +42,30 @@ app.get('/', (req, res) => {
   `);
 });
 
-// Persistent crypto batch processor with max size limit
+// Persistent crypto batch processor with max size limit and backpressure
 const MAX_QUEUE_SIZE = 1000; // Prevent unbounded accumulation under high load
+const QUEUE_BACKPRESSURE_THRESHOLD = 800; // Reject at 80% capacity
+const CIRCUIT_BREAKER_RESET_MS = 5000;
 const globalCryptoQueue: any[] = [];
 let batchTimeout: NodeJS.Timeout | null = null;
 let lastFlushTime = Date.now();
+let circuitBreakerOpen = false;
+let circuitBreakerResetTimeout: NodeJS.Timeout | null = null;
 const BATCH_TIMEOUT_MS = 50; // Max latency for any queued request
+
+// Check if queue has capacity with circuit-breaker pattern
+const canEnqueueOperation = () => {
+  if (circuitBreakerOpen) return false;
+  if (globalCryptoQueue.length >= QUEUE_BACKPRESSURE_THRESHOLD) {
+    circuitBreakerOpen = true;
+    if (circuitBreakerResetTimeout) clearTimeout(circuitBreakerResetTimeout);
+    circuitBreakerResetTimeout = setTimeout(() => {
+      circuitBreakerOpen = false;
+    }, CIRCUIT_BREAKER_RESET_MS);
+    return false;
+  }
+  return true;
+};
 
 const flushCryptoBatch = async () => {
   if (globalCryptoQueue.length === 0) return;
@@ -77,12 +95,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     // Async cryptographic operation queue for batching
     const cryptoQueue = [];
     
-    // Async signature verification with batching support
+    // Async signature verification with backpressure and circuit-breaker
     const verifySignatureAsync = (data, sig, secret) => {
       return new Promise((resolve, reject) => {
-        // Reject if queue exceeds max size to prevent OOM
-        if (cryptoQueue.length >= MAX_QUEUE_SIZE) {
-          reject(new Error('Crypto queue at capacity - rejecting request'));
+        // Apply backpressure: reject early at 80% capacity instead of 100%
+        if (!canEnqueueOperation()) {
+          reject(new Error('Crypto queue at backpressure threshold - rejecting request'));
           return;
         }
         cryptoQueue.push({ data, sig, secret, resolve });
