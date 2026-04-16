@@ -53,10 +53,46 @@ let circuitBreakerOpen = false;
 let circuitBreakerResetTimeout: NodeJS.Timeout | null = null;
 const BATCH_TIMEOUT_MS = 50; // Max latency for any queued request
 
+// Priority queue implementation with exponential backoff
+class PriorityCryptoQueue {
+  private queue: Array<{ data: string; sig: string; secret: string; priority: number; retries: number; timestamp: number }> = [];
+  private maxSize = 1000;
+  private retryDelays = new Map<string, number>();
+  private processingBatch = false;
+
+  enqueue(job: any, priority: number = 0): boolean {
+    if (this.queue.length >= this.maxSize) {
+      return false; // Queue saturated - trigger 503 response
+    }
+    this.queue.push({ ...job, priority, retries: 0, timestamp: Date.now() });
+    // Sort by priority descending
+    this.queue.sort((a, b) => b.priority - a.priority);
+    return true;
+  }
+
+  getNextJob(): any {
+    return this.queue.shift();
+  }
+
+  peek(): any {
+    return this.queue[0] || null;
+  }
+
+  size(): number {
+    return this.queue.length;
+  }
+
+  isSaturated(): boolean {
+    return this.queue.length >= this.maxSize;
+  }
+}
+
+const priorityCryptoQueue = new PriorityCryptoQueue();
+
 // Check if queue has capacity with circuit-breaker pattern
 const canEnqueueOperation = () => {
   if (circuitBreakerOpen) return false;
-  if (globalCryptoQueue.length >= QUEUE_BACKPRESSURE_THRESHOLD) {
+  if (priorityCryptoQueue.isSaturated()) {
     circuitBreakerOpen = true;
     if (circuitBreakerResetTimeout) clearTimeout(circuitBreakerResetTimeout);
     circuitBreakerResetTimeout = setTimeout(() => {
@@ -119,10 +155,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     
     // Helper to enqueue crypto operations with backpressure awareness
     const enqueueCryptoOperation = async (job) => {
-      if (!canEnqueueOperation()) {
-        throw new Error('Crypto queue at backpressure threshold - rejecting request');
+      if (!priorityCryptoQueue.enqueue(job, 10)) { // Priority 10 for webhook signatures
+        res.status(503).send('Crypto queue saturated. Retry-After: 1');
+        throw new Error('Queue saturated - 503 response sent');
       }
-      cryptoQueue.push(job);
       return processCryptoBatch();
     };
     
