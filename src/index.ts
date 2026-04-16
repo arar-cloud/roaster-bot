@@ -9,6 +9,48 @@ import { fileURLToPath } from 'url';
 import http from 'http';
 import https from 'https';
 
+// Token bucket rate limiter with O(1) lookups
+class TokenBucketLimiter {
+  private buckets = new Map<string, { tokens: number; lastRefill: number }>();
+  private capacity = 100;
+  private refillRate = 10; // tokens per second
+  private windowMs = 1000; // 1 second
+
+  isAllowed(key: string): boolean {
+    const now = Date.now();
+    let bucket = this.buckets.get(key);
+    
+    if (!bucket) {
+      bucket = { tokens: this.capacity, lastRefill: now };
+      this.buckets.set(key, bucket);
+      return true;
+    }
+    
+    // Refill tokens based on elapsed time
+    const elapsedMs = now - bucket.lastRefill;
+    const tokensToAdd = (elapsedMs / this.windowMs) * this.refillRate;
+    bucket.tokens = Math.min(this.capacity, bucket.tokens + tokensToAdd);
+    bucket.lastRefill = now;
+    
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      return true;
+    }
+    
+    return false;
+  }
+
+  cleanup(): void {
+    // Optionally clean up old buckets every minute
+    const now = Date.now();
+    for (const [key, bucket] of this.buckets.entries()) {
+      if (now - bucket.lastRefill > 60 * 1000) {
+        this.buckets.delete(key);
+      }
+    }
+  }
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Connection pool for CopilotClient with HTTP keep-alive
