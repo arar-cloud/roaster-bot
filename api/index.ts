@@ -6,9 +6,13 @@ const TOKEN_REGEX = /^(sk_|pk_)[a-zA-Z0-9_-]{17,}$/; // Minimum 20 chars total
 
 // Faster token validation using string primitives before regex
 function validateTokenFormat(token: string): boolean {
-  // Fast prefix check using indexOf instead of regex for hot path
-  const prefix = token.substring(0, 3);
-  if (prefix !== 'sk_' && prefix !== 'pk_') return false;
+  // Zero-allocation character comparison on hot path - avoid substring allocation
+  if (token.length < 20) return false; // Minimum length check
+  if (token[2] !== '_') return false; // Third char must be underscore
+  
+  const prefix2 = (token[0] === 's' && token[1] === 'k') || 
+                  (token[0] === 'p' && token[1] === 'k');
+  if (!prefix2) return false;
   
   // Only apply expensive regex if prefix matches
   return TOKEN_REGEX.test(token);
