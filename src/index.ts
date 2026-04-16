@@ -193,6 +193,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   }
 
+  // Check queue capacity and return 503 if saturated (backpressure signal)
+  if (!priorityCryptoQueue.enqueue({ signature, webhookSecret }, 1)) {
+    return res.status(503).json({ error: 'Service queue saturated, please retry' });
+  }
+
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
