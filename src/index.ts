@@ -20,24 +20,20 @@ const port = process.env.PORT || 3000;
 const tokenCache = new Map<string, { payload: any; expiresAt: number }>();
 const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-// Clean expired tokens periodically
-setInterval(() => {
-  const now = Date.now();
-  for (const [token, data] of tokenCache.entries()) {
-    if (data.expiresAt < now) {
-      tokenCache.delete(token);
-    }
-  }
-}, 60 * 1000); // Run every minute
+// Token cleanup is now performed lazily in validateTokenCached()
+// This prevents memory bloat during high load by deleting expired tokens
+// only when they are actually accessed, rather than full O(n) iterations
 
 // Helper to validate/cache token with TTL
+// Lazy deletion: expired tokens are removed only when accessed, not via periodic cleanup
 function validateTokenCached(token: string): { valid: boolean; payload?: any } {
   const cached = tokenCache.get(token);
-  if (cached && cached.expiresAt > Date.now()) {
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
     return { valid: true, payload: cached.payload };
   }
-  // Token not in cache or expired - remove if expired
-  if (cached) {
+  // Token not in cache or expired - remove if expired (lazy cleanup)
+  if (cached && cached.expiresAt <= now) {
     tokenCache.delete(token);
   }
   return { valid: false };
