@@ -58,11 +58,41 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Lightweight validation middleware: fail fast on invalid token format
+const validateTokenFormat = (req: any, res: any, next: any) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return next(); // No auth required for this request
+  }
+
+  const parts = authHeader.split(' ');
+  // Check format: "Bearer <token>"
+  if (parts.length !== 2 || parts[0] !== 'Bearer') {
+    return res.status(400).json({ error: 'Invalid authorization header format' });
+  }
+
+  const token = parts[1];
+  // Check token length (reasonable JWT/token length bounds)
+  if (!token || token.length < 10 || token.length > 4096) {
+    return res.status(400).json({ error: 'Invalid token length' });
+  }
+
+  // Check token structure: should have dots for JWT-like tokens
+  if (token.includes('.') && token.split('.').length !== 3) {
+    return res.status(401).json({ error: 'Invalid token structure' });
+  }
+
+  // Token format is valid, proceed to expensive verification
+  next();
+};
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+app.use(validateTokenFormat);
 
 app.get('/', (req, res) => {
   res.send(`
