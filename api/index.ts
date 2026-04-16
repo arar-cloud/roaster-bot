@@ -3,7 +3,51 @@ import { verifySignatureAsync } from '../src/index.js';
 
 // Pre-compiled token validation regex to eliminate multiple startsWith() calls
 const TOKEN_REGEX = /^(sk_|pk_)[a-zA-Z0-9_-]{17,}$/; // Minimum 20 chars total
-const tokenMetadataCache = new Map(); // Cache token validation metadata
+
+// LRU Cache with TTL and max size bound to prevent memory leaks
+class BoundedLRUCache {
+  private cache = new Map();
+  private timestamps = new Map();
+  private accessOrder = [];
+  private maxSize = 500;
+  private ttlMs = 10 * 60 * 1000; // 10 minutes
+
+  set(key, value) {
+    const now = Date.now();
+    if (this.cache.has(key)) {
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Evict least recently used entry
+      const lru = this.accessOrder.shift();
+      this.cache.delete(lru);
+      this.timestamps.delete(lru);
+    }
+    this.cache.set(key, value);
+    this.timestamps.set(key, now);
+    this.accessOrder.push(key);
+  }
+
+  get(key) {
+    if (!this.cache.has(key)) return null;
+    const timestamp = this.timestamps.get(key);
+    if (Date.now() - timestamp > this.ttlMs) {
+      this.cache.delete(key);
+      this.timestamps.delete(key);
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      return null;
+    }
+    // Update access order for LRU
+    this.accessOrder = this.accessOrder.filter(k => k !== key);
+    this.accessOrder.push(key);
+    return this.cache.get(key);
+  }
+
+  has(key) {
+    return this.get(key) !== null;
+  }
+}
+
+const tokenMetadataCache = new BoundedLRUCache(); // LRU cache with TTL and size bound
 
 // Early-exit validation middleware with fail-fast pattern
 const validateSecurityToken = (token) => {
