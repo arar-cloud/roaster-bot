@@ -21,6 +21,18 @@ class BoundedLRUCache {
   private ttlMs = 10 * 60 * 1000; // 10 minutes
   private invalidationCallbacks = new Set<(key: string) => void>();
 
+  // Worker pool metrics and observability
+  getMetrics() {
+    return {
+      queueLength: this.taskQueue.length,
+      activeWorkerCount: this.activeWorkerCount,
+      poolSize: this.poolSize,
+      utilizationPercentage: (this.activeWorkerCount / this.poolSize) * 100,
+      cacheSize: this.cache.size,
+      maxCacheSize: this.maxSize
+    };
+  }
+
   private moveToEnd(node: LRUNode): void {
     if (!node || node === this.tail) return;
     // Unlink from current position
