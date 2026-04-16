@@ -75,19 +75,23 @@ class BoundedLRUCache {
     return this.cache.get(key);
   }
 
-  _hasOnly(key): boolean {
-    if (!this.cache.has(key)) return false;
-    const now = Date.now();
-    const timestamp = this.timestamps.get(key);
-    if (now - timestamp! > this.ttlMs) {
-      this._evict(key);
-      return false;
-    }
-    // Update access order for LRU
+  _evict(key): void {
     this.cache.delete(key);
-    this.timestamps.delete(k key);
-    this.accessOrder.push(key);
-    return this.cache.get(key);
+    this.timestamps.delete(key);
+    const node = this.nodeMap.get(key);
+    if (node) {
+      this.removeNode(node);
+      this.nodeMap.delete(key);
+    }
+    this.invalidationCallbacks.forEach(cb => cb(key));
+  }
+
+  invalidate(key): void {
+    this._evict(key);
+  }
+
+  onInvalidation(callback: (key: string) => void): void {
+    this.invalidationCallbacks.add(callback);
   }
 
   has(key) {
@@ -96,6 +100,16 @@ class BoundedLRUCache {
 }
 
 const tokenMetadataCache = new BoundedLRUCache(); // LRU cache with TTL and size bound
+
+// Token revocation endpoint - enables immediate cache invalidation for security events
+app.post('/revoke-token', (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ error: 'Token required' });
+  }
+  tokenMetadataCache.invalidate(token);
+  res.json({ status: 'revoked', timestamp: Date.now() });
+});
 
 // Early-exit validation middleware with fail-fast pattern
 const validateSecurityToken = (token) => {
