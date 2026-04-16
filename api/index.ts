@@ -4,8 +4,13 @@ import { verifySignatureAsync } from '../src/index.js';
 // Pre-compiled token validation regex to eliminate alls
 const TOKEN_REGEX = /^(sk_|pk_)[a-zA-Z0-9_-]{17,}$/; // Minimum 20 chars total
 
-// O(1) token validation using single regex match instead of multiple startsWith() calls
+// Faster token validation using string primitives before regex
 function validateTokenFormat(token: string): boolean {
+  // Fast prefix check using indexOf instead of regex for hot path
+  const prefix = token.substring(0, 3);
+  if (prefix !== 'sk_' && prefix !== 'pk_') return false;
+  
+  // Only apply expensive regex if prefix matches
   return TOKEN_REGEX.test(token);
 }
 
