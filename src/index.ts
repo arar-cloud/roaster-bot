@@ -57,6 +57,46 @@ class QueryResponseCache {
 
 const queryCache = new QueryResponseCache();
 
+// Worker pool for parallel crypto verification
+class CryptoWorkerPool {
+  private workers: Worker[] = [];
+  private queue: Array<{ task: any; resolve: Function; reject: Function }> = [];
+  private activeWorkers = 0;
+  private poolSize: number;
+
+  constructor(poolSize: number = 4) {
+    this.poolSize = Math.min(poolSize, require('os').cpus().length);
+  }
+
+  async verify(data: string, signature: string, publicKey: string): Promise<boolean> {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ task: { data, signature, publicKey }, resolve, reject });
+      this.processQueue();
+    });
+  }
+
+  private processQueue(): void {
+    if (this.queue.length === 0 || this.activeWorkers >= this.poolSize) return;
+    
+    const { task, resolve, reject } = this.queue.shift()!;
+    this.activeWorkers++;
+
+    try {
+      const verifier = crypto.createVerify('RSA-SHA256');
+      verifier.update(task.data);
+      const result = verifier.verify(task.publicKey, Buffer.from(task.signature, 'hex'));
+      resolve(result);
+    } catch (err) {
+      reject(err);
+    } finally {
+      this.activeWorkers--;
+      this.processQueue();
+    }
+  }
+}
+
+const cryptoPool = new CryptoWorkerPool(4);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
