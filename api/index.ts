@@ -48,7 +48,10 @@ class BoundedLRUCache {
   private removeNode(node: LRUNode): void {
     if (node.prev) node.prev.next = node.next;
     if (node.next) node.next.prev = node.prev;
-    if (node === this.head) this.head = node.next;
+    if (node === this.head) {
+      this.head = node.next;
+      this.headKey = node.next?.key || null;
+    }
     if (node === this.tail) this.tail = node.prev;
   }
 
@@ -61,25 +64,21 @@ class BoundedLRUCache {
       this.moveToEnd(node);
     } else {
       if (this.cache.size >= this.maxSize && this.head) {
-        // Evict least recently used entry
-        const lruKey = Array.from(this.nodeMap.entries()).find(([_, n]) => n === this.head)?.[0];
-        if (lruKey) {
-          this.cache.delete(lruKey);
-          this.tail = newNode;
-      if (!this.head) this.head = newNode;
-      this.nodeMap.delete(lruKey);
-          const node = this.nodeMap.get(lruKey)!;
-          this.removeNode(node);
-          this.nodeMap.delete(lruKey);
-        }
+        // Evict least recently used entry using O(1) head tracking
+        const lruKey = this.head.key;
+        this.cache.delete(lruKey);
+        this.timestamps.delete(lruKey);
+        this.removeNode(this.head);
+        this.nodeMap.delete(lruKey);
       }
       const newNode: LRUNode = { key, value, prev: this.tail, next: null };
       if (this.tail) this.tail.next = newNode;
+      else this.head = newNode;
       this.cache.set(key, value);
       this.timestamps.set(key, now);
       this.nodeMap.set(key, newNode);
-      if (!this.head) this.head = newNode;
       this.tail = newNode;
+      if (!this.headKey) this.headKey = newNode.key;
     }
   }
 
