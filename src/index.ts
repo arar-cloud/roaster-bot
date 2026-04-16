@@ -17,9 +17,9 @@ class SecurityValidationCache {
   private maxSize = 1000;
 
   get(signature: string): boolean | null {
-    const entry = this.cache.get(signature);
+    const entry = );
     if (!entry) return null;
-    
+
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(signature);
       return null;
@@ -28,11 +28,18 @@ class SecurityValidationCache {
   }
 
   set(signature: string, result: boolean): void {
-    this.cache.set(signature, { result, timestamp: Date.now() });
-    if (this.cache.size > this.maxSize) {
-      const oldestKey = this.cache.keys().next().value;
-      if (oldestKey) this.cache.delete(oldestKey);
+    this.cache.set(signature// Evict oldest entry BEFORE inserting if at capacity
+    if (this.cache.size >= this.maxSize && !this.cache.has(signature)) {
+      const lruKey = this.accessOrder.shift();
+      if (lruKey) this.cache.delete(lruKey);
     }
+
+    if (oldestKey) this.cache.set(signature, { result, timestamp: Date.now() });
+
+    // Update access order
+    const idx = this.accessOrder.indexOf(signature);
+    if (idx > -1) this.accessOrder.splice(idx, 1);
+    this.accessOrder.push(signature);
   }
 }
 
@@ -143,7 +150,7 @@ class CryptoWorkerPool {
     return new Promise((resolve, reject) => {
       this.queue.push({ task: { data, signature, publicKey }, resolve, reject });
       this.batchBuffer.push({ data, signature, publicKey });
-      
+
       if (this.batchBuffer.length >= this.BATCH_SIZE) {
         this.processBatch();
       } else if (!this.batchTimeout) {
@@ -384,7 +391,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
           resolve(cached);
           return;
         }
-        
+
         enqueueCryptoOperation({ data, sig, secret, resolve: (result) => {
           // Cache the validation result
           securityValidationCache.set(cacheKey, result);
