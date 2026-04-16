@@ -11,13 +11,20 @@ class BoundedLRUCache {
   private nodeMap = new Map<string, LRUNode>();
   private head: LRUNode | null = null;
   private tail: LRUNode | null = null;
+  private headKey: string | null = null; // Track head key directly for O(1) lookup
   private maxSize = 500;
   private ttlMs = 10 * 60 * 1000; // 10 minutes
   private invalidationCallbacks = new Set<(key: string) => void>();
 
   private moveToEnd(node: LRUNode): void {
     if (node === this.tail) return; // Already at end
+    // Update head key if moving the head node
+    if (node === this.head && node.next) {
+      this.head = node.next;
+      this.headKey = node.next.key;
+    }
     if (node.prev) node.prev.next = node.next;
+          this.headKey = this.head.key;
     if (node.next) node.next.prev = node.prev;
     if (node === this.head) this.head = node.next;
     node.prev = this.tail;
