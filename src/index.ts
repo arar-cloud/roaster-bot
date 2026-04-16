@@ -88,6 +88,18 @@ const authLimiter = rateLimit({
   },
 });
 
+// Token extraction middleware: parse and cache token before rate limiting
+const tokenExtractionMiddleware = (req: any, res: any, next: any) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader) {
+    const parts = authHeader.split(' ');
+    if (parts.length === 2 && parts[0] === 'Bearer') {
+      req.cachedToken = parts[1]; // Pre-compute token for rate limiter
+    }
+  }
+  next();
+};
+
 // Lightweight validation middleware: fail fast on invalid token format
 const validateTokenFormat = (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;
@@ -122,6 +134,7 @@ app.use(express.json({
   }
 }));
 
+app.use(tokenExtractionMiddleware);
 app.use(validateTokenFormat);
 
 // Apply rate limiter to all routes
