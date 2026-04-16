@@ -23,7 +23,15 @@ class SecurityValidationCache {
     if (Date.now() - entry.timestamp > this.ttlMs) {
       this.cache.delete(signature);
       return null;
+    const idx = this.accessOrder.indexOf(query);
+      if (idx > -1) this.accessOrder.splice(idx, 1);
+      return null;
     }
+
+    // Move to end of access order (most recently used)
+    const idx = this.accessOrder.indexOf(query);
+    if (idx > -1) this.accessOrder.splice(idx, 1);
+    this.accessOrder.push(query);}
     return entry.result;
   }
 
