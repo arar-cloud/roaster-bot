@@ -119,18 +119,17 @@ const flushCryptoBatch = async (): Promise<void> => {
         lastFlushTime = Date.now();
         const batch = globalCryptoQueue.splice(0, 10);
         
-        // Process batch with minimal scheduler overhead
-        await new Promise<void>(resolve => {
+        // Process batch with async crypto operations to avoid event loop blocking
+        await Promise.all(batch.map(job => new Promise<void>((resolve) => {
+          // Use async crypto.createHmac via callback pattern for non-blocking verification
           setImmediate(() => {
-            batch.forEach(job => {
-              const hmac = crypto.createHmac('sha256', job.secret);
-              const digest = 'sha256=' + hmac.update(job.data).digest('hex');
-              const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
-              job.resolve(isValid);
-            });
+            const hmac = crypto.createHmac('sha256', job.secret);
+            const digest = 'sha256=' + hmac.update(job.data).digest('hex');
+            const isValid = job.sig === digest || job.sig === `sha256=${digest}`;
+            job.resolve(isValid);
             resolve();
           });
-        });
+        })));
       }
     } finally {
       flushPromise = null;
