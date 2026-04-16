@@ -366,6 +366,15 @@ const rateLimitMiddleware = (req: Request, res: Response, next: Function) => {
 // Cleanup stale buckets every minute to prevent memory leak
 setInterval(() => tokenBucketLimiter.cleanup(), 60 * 1000);
 
+// Middleware for token bucket rate limiting
+app.use((req: Request, res: Response, next: Function) => {
+  const clientKey = req.ip || 'unknown';
+  if (!tokenBucketLimiter.isAllowed(clientKey)) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
