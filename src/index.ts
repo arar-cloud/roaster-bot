@@ -46,9 +46,12 @@ app.get('/', (req, res) => {
 const MAX_QUEUE_SIZE = 1000; // Prevent unbounded accumulation under high load
 const globalCryptoQueue: any[] = [];
 let batchTimeout: NodeJS.Timeout | null = null;
+let lastFlushTime = Date.now();
+const BATCH_TIMEOUT_MS = 50; // Max latency for any queued request
 
 const flushCryptoBatch = async () => {
   if (globalCryptoQueue.length === 0) return;
+  lastFlushTime = Date.now();
   const batch = globalCryptoQueue.splice(0, 10);
   
   const BATCH_INTERVAL_MS = 10;
