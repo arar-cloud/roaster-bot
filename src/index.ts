@@ -2,7 +2,15 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { CopilotClient } from '@github/copilot-sdk';
+
+// Lazy-load CopilotClient on demand to reduce startup time
+let CopilotClient: any;
+const loadCopilotClient = async () => {
+  if (!CopilotClient) {
+    CopilotClient = (await import('@github/copilot-sdk')).CopilotClient;
+  }
+  return CopilotClient;
+};
 
 // Extend Express Request type properly
 declare global {
@@ -62,8 +70,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
+  // Initialize client with the user's token (loaded on first request)
+  const ClientClass = await loadCopilotClient();
+  const client = new ClientClass({
     env: {
       GITHUB_TOKEN: token,
       ...process.env
