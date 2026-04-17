@@ -1,10 +1,14 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import { promisify } from 'util';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 import http from 'http';
 import https from 'https';
+import { Worker } from 'worker_threads';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 // Extend Express Request type properly
 declare global {
@@ -15,20 +19,66 @@ declare global {
   }
 }
 
-// Connection pooling for external service clients
+// Async crypto helper for signature verification
+const verifySignatureAsync = async (data: Buffer, signature: string, secret: string): Promise<boolean> => {
+  try {
+    const expectedSignature = crypto.createHmac('sha256', secret).update(data).digest('hex');
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+  } catch (error) {
+    return false;
+  }
+};
+
+// Connection pool monitor for tracking socket saturation
+class PoolMonitor {
+  private socketUsage: Map<string, { used: number; max: number; timestamp: number }> = new Map();
+  private highWaterMark = 0.8; // 80% threshold for scaling alerts
+  private checkInterval: NodeJS.Timer | null = null;
+
+  start(agent: http.Agent | https.Agent, name: string): void {
+    if (this.checkInterval) clearInterval(this.checkInterval);
+    this.checkInterval = setInterval(() => {
+      const sockets = agent.sockets ? Object.values(agent.sockets).flat().length : 0;
+      const maxSockets = agent.maxSockets || 50;
+      const usage = sockets / maxSockets;
+      this.socketUsage.set(name, { used: sockets, max: maxSockets, timestamp: Date.now() });
+      if (usage > this.highWaterMark) {
+        console.warn(`[PoolMonitor] ${name}: Socket saturation at ${(usage * 100).toFixed(1)}% (${sockets}/${maxSockets})`);
+      }
+    }, 5000);
+  }
+
+  getStatus(): Map<string, { used: number; max: number; timestamp: number }> {
+    return this.socketUsage;
+  }
+
+  stop(): void {
+    if (this.checkInterval) clearInterval(this.checkInterval);
+  }
+}
+
+const poolMonitor = new PoolMonitor();
+
+// Connection pooling for external service clients with dynamic scaling
 const httpAgent = new http.Agent({
   keepAlive: true,
   keepAliveMsecs: 30000,
-  maxSockets: 50,
-  maxFreeSockets: 10,
+  maxSockets: 100,
+  maxFreeSockets: 20,
+  timeout: 30000,
 });
 
 const httpsAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 30000,
-  maxSockets: 50,
-  maxFreeSockets: 10,
+  maxSockets: 100,
+  maxFreeSockets: 20,
+  timeout: 30000,
 });
+
+// Start pool monitoring
+poolMonitor.start(httpAgent, 'httpAgent');
+poolMonitor.start(httpsAgent, 'httpsAgent');
 
 // Singleton CopilotClient instance with connection pooling
 let copilotClientInstance: CopilotClient | null = null;
