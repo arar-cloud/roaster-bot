@@ -85,23 +85,34 @@ const verifySignatureAsync = async (data: Buffer, signature: string, secret: str
 // Connection pool monitor for tracking socket saturation
 class PoolMonitor {
   private socketUsage: Map<string, { used: number; max: number; timestamp: number }> = new Map();
+  private socketCounters: Map<string, number> = new Map();
   private highWaterMark = 0.8; // 80% threshold for scaling alerts
   private checkInterval: NodeJS.Timer | null = null;
 
   start(agent: http.Agent | https.Agent, name: string): void {
     if (this.checkInterval) clearInterval(this.checkInterval);
+    this.socketCounters.set(name, 0);
     this.checkInterval = setInterval(() => {
-      const sockets = agent.sockets ? Object.values(agent.sockets).flat().length : 0;
+      const sockets = this.getDirectSocketCount(agent);
       const maxSockets = agent.maxSockets || 50;
       const usage = sockets / maxSockets;
       this.socketUsage.set(name, { used: sockets, max: maxSockets, timestamp: Date.now() });
       if (usage > this.highWaterMark) {
-    let socketArray of 0;
-      if ('sockets' in agent && typeof agent.sockets === 'object') {
-        for (console.warn(`[PoolMonitor] ${name}: Socket saturation at ${(usage * 100).toFixed(1)}% (${sockets}/${maxSockets})`);
-        }
-    }
+        console.warn(`[PoolMonitor] ${name}: Socket saturation at ${(usage * 100).toFixed(1)}% (${sockets}/${maxSockets})`);
+      }
+    }, 5000);
   }
+
+  private getDirectSocketCount(agent: http.Agent | https.Agent): number {
+    let count = 0;
+    if (agent.sockets && typeof agent.sockets === 'object') {
+      for (const socketArray of Object.values(agent.sockets)) {
+        if (Array.isArray(socketArray)) {
+          count += socketArray.length;
+        }
+      }
+    }
+    return count;
 
   start() {
     // No-op: unified timer already running via getInstance
