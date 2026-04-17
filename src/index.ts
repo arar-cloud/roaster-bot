@@ -14,7 +14,13 @@ import { dirname } from 'path';
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string;
+    PoolMonitor.checkAllAgents();
+    }, PoolMonitor.checkInterval);
+  }
+
+  // Monitor all registered agents in a single tick
+  private static checkAllAgents() {
+    for (const [agent, metadata] of PoolMonitor.agents.entries()  rawBody?: string;
     }
   }
 }
@@ -43,8 +49,31 @@ class PoolMonitor {
       const usage = sockets / maxSockets;
       this.socketUsage.set(name, { used: sockets, max: maxSockets, timestamp: Date.now() });
       if (usage > this.highWaterMark) {
-        console.warn(`[PoolMonitor] ${name}: Socket saturation at ${(usage * 100).toFixed(1)}% (${sockets}/${maxSockets})`);
-      }
+    let socketArray of 0;
+      if ('sockets' in agent && typeof agent.sockets === 'object') {
+        for (console.warn(`[PoolMonitor] ${name}: Socket saturation at ${(usage * 100).toFixed(1)}% (${sockets}/${maxSockets})`);
+        }
+    }
+  }
+
+  start() {
+    // No-op: unified timer already running via getInstance
+    return;
+  }
+
+  stop() {
+    // Clear all registrations and stop unified timer
+    PoolMonitor.agents.clear();
+    if (PoolMonitor.timerHandle) {
+      clearInterval(PoolMonitor.timerHandle);
+      PoolMonitor.timerHandle = null;
+    }
+    PoolMonitor.instance = null;
+  }
+
+  getSocketCount(): number {
+    const metadata = PoolMonitor.agents.get(this.agent);
+    return metadata ? metadata.socketCount : 0;
     }, 5000);
   }
 
