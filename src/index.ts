@@ -47,6 +47,24 @@ HUB_TOKEN || '',
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Configure JSON parser middleware with support for large payloads
+const jsonLimit = process.env.JSON_LIMIT || '50mb';
+const urlEncodedLimit = process.env.URL_ENCODED_LIMIT || '50mb';
+
+app.use(express.json({
+  limit: jsonLimit,
+  strict: true,
+  type: 'application/json',
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+app.use(express.urlencoded({
+  limit: urlEncodedLimit,
+  extended: true,
+}));
+
 // Request-level cache to memoize repeated calls within a single request
 interface RequestCache {
   [key: string]: any;
@@ -90,12 +108,6 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
 
 // Memoized component renderer to avoid redundant DOM calculations
 interface ComponentCache {
