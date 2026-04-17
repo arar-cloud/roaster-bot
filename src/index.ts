@@ -3,6 +3,8 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import http from 'http';
+import https from 'https';
 
 // Extend Express Request type properly
 declare global {
@@ -12,6 +14,35 @@ declare global {
     }
   }
 }
+
+// Connection pooling for external service clients
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+});
+
+// Singleton CopilotClient instance with connection pooling
+let copilotClientInstance: CopilotClient | null = null;
+
+const getCopilotClient = (): CopilotClient => {
+  if (!copilotClientInstance) {
+    copilotClientInstance = new CopilotClient({
+      token: process.env.GITHUB_TOKEN || '',
+      httpAgent,
+      httpsAgent,
+    });
+  }
+  return copilotClientInstance;
+};
 
 const app = express();
 const port = process.env.PORT || 3000;
