@@ -9,7 +9,7 @@ interface PooledConnection {
 
 class ConnectionPool {
   private pool: any[] = [];
-  private waiting: Array<(conn: any) => void> = [];
+  private waiting: Array<{ resolve: (conn: any) => void; timeout: NodeJS.Timeout }> = [];
   private readonly poolSize: number;
   private readonly maxWaitTime: number;
 
@@ -34,18 +34,23 @@ class ConnectionPool {
     if (this.pool.length > 0) {
       return this.pool.pop()!;
     }
-    return new Promise((resolve) => {
-      this.waiting.push(resolve);
-      setTimeout(() => {
-        this.waiting.splice(this.waiting.indexOf(resolve), 1);
+    return new Promise((resolve, reject) => {
+      const timeoutId = setTimeout(() => {
+        const idx = this.waiting.findIndex(w => w.resolve === resolve);
+        if (idx !== -1) {
+          this.waiting.splice(idx, 1);
+        }
+        reject(new Error('Connection acquire timeout'));
       }, this.maxWaitTime);
+      this.waiting.push({ resolve, timeout: timeoutId });
     });
   }
 
   release(conn: any): void {
     if (this.waiting.length > 0) {
-      const resolve = this.waiting.shift();
-      resolve?.(conn);
+      const { resolve, timeout } = this.waiting.shift()!;
+      clearTimeout(timeout);
+      resolve(conn);
     } else {
       this.pool.push(conn);
     }
