@@ -25,11 +25,58 @@ declare global {
   }
 }
 
-// Async crypto helper for signature verification
+// Signature verification cache with TTL to reduce redundant HMAC computation
+interface CacheEntry {
+  result: boolean;
+  timestamp: number;
+}
+
+const SIGNATURE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const signatureCache = new Map<string, CacheEntry>();
+
+// Generate cache key from data + signature + secret
+const generateCacheKey = (data: Buffer, signature: string, secret: string): string => {
+  return crypto.createHash('sha256')
+    .update(data)
+    .update(signature)
+    .update(secret)
+    .digest('hex');
+};
+
+// Cleanup expired cache entries
+const cleanupSignatureCache = () => {
+  const now = Date.now();
+  for (const [key, entry] of signatureCache.entries()) {
+    if (now - entry.timestamp > SIGNATURE_CACHE_TTL) {
+      signatureCache.delete(key);
+    }
+  }
+};
+
+// Async crypto helper with caching to avoid redundant HMAC computation
 const verifySignatureAsync = async (data: Buffer, signature: string, secret: string): Promise<boolean> => {
   try {
+    const cacheKey = generateCacheKey(data, signature, secret);
+    
+    // Check cache first
+    const cached = signatureCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < SIGNATURE_CACHE_TTL) {
+      return cached.result;
+    }
+    
+    // Compute signature if not cached
     const expectedSignature = crypto.createHmac('sha256', secret).update(data).digest('hex');
-    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+    const result = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+    
+    // Store in cache
+    signatureCache.set(cacheKey, { result, timestamp: Date.now() });
+    
+    // Cleanup every N calls to prevent memory bloat
+    if (signatureCache.size % 100 === 0) {
+      cleanupSignatureCache();
+    }
+    
+    return result;
   } catch (error) {
     return false;
   }
