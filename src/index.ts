@@ -35,7 +35,7 @@ let copilotClientInstance: CopilotClient | null = null;
 
 const getCopilotClient = (): CopilotClient => {
   if (!copilotClientInstance) {
-    copilotClientInstance = getCopilotClient({
+    copilotClientInstance = new CopilotClient({
 HUB_TOKEN || '',
       httpAgent,
       httpsAgent,
