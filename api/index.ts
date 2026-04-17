@@ -9,6 +9,34 @@ class ProfileCache {
   private cache = new Map<string, CacheEntry<any>>();
   private keysByPrefix = new Map<string, Set<string>>();
   private readonly defaultTTL = 5 * 60 * 1000; // 5 minutes in ms
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.startCleanupTimer();
+  }
+
+  private startCleanupTimer(): void {
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      const keysToDelete: string[] = [];
+      for (const [key, entry] of this.cache.entries()) {
+        if (now - entry.timestamp > entry.ttl) {
+          keysToDelete.push(key);
+        }
+      }
+      keysToDelete.forEach(key => {
+        this.cache.delete(key);
+        const prefix = key.split(':')[0];
+        this.keysByPrefix.get(prefix)?.delete(key);
+      });
+    }, 2 * 60 * 1000); // Run every 2 minutes
+  }
+
+  destroy(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+  }
 
   get(key: string): any | null {
     const entry = this.cache.get(key);
