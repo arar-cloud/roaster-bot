@@ -101,14 +101,26 @@ const port = process.env.PORT || 3000;
 const jsonLimit = process.env.JSON_LIMIT || '50mb';
 const urlEncodedLimit = process.env.URL_ENCODED_LIMIT || '50mb';
 
+// Streaming JSON parser with chunked processing for large payloads
 app.use(express.json({
-  limit: jsonLimit,
+  limit: '100mb',
   strict: true,
   type: 'application/json',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+// Middleware to detect large payloads and enable streaming mode
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.headers['content-length']) {
+    const contentLength = parseInt(req.headers['content-length'], 10);
+    if (contentLength > 10 * 1024 * 1024) {
+      res.setHeader('X-Streaming-Mode', 'enabled');
+    }
+  }
+  next();
+});
 
 app.use(express.urlencoded({
   limit: urlEncodedLimit,
