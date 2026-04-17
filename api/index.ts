@@ -24,10 +24,10 @@ class ConnectionPool {
   }
 
   private async initializePool(factory: () => Promise<any>): Promise<void> {
-    for (let i = 0; i < this.poolSize; i++) {
-      const conn = await factory();
-      this.pool.push(conn);
-    }
+    const connections = await Promise.all(
+      Array.from({ length: this.poolSize }, () => factory())
+    );
+    this.pool.push(...connections);
   }
 
   async acquire(): Promise<any> {
