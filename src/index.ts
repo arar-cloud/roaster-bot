@@ -144,8 +144,6 @@ class PoolMonitor {
   }
 }
 
-const poolMonitor = new PoolMonitor();
-
 // Connection pooling for external service clients with dynamic scaling
 const httpAgent = new http.Agent({
   keepAlive: true,
@@ -163,7 +161,8 @@ const httpsAgent = new https.Agent({
   timeout: 30000,
 });
 
-// Start pool monitoring
+// Initialize unified pool monitoring via singleton pattern
+const poolMonitor = new PoolMonitor();
 poolMonitor.start(httpAgent, 'httpAgent');
 poolMonitor.start(httpsAgent, 'httpsAgent');
 
