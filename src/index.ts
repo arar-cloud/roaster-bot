@@ -4,6 +4,32 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// In-memory cache for roaster configuration
+class ConfigCache {
+  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private readonly TTL = 5 * 60 * 1000; // 5 minute cache TTL
+
+  set(key: string, value: any): void {
+    this.cache.set(key, { data: value, timestamp: Date.now() });
+  }
+
+  get(key: string): any | null {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+    if (Date.now() - entry.timestamp > this.TTL) {
+      this.cache.delete(key);
+      return null;
+    }
+    return entry.data;
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+const configCache = new ConfigCache();
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
