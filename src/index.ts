@@ -2,6 +2,47 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+
+// In-memory cache for response ETags and bodies
+const responseCache = new Map<string, { etag: string; body: any; timestamp: number }>();
+const CACHE_TTL = 3600000; // 1 hour in milliseconds
+
+/**
+ * Generate ETag from content
+ */
+function generateETag(content: any): string {
+  const hash = crypto.createHash('md5');
+  hash.update(JSON.stringify(content));
+  return `"${hash.digest('hex')}"`;
+}
+
+/**
+ * Cache middleware - checks If-None-Match and returns 304 if unchanged
+ * Otherwise caches response and returns ETag header
+ */
+function cacheMiddleware(req: any, res: any, next: any): void {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  const cacheKey = `${req.method}:${req.path}`;
+  const clientETag = req.get('If-None-Match');
+  const cached = responseCache.get(cacheKey);
+  
+  if (cached && clientETag === cached.etag) {
+    res.status(304).end();
+    return;
+  }
+  
+  const originalJson = res.json.bind(res);
+  res.json = function(body: any) {
+    const etag = generateETag(body);
+    responseCache.set(cacheKey, { etag, body, timestamp: Date.now() });
+    res.setHeader('ETag', etag);
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    return originalJson(body);
+  };
+  next();
+}
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -28,6 +69,8 @@ app.use(express.json({
     req.rawBody = buf.toString();
   }
 }));
+
+app.use(cacheMiddleware);
 
 app.get('/', (req, res) => {
   res.send(`
