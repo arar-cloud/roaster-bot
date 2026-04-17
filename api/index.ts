@@ -24,10 +24,20 @@ class ConnectionPool {
   }
 
   private async initializePool(factory: () => Promise<any>): Promise<void> {
-    const connections = await Promise.all(
-      Array.from({ length: this.poolSize }, () => factory())
-    );
-    this.pool.push(...connections);
+    const startTime = Date.now();
+    // Staggered acquisition to smooth resource allocation
+    const connections = [];
+    for (let i = 0; i < this.poolSize; i++) {
+      connections.push(factory());
+      if (i < this.poolSize - 1) {
+        // Small delay between acquisitions to prevent initialization spikes
+        await new Promise(resolve => setTimeout(resolve, 5));
+      }
+    }
+    const results = await Promise.all(connections);
+    this.pool.push(...results);
+    const initTime = Date.now() - startTime;
+    console.log(`[ConnectionPool] Initialized ${this.poolSize} connections in ${initTime}ms`);
   }
 
   async acquire(): Promise<any> {
