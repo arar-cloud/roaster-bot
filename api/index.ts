@@ -46,10 +46,11 @@ class ConnectionPool {
     }
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        this.waiting.delete(resolve);
+        const index = this.waiting.findIndex(item => item.resolve === resolve);
+        if (index !== -1) this.waiting.splice(index, 1);
         reject(new Error('Connection acquire timeout'));
       }, this.maxWaitTime);
-      this.waiting.set(resolve, timeoutId);
+      this.waiting.push({ resolve, timeout: timeoutId });
     });
   }
 
