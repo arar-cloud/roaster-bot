@@ -333,9 +333,9 @@ app.get('/', async (req, res) => {
     </html>
   `);
   try {
-  res.setHeader('Content-Type', 'text/html');
-  await streamHtmlResponse(res, html);
-  res.end();
+    res.setHeader('Content-Type', 'text/html');
+    await streamHtmlResponse(res, html);
+    res.end();
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
