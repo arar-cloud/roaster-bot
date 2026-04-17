@@ -72,7 +72,46 @@ interface ComponentCache {
   timestamp: number;
 }
 
-const componentCache = new Map<string, ComponentCache>();
+// LRU cache with bounded size to prevent memory leaks
+class LRUCache<K, V> {
+  private cache = new Map<K, V>();
+  private accessOrder: K[] = [];
+  private maxSize: number;
+
+  constructor(maxSize: number = 1000) {
+    this.maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    if (this.cache.has(key)) {
+      // Move to end (most recently used)
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+      this.accessOrder.push(key);
+      return this.cache.get(key);
+    }
+    return undefined;
+  }
+
+  set(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.accessOrder = this.accessOrder.filter(k => k !== key);
+    } else if (this.cache.size >= this.maxSize) {
+      // Evict least recently used
+      const lruKey = this.accessOrder.shift();
+      if (lruKey !== undefined) {
+        this.cache.delete(lruKey);
+      }
+    }
+    this.cache.set(key, value);
+    this.accessOrder.push(key);
+  }
+
+  has(key: K): boolean {
+    return this.cache.has(key);
+  }
+}
+
+const componentCache = new LRUCache<string, ComponentCache>(1000);
 const CACHE_TTL = 60000; // 1 minute
 
 const memoizeHtmlComponent = (componentId: string, renderFn: () => string): string => {
@@ -83,7 +122,7 @@ const memoizeHtmlComponent = (componentId: string, renderFn: () => string): stri
   const content = renderFn();
   componentCache.set(componentId, { content, timestamp: Date.now() });
   return content;
-};
+}; // LRU eviction prevents unbounded growth beyond 1000 entries
 
 app.get('/', (req, res) => {
   // Serve memoized HTML to avoid re-rendering identical responses
