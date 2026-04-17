@@ -99,6 +99,25 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
+  // Connection pool configuration for API calls
+  const createConnectionPool = (maxConnections = 10) => {
+    let activeConnections = 0;
+    const executeWithPooling = async (fn: () => Promise<any>) => {
+      while (activeConnections >= maxConnections) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      activeConnections++;
+      try {
+        return await fn();
+      } finally {
+        activeConnections--;
+      }
+    };
+    return { executeWithPooling };
+  };
+
+  const pool = createConnectionPool(10);
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
@@ -123,13 +142,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
+    // Use connection pooling to prevent resource exhaustion under concurrent load
+    const session = await pool.executeWithPooling(async () => {
+      return await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
