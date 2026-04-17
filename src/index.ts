@@ -292,6 +292,34 @@ const streamHtmlResponse = async (res: Response, html: string): Promise<void> =>
   }
 };
 
+// Pool status endpoint for monitoring connection saturation
+app.get('/pool-status', (req: Request, res: Response) => {
+  const status = poolMonitor.getStatus();
+  const poolInfo: Record<string, any> = {};
+  status.forEach((value, key) => {
+    poolInfo[key] = {
+      used: value.used,
+      max: value.max,
+      utilization: ((value.used / value.max) * 100).toFixed(2) + '%'
+    };
+  });
+  res.json({ timestamp: new Date().toISOString(), pools: poolInfo });
+});
+
+// Backpressure middleware to reject requests when pool saturation exceeds threshold
+app.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const status = poolMonitor.getStatus();
+  const SATURATION_THRESHOLD = 0.85;
+  for (const [name, value] of status) {
+    const utilization = value.used / value.max;
+    if (utilization > SATURATION_THRESHOLD) {
+      console.warn(`[Backpressure] ${name} saturated at ${(utilization * 100).toFixed(1)}%`);
+      return res.status(503).json({ error: 'Service overloaded: connection pool saturation' });
+    }
+  }
+  next();
+});
+
 app.get('/', async (req, res) => {
   // Serve memoized HTML with streaming to unblock event loop during rendering
   const html = await memoizeHtmlComponentAsync('home_page', () => `
