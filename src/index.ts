@@ -103,42 +103,82 @@ interface ComponentCache {
   timestamp: number;
 }
 
+// LRU Cache node for doubly-linked list O(1) eviction
+class LRUCacheNode<K, V> {
+  constructor(
+    public key: K,
+    public value: V,
+    public prev: LRUCacheNode<K, V> | null = null,
+    public next: LRUCacheNode<K, V> | null = null
+  ) {}
+}
+
 // LRU cache with bounded size to prevent memory leaks
 class LRUCache<K, V> {
-  private cache = new Map<K, V>();
-  private accessOrder: K[] = [];
+  private cache = new Map<K, LRUCacheNode<K, V>>();
+  private head: LRUCacheNode<K, V> | null = null;
+  private tail: LRUCacheNode<K, V> | null = null;
   private maxSize: number;
 
   constructor(maxSize: number = 1000) {
-    this.maxSize = maxSize;
+    this.maxSize = Math.max(1, maxSize);
   }
 
   get(key: K): V | undefined {
-    if (this.cache.has(key)) {
-      // Move to end (most recently used)
-      this.accessOrder = this.accessOrder.filter(k => k !== key);
-      this.accessOrder.push(key);
-      return this.cache.get(key);
-    }
-    return undefined;
+    const node = this.cache.get(key);
+    if (!node) return undefined;
+    this.moveToTail(node);
+    return node.value;
   }
 
   set(key: K, value: V): void {
     if (this.cache.has(key)) {
-      this.accessOrder = this.accessOrder.filter(k => k !== key);
-    } else if (this.cache.size >= this.maxSize) {
-      // Evict least recently used
-      const lruKey = this.accessOrder.shift();
-      if (lruKey !== undefined) {
-        this.cache.delete(lruKey);
-      }
+      const node = this.cache.get(key)!;
+      node.value = value;
+      this.moveToTail(node);
+      return;
     }
-    this.cache.set(key, value);
-    this.accessOrder.push(key);
+    const node = new LRUCacheNode(key, value);
+    this.cache.set(key, node);
+    this.addToTail(node);
+    if (this.cache.size > this.maxSize) {
+      this.evictHead();
+    }
   }
 
   has(key: K): boolean {
     return this.cache.has(key);
+  }
+
+  private moveToTail(node: LRUCacheNode<K, V>): void {
+    if (node === this.tail) return;
+    this.removeNode(node);
+    this.addToTail(node);
+  }
+
+  private addToTail(node: LRUCacheNode<K, V>): void {
+    if (!this.head) {
+      this.head = this.tail = node;
+      return;
+    }
+    node.prev = this.tail;
+    node.next = null;
+    this.tail!.next = node;
+    this.tail = node;
+  }
+
+  private removeNode(node: LRUCacheNode<K, V>): void {
+    if (node.prev) node.prev.next = node.next;
+    else this.head = node.next;
+    if (node.next) node.next.prev = node.prev;
+    else this.tail = node.prev;
+  }
+
+  private evictHead(): void {
+    if (this.head) {
+      this.cache.delete(this.head.key);
+      this.removeNode(this.head);
+    }
   }
 }
 
