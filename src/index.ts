@@ -56,7 +56,13 @@ app.use(express.json({
 }));
 
 app.get('/', async (req, res) => {
-  res.send(`
+  // Check cache for home response
+  const cachedResponse = configCache.get('home_response');
+  if (cachedResponse) {
+    return res.send(cachedResponse);
+  }
+  
+  const response = `
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
         <div style="text-align: center;">
