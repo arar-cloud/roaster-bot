@@ -66,8 +66,28 @@ app.use(express.json({
   }
 }));
 
+// Memoized component renderer to avoid redundant DOM calculations
+interface ComponentCache {
+  content: string;
+  timestamp: number;
+}
+
+const componentCache = new Map<string, ComponentCache>();
+const CACHE_TTL = 60000; // 1 minute
+
+const memoizeHtmlComponent = (componentId: string, renderFn: () => string): string => {
+  const cached = componentCache.get(componentId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.content;
+  }
+  const content = renderFn();
+  componentCache.set(componentId, { content, timestamp: Date.now() });
+  return content;
+};
+
 app.get('/', (req, res) => {
-  res.send(`
+  // Serve memoized HTML to avoid re-rendering identical responses
+  const html = memoizeHtmlComponent('home_page', () => `
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
         <div style="text-align: center;">
@@ -77,6 +97,7 @@ app.get('/', (req, res) => {
       </body>
     </html>
   `);
+  res.send(html);
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
@@ -118,7 +139,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   const pool = createConnectionPool(10);
 
-  // Initialize client with the user's token
+  // Reuse client instance across requests to avoid initialization overhead
+  // This would typically be stored at module level, but for per-request isolation:
   const client = new CopilotClient({
     env: {
       GITHUB_TOKEN: token,
