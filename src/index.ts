@@ -124,9 +124,32 @@ const memoizeHtmlComponent = (componentId: string, renderFn: () => string): stri
   return content;
 }; // LRU eviction prevents unbounded growth beyond 1000 entries
 
-app.get('/', (req, res) => {
-  // Serve memoized HTML to avoid re-rendering identical responses
-  const html = memoizeHtmlComponent('home_page', () => `
+// Async HTML rendering with streaming support to unblock event loop
+const memoizeHtmlComponentAsync = async (componentId: string, renderFn: () => string): Promise<string> => {
+  const cached = componentCache.get(componentId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.content;
+  }
+  // Yield to event loop to process concurrent requests
+  await new Promise(resolve => setImmediate(resolve));
+  const content = renderFn();
+  componentCache.set(componentId, { content, timestamp: Date.now() });
+  return content;
+};
+
+// Stream HTML response in chunks to allow event loop to process other requests
+const streamHtmlResponse = async (res: Response, html: string): Promise<void> => {
+  const chunkSize = 1024;
+  for (let i = 0; i < html.length; i += chunkSize) {
+    res.write(html.slice(i, i + chunkSize));
+    // Yield to event loop after each chunk
+    await new Promise(resolve => setImmediate(resolve));
+  }
+};
+
+app.get('/', async (req, res) => {
+  // Serve memoized HTML with streaming to unblock event loop during rendering
+  const html = await memoizeHtmlComponentAsync('home_page', () => `
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
         <div style="text-align: center;">
@@ -136,7 +159,9 @@ app.get('/', (req, res) => {
       </body>
     </html>
   `);
-  res.send(html);
+  res.setHeader('Content-Type', 'text/html');
+  await streamHtmlResponse(res, html);
+  res.end();
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
