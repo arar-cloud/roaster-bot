@@ -159,6 +159,7 @@ app.get('/', async (req, res) => {
       </body>
     </html>
   `);
+  try {
   res.setHeader('Content-Type', 'text/html');
   await streamHtmlResponse(res, html);
   res.end();
