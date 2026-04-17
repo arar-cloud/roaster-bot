@@ -5,6 +5,41 @@ interface CacheEntry<T> {
   ttl: number;
 }
 
+// Database connection pool for query reuse
+class DatabasePool {
+  private connections = new Map<string, any>();
+  private preparedStatements = new Map<string, any>();
+  private readonly maxPoolSize = 5;
+  private poolCount = 0;
+
+  getConnection(dbUrl: string): any {
+    if (!this.connections.has(dbUrl)) {
+      if (this.poolCount < this.maxPoolSize) {
+        const conn = { url: dbUrl, id: this.poolCount++ };
+        this.connections.set(dbUrl, conn);
+        return conn;
+      }
+      return this.connections.get(dbUrl);
+    }
+    return this.connections.get(dbUrl);
+  }
+
+  getPreparedStatement(sql: string): any {
+    if (!this.preparedStatements.has(sql)) {
+      this.preparedStatements.set(sql, { sql, compiled: true });
+    }
+    return this.preparedStatements.get(sql);
+  }
+
+  reset(): void {
+    this.connections.clear();
+    this.preparedStatements.clear();
+    this.poolCount = 0;
+  }
+}
+
+const dbPool = new DatabasePool();
+
 class ProfileCache {
   private cache = new Map<string, CacheEntry<any>>();
   private keysByPrefix = new Map<string, Set<string>>();
