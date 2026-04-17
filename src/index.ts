@@ -16,6 +16,43 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Request-level cache to memoize repeated calls within a single request
+interface RequestCache {
+  [key: string]: any;
+}
+
+declare global {
+  namespace Express {
+    interface Request {
+      cache?: RequestCache;
+    }
+  }
+}
+
+// Middleware to initialize and clear request-level cache
+app.use((req: Request, res: Response, next) => {
+  req.cache = {};
+  res.on('finish', () => {
+    delete req.cache;
+  });
+  next();
+});
+
+// Cache helper function for memoizing expensive operations
+const getCachedOrCompute = async (
+  req: Request,
+  cacheKey: string,
+  computeFn: () => Promise<any>
+): Promise<any> => {
+  if (!req.cache) req.cache = {};
+  if (cacheKey in req.cache) {
+    return req.cache[cacheKey];
+  }
+  const result = await computeFn();
+  req.cache[cacheKey] = result;
+  return result;
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
