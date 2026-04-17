@@ -2,7 +2,7 @@ import app from '../src/index.js';
 
 // Connection pooling implementation
 interface PooledConnection {
-  acquire: () => Promise<any>;
+  acquire: () => Promise<Map<string, any>
   release: (conn: any) => void;
   query: (sql: string, params?: any[]) => Promise<any>;
 }
@@ -85,7 +85,7 @@ export async function batchFetchByIds<T>(
   if (!ids.length) return [];
   const pool = dbPool;
   if (!pool) throw new Error('Database pool not initialized');
-  
+
   const placeholders = ids.map(() => '?').join(',');
   const sql = `SELECT * FROM ${table} WHERE ${idColumn} IN (${placeholders})`;
   const result = await (pool as any).query?.(sql, ids);
