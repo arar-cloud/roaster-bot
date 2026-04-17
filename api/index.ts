@@ -9,7 +9,7 @@ interface PooledConnection {
 
 class ConnectionPool {
   private pool: any[] = [];
-  private waiting: Map<(conn: any) => void, NodeJS.Timeout> = new Map();
+  private waiting: Array<{resolve: (conn: any) => void, timeout: NodeJS.Timeout}> = [];
   private readonly poolSize: number;
   private readonly maxWaitTime: number;
 
@@ -54,12 +54,10 @@ class ConnectionPool {
   }
 
   release(conn: any): void {
-    const waitingIterator = this.waiting.entries().next();
-    if (!waitingIterator.done) {
-      const [resolve, timeout] = waitingIterator.value;
-      this.waiting.delete(resolve);
-      clearTimeout(timeout);
-      resolve(conn);
+    const waiting = this.waiting.shift();
+    if (waiting) {
+      clearTimeout(waiting.timeout);
+      waiting.resolve(conn);
     } else {
       this.pool.push(conn);
     }
