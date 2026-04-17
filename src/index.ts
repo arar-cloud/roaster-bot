@@ -71,7 +71,10 @@ app.get('/', async (req, res) => {
         </div>
       </body>
     </html>
-  `);
+  `;
+  // Cache the response for 5 minutes to avoid redundant computation
+  configCache.set('home_response', response);
+  res.send(response);
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
