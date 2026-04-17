@@ -7,6 +7,7 @@ interface CacheEntry<T> {
 
 class ProfileCache {
   private cache = new Map<string, CacheEntry<any>>();
+  private keysByPrefix = new Map<string, Set<string>>();
   private readonly defaultTTL = 5 * 60 * 1000; // 5 minutes in ms
 
   get(key: string): any | null {
@@ -28,20 +29,31 @@ class ProfileCache {
       timestamp: Date.now(),
       ttl
     });
+    const prefix = key.split(':')[0];
+    if (!this.keysByPrefix.has(prefix)) {
+      this.keysByPrefix.set(prefix, new Set());
+    }
+    this.keysByPrefix.get(prefix)!.add(key);
   }
 
   invalidate(pattern?: string): void {
     if (!pattern) {
       this.cache.clear();
+      this.keysByPrefix.clear();
     } else {
-      Array.from(this.cache.keys())
-        .filter(key => key.includes(pattern))
-        .forEach(key => this.cache.delete(key));
+      const prefix = pattern.split(':')[0];
+      const keysToDelete = this.keysByPrefix.get(prefix) || new Set();
+      for (const key of keysToDelete) {
+        this.cache.delete(key);
+      }
+      this.keysByPrefix.delete(prefix);
     }
   }
 
   invalidateKey(key: string): void {
     this.cache.delete(key);
+    const prefix = key.split(':')[0];
+    this.keysByPrefix.get(prefix)?.delete(key);
   }
 }
 
