@@ -1,5 +1,7 @@
 import app from '../src/index.js';
-import Pool from 'pg';
+import { Pool } from 'pg';
+import compression from 'compression';
+import { cachingMiddleware, configureEndpointCaching } from './caching.js';
 
 // Initialize database connection pool
 const dbPool = new Pool({
@@ -15,5 +17,11 @@ const dbPool = new Pool({
 
 // Attach pool to app for use in route handlers
 app.locals.dbPool = dbPool;
+
+// Enable gzip compression for all responses (50-70% bandwidth reduction)
+app.use(compression());
+
+// Configure endpoint-specific caching headers
+configureEndpointCaching(app);
 
 export default app;
