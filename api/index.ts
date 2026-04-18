@@ -78,6 +78,11 @@ const relaxedLimiter = rateLimit({
 
 app.use(globalLimiter);
 
+// Apply differentiated rate limiters to specific routes
+app.get('/health', relaxedLimiter);
+app.post('/process', strictLimiter);
+app.get('/api/data', globalLimiter);
+
 // Input sanitization middleware for query parameters
 app.use((req, res, next) => {
   // Validate and sanitize query parameters
