@@ -31,11 +31,25 @@ export function getCachedResult(key: string): any | null {
 }
 
 /**
+ * Cache helper: get value with TTL enforcement (alias for getCachedResult)
+ */
+export function get(key: string): any | null {
+  return getCachedResult(key);
+}
+
+/**
  * Cache helper: set query result with configurable TTL
  */
 export function setCachedResult(key: string, value: any, ttlMs: number = DEFAULT_TTL_MS): void {
   queryCache.set(key, value);
   queryTTL.set(key, Date.now() + ttlMs);
+}
+
+/**
+ * Cache helper: set value with TTL enforcement (alias for setCachedResult)
+ */
+export function set(key: string, value: any, ttlMs: number = DEFAULT_TTL_MS): void {
+  setCachedResult(key, value, ttlMs);
 }
 
 /**
@@ -84,6 +98,13 @@ export function invalidateCachePattern(pattern: string): void {
       queryTTL.delete(key);
     }
   }
+}
+
+/**
+ * Cache helper: clear cache entries matching a pattern (alias for invalidateCachePattern)
+ */
+export function clear(pattern: string): void {
+  invalidateCachePattern(pattern);
 }
 
 /**
