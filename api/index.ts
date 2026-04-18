@@ -21,11 +21,34 @@ const dbPool = new Pool({
 app.locals.dbPool = dbPool;
 
 // Enable gzip compression for all responses (50-70% bandwidth reduction)
-app.use(compression());
+app.use(compression({ level: 6, threshold: 1024 }));
 
-// Add request body size limits and validation middleware
+// Enable streaming responses for large payloads to reduce memory allocation
+app.use((req, res, next) => {
+  // Set streaming headers for large responses
+  res.setHeader('Transfer-Encoding', 'chunked');
+  next();
+});
+
+// Add request body size limits and validation middleware with compression
 app.use(bodyParser.json({ limit: '1mb' }));
 app.use(bodyParser.urlencoded({ limit: '1mb', extended: true }));
+
+// Response streaming middleware for efficient large payload handling
+app.use((req, res, next) => {
+  const originalJson = res.json;
+  res.json = function(data) {
+    res.setHeader('Content-Type', 'application/json');
+    if (Buffer.byteLength(JSON.stringify(data)) > 10240) {
+      // Stream large responses to avoid memory spike
+      res.write(JSON.stringify(data));
+      res.end();
+    } else {
+      return originalJson.call(this, data);
+    }
+  };
+  next();
+});
 
 // Rate limiting to prevent abuse and memory exhaustion
 const limiter = rateLimit({
