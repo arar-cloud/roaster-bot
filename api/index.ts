@@ -50,13 +50,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// Rate limiting to prevent abuse and memory exhaustion
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests, please try again later.'
+// Global rate limiter: 100 requests per 15 minutes
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
-app.use(limiter);
+
+// Strict limiter for resource-intensive endpoints: 20 requests per 15 minutes
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: 'Too many requests to this endpoint, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Relaxed limiter for health checks: 1000 requests per 15 minutes
+const relaxedLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
+  standardHeaders: false,
+  legacyHeaders: false,
+});
+
+app.use(globalLimiter);
 
 // Input sanitization middleware for query parameters
 app.use((req, res, next) => {
