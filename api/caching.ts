@@ -1,6 +1,43 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 
+// In-memory query result cache with TTL support
+const queryCache = new Map<string, any>();
+const queryTTL = new Map<string, number>();
+const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Cleanup expired cache entries every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, expireTime] of queryTTL.entries()) {
+    if (now > expireTime) {
+      queryCache.delete(key);
+      queryTTL.delete(key);
+    }
+  }
+}, 60 * 1000);
+
+/**
+ * Cache helper: get cached query result if not expired
+ */
+export function getCachedResult(key: string): any | null {
+  const expireTime = queryTTL.get(key);
+  if (expireTime && Date.now() < expireTime) {
+    return queryCache.get(key);
+  }
+  queryCache.delete(key);
+  queryTTL.delete(key);
+  return null;
+}
+
+/**
+ * Cache helper: set query result with configurable TTL
+ */
+export function setCachedResult(key: string, value: any, ttlMs: number = DEFAULT_TTL_MS): void {
+  queryCache.set(key, value);
+  queryTTL.set(key, Date.now() + ttlMs);
+}
+
 /**
  * Middleware to add caching headers and ETag support.
  * Reduces bandwidth by 50-70% through cache validation and compression.
@@ -34,6 +71,19 @@ export function cachingMiddleware(
 
     next();
   };
+}
+
+/**
+ * Invalidate cache entries matching a pattern (e.g., user:* invalidates all user caches).
+ * Improves correctness by preventing stale data propagation on mutations.
+ */
+export function invalidateCachePattern(pattern: string): void {
+  for (const key of queryCache.keys()) {
+    if (key.startsWith(pattern)) {
+      queryCache.delete(key);
+      queryTTL.delete(key);
+    }
+  }
 }
 
 /**
