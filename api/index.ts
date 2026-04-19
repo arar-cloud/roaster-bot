@@ -224,4 +224,118 @@ export function attachRelations<T extends Record<string, any>, R>(
   }));
 }
 
+/**
+ * Pagination configuration and result wrapper
+ */
+export interface PaginationOptions {
+  limit?: number;
+  offset?: number;
+  cursor?: string;
+  maxLimit?: number;
+  defaultLimit?: number;
+}
+
+export interface PaginationResult<T> {
+  items: T[];
+  cursor?: string;
+  nextCursor?: string;
+  hasMore: boolean;
+  total?: number;
+  limit: number;
+  offset?: number;
+}
+
+/**
+ * Parse pagination parameters from query string
+ * Validates and bounds limit to prevent memory exhaustion
+ */
+export function parsePaginationParams(query: Record<string, any>, config: {
+  defaultLimit?: number;
+  maxLimit?: number;
+} = {}): PaginationOptions {
+  const {
+    defaultLimit = 20,
+    maxLimit = 100
+  } = config;
+
+  const limit = Math.min(
+    Math.max(parseInt(query.limit) || defaultLimit, 1),
+    maxLimit
+  );
+
+  const offset = Math.max(parseInt(query.offset) || 0, 0);
+  const cursor = query.cursor ? String(query.cursor) : undefined;
+
+  return {
+    limit,
+    offset,
+    cursor,
+    maxLimit,
+    defaultLimit
+  };
+}
+
+/**
+ * Middleware to attach pagination config to request
+ * Usage: app.get('/items', paginationMiddleware(), handler)
+ */
+export function paginationMiddleware(config?: {
+  defaultLimit?: number;
+  maxLimit?: number;
+}) {
+  return (req: any, res: any, next: any) => {
+    req.pagination = parsePaginationParams(req.query, config);
+    next();
+  };
+}
+
+/**
+ * Create a paginated response from array of items
+ * Supports both offset and cursor-based pagination
+ */
+export function createPaginatedResponse<T>(
+  items: T[],
+  pagination: PaginationOptions,
+  options: {
+    cursorField?: string;
+    totalCount?: number;
+  } = {}
+): PaginationResult<T> {
+  const { cursorField = 'id', totalCount } = options;
+  const { limit = 20, offset = 0 } = pagination;
+
+  // Fetch limit+1 items to determine if there are more
+  const hasMore = items.length > limit;
+  const paginatedItems = items.slice(0, limit);
+
+  const nextCursor = hasMore && paginatedItems.length > 0
+    ? String((paginatedItems[paginatedItems.length - 1] as any)[cursorField])
+    : undefined;
+
+  return {
+    items: paginatedItems,
+    cursor: pagination.cursor,
+    nextCursor,
+    hasMore,
+    total: totalCount,
+    limit,
+    offset
+  };
+}
+
+/**
+ * Cursor-based pagination helper for sequential data
+ * Encode/decode cursors for client-side pagination
+ */
+export const PaginationCursor = {
+  encode: (value: any): string => Buffer.from(JSON.stringify(value)).toString('base64'),
+  decode: (cursor: string): any => {
+    try {
+      return JSON.parse(Buffer.from(cursor, 'base64').toString('utf-8'));
+    } catch {
+      return null;
+    }
+  }
+};
+
 export default app;
