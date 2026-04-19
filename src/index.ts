@@ -159,16 +159,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     // Disable compression for streaming responses
     res.setHeader('Content-Encoding', 'identity');
 
+    const eventBatch: any[] = [];
+    const batchSize = 5;
+    const flushBatch = () => {
+      eventBatch.forEach(event => {
+        if (event.type === "assistant.message_delta") {
+          const chunk = {
+            choices: [{ delta: { content: event.data.deltaContent } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      });
+      eventBatch.length = 0;
+    };
+
     session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      eventBatch.push(event);
+      if (eventBatch.length >= batchSize) {
+        flushBatch();
       }
     });
 
     await session.sendAndWait({ prompt });
+    flushBatch();
 
     res.write('data: [DONE]\n\n');
     res.set('X-Cache', 'MISS');
@@ -189,6 +202,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+server.on('clientError', (err, socket) => {
+  if (err.code === 'ECONNRESET' || !socket.writable) {
+    return;
+  }
+  socket.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    requestCache.clear();
+    process.exit(0);
+  });
 });
