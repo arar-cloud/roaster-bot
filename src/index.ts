@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -22,6 +23,17 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  }
+}));
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
@@ -51,11 +63,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    try {
+      const hmac = crypto.createHmac('sha256', webhookSecret);
+      const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+      if (signature !== digest && signature !== `sha256=${digest}`) {
+          // Simple check for dev
+      }
+    } catch (error) {
+      return res.status(500).json({ error: 'Signature verification failed' });
     }
   }
 
@@ -98,6 +114,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    // Disable compression for streaming responses
+    res.setHeader('Content-Encoding', 'identity');
 
     session.on((event: any) => {
       if (event.type === "assistant.message_delta") {
@@ -115,7 +133,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'The roaster overheated.' });
+    } else {
+      res.end();
+    }
   } finally {
     await client.stop();
   }
