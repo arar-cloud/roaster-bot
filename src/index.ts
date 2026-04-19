@@ -45,6 +45,82 @@ class RequestCache {
 
 const requestCache = new RequestCache();
 
+// Database connection pool configuration
+class DatabaseConnectionPool {
+  private maxConnections = 10;
+  private activeConnections = 0;
+  private queuedRequests: Array<() => Promise<any>> = [];
+  private readonly QUEUE_TIMEOUT = 30000; // 30 seconds
+
+  async execute<T>(query: () => Promise<T>): Promise<T> {
+    if (this.activeConnections < this.maxConnections) {
+      this.activeConnections++;
+      try {
+        return await query();
+      } finally {
+        this.activeConnections--;
+        this.processQueue();
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('Database query timeout: exceeded queue wait'));
+      }, this.QUEUE_TIMEOUT);
+
+      this.queuedRequests.push(async () => {
+        clearTimeout(timeout);
+        this.activeConnections++;
+        try {
+          return await query();
+        } finally {
+          this.activeConnections--;
+        }
+      });
+    });
+  }
+
+  private processQueue(): void {
+    while (this.queuedRequests.length > 0 && this.activeConnections < this.maxConnections) {
+      const nextQuery = this.queuedRequests.shift();
+      if (nextQuery) {
+        nextQuery().catch(console.error);
+      }
+    }
+  }
+
+  getPoolStats() {
+    return {
+      activeConnections: this.activeConnections,
+      maxConnections: this.maxConnections,
+      queuedRequests: this.queuedRequests.length
+    };
+  }
+}
+
+const dbPool = new DatabaseConnectionPool();
+
+// Batch query helper to convert N+1 patterns
+function createBatchQueryHelper<T>(
+  items: any[],
+  queryFn: (batch: any[]) => Promise<Map<string, T>>
+): Promise<T[]> {
+  const batchSize = 100;
+  const batches: any[][] = [];
+  for (let i = 0; i < items.length; i += batchSize) {
+    batches.push(items.slice(i, i + batchSize));
+  }
+
+  return Promise.all(batches.map(batch => queryFn(batch)))
+    .then(results => {
+      const merged = new Map<string, T>();
+      results.forEach(result => {
+        result.forEach((value, key) => merged.set(key, value));
+      });
+      return Array.from(merged.values());
+    });
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
