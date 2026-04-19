@@ -70,6 +70,26 @@ app.use(express.json({
   }
 }));
 
+// Caching middleware for GET requests
+app.use((req: Request, res: Response, next) => {
+  if (req.method === 'GET') {
+    const cacheKey = requestCache.generateKey(req);
+    const cachedResponse = requestCache.get(cacheKey);
+    if (cachedResponse) {
+      res.set('X-Cache', 'HIT');
+      return res.json(cachedResponse);
+    }
+    res.set('X-Cache', 'MISS');
+    // Intercept res.json to cache the response
+    const originalJson = res.json.bind(res);
+    res.json = function(data: any) {
+      requestCache.set(cacheKey, data);
+      return originalJson(data);
+    };
+  }
+  next();
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
