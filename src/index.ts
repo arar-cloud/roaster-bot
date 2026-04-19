@@ -17,6 +17,41 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+interface CacheEntry {
+  data: any;
+  timestamp: number;
+  ttl: number;
+}
+
+const requestCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 5 * 60 * 1000;
+
+function generateCacheKey(method: string, path: string, body?: any): string {
+  const bodyStr = body ? JSON.stringify(body) : '';
+  return `${method}:${path}:${bodyStr}`;
+}
+
+function getCachedResponse(key: string): any | null {
+  const entry = requestCache.get(key);
+  if (!entry) return null;
+  
+  const age = Date.now() - entry.timestamp;
+  if (age > entry.ttl) {
+    requestCache.delete(key);
+    return null;
+  }
+  
+  return entry.data;
+}
+
+function setCachedResponse(key: string, data: any, ttl: number = CACHE_TTL): void {
+  requestCache.set(key, {
+    data,
+    timestamp: Date.now(),
+    ttl
+  });
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -58,6 +93,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
+  const cacheKey = generateCacheKey('POST', '/agent', req.body);
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
@@ -73,6 +109,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     } catch (error) {
       return res.status(500).json({ error: 'Signature verification failed' });
     }
+  }
+
+  const cachedResponse = getCachedResponse(cacheKey);
+  if (cachedResponse) {
+    res.set('X-Cache', 'HIT');
+    return res.status(200).json(cachedResponse);
   }
 
   const token = req.get('X-GitHub-Token');
@@ -129,6 +171,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     await session.sendAndWait({ prompt });
 
     res.write('data: [DONE]\n\n');
+    res.set('X-Cache', 'MISS');
+    // Cache the assistant response for deduplication
+    const responseData = { cached: true, timestamp: Date.now() };
+    setCachedResponse(cacheKey, responseData);
     res.end();
 
   } catch (error) {
