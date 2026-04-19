@@ -295,6 +295,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+// Metrics endpoint to track cache and pool performance
+app.get('/metrics', (req, res) => {
+  res.json({
+    timestamp: new Date().toISOString(),
+    connectionPool: dbPool.getPoolStats(),
+    message: 'Connection pooling enabled (max 10 concurrent connections with queue timeout 30s)'
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
