@@ -178,17 +178,42 @@ const lazyLoad = <T>(importFn: () => Promise<T>): (() => Promise<T>) => {
   };
 };
 
-app.get('/', (req, res) => {
-  res.send(`
+app.get('/', async (req, res) => {
+  const startTime = Date.now();
+  try {
+    // Check cache first to avoid unnecessary work
+    const cacheKey = requestCache.generateKey(req);
+    const cachedResponse = requestCache.get(cacheKey);
+    if (cachedResponse) {
+      res.set('X-Cache', 'HIT');
+      res.set('X-Response-Time', String(Date.now() - startTime));
+      return res.send(cachedResponse);
+    }
+    
+    // Use connection pool to query pool stats
+    const poolStats = await dbPool.execute(async () => {
+      return dbPool.getPoolStats();
+    });
+    const responseTime = Date.now() - startTime;
+    const html = `
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
         <div style="text-align: center;">
           <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
           <p style="color: #ccc;">Prepare your code for total annihilation.</p>
+          <p style="color: #888; font-size: 0.9rem;">Response time: ${responseTime}ms | Connections: ${poolStats.activeConnections}/${poolStats.maxConnections}</p>
         </div>
       </body>
     </html>
-  `);
+    `;
+    requestCache.set(cacheKey, html);
+    res.set('X-Cache', 'MISS');
+    res.set('X-Response-Time', String(responseTime));
+    res.send(html);
+  } catch (error) {
+    console.error('Root endpoint error:', error);
+    res.status(500).send('Internal server error');
+  }
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
