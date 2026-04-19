@@ -99,4 +99,129 @@ export function cacheMiddleware(ttlMs: number = 60000) {
   };
 }
 
+/**
+ * Batch Query Loader - Eliminates N+1 query patterns
+ * Collects multiple ID requests and executes a single batch query
+ */
+export class BatchLoader<T, K = any> {
+  private batch: Map<K, Promise<T>> = new Map();
+  private batchFn: (ids: K[]) => Promise<Map<K, T>>;
+  private batchSize: number;
+  private flushTimer: NodeJS.Timeout | null = null;
+
+  constructor(batchFn: (ids: K[]) => Promise<Map<K, T>>, batchSize: number = 100) {
+    this.batchFn = batchFn;
+    this.batchSize = batchSize;
+  }
+
+  /**
+   * Queue a single item for batch loading
+   * Returns a promise that resolves when batch is executed
+   */
+  async load(id: K): Promise<T> {
+    // If batch is full, flush immediately
+    if (this.batch.size >= this.batchSize) {
+      await this.flush();
+    }
+
+    // If item already queued, return existing promise
+    if (this.batch.has(id)) {
+      return this.batch.get(id)!;
+    }
+
+    // Create promise for this item
+    const promise = new Promise<T>(async (resolve, reject) => {
+      // Schedule flush if not already scheduled
+      if (!this.flushTimer) {
+        this.flushTimer = setImmediate(async () => {
+          try {
+            await this.flush();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+    });
+
+    this.batch.set(id, promise);
+    return promise;
+  }
+
+  /**
+   * Load multiple items at once
+   */
+  async loadMany(ids: K[]): Promise<T[]> {
+    return Promise.all(ids.map(id => this.load(id)));
+  }
+
+  /**
+   * Execute batch query and resolve all pending promises
+   */
+  private async flush(): Promise<void> {
+    if (this.batch.size === 0) return;
+
+    if (this.flushTimer) {
+      clearImmediate(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    const ids = Array.from(this.batch.keys());
+    const currentBatch = this.batch;
+    this.batch = new Map();
+
+    try {
+      const results = await this.batchFn(ids);
+      
+      // Resolve all promises with their results
+      for (const [id, promise] of currentBatch.entries()) {
+        const result = results.get(id);
+        if (result !== undefined) {
+          (promise as any).resolve?.(result);
+        }
+      }
+    } catch (error) {
+      // Reject all promises on error
+      for (const [, promise] of currentBatch.entries()) {
+        (promise as any).reject?.(error);
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Eager load related entities to prevent N+1 queries
+ * Usage: eagerLoad(items, 'userId', async ids => db.users.getMany(ids))
+ */
+export async function eagerLoad<T, K, R>(
+  items: T[],
+  relationKey: keyof T,
+  loader: (ids: K[]) => Promise<Map<K, R>>
+): Promise<Map<K, R>> {
+  const ids = Array.from(new Set(
+    items.map(item => item[relationKey] as K).filter(Boolean)
+  ));
+  
+  if (ids.length === 0) return new Map();
+  
+  return loader(ids);
+}
+
+/**
+ * Helper to attach loaded relations to items
+ * Usage: attachRelations(items, 'userId', users, 'id', 'user')
+ */
+export function attachRelations<T extends Record<string, any>, R>(
+  items: T[],
+  relationKey: keyof T,
+  loaded: Map<any, R>,
+  idKey: string,
+  attachKey: string
+): T[] {
+  return items.map(item => ({
+    ...item,
+    [attachKey]: loaded.get(item[relationKey])
+  }));
+}
+
 export default app;
