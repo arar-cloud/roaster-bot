@@ -166,6 +166,18 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Lazy-load helper for dynamic imports
+const lazyLoad = <T>(importFn: () => Promise<T>): (() => Promise<T>) => {
+  let cached: T | null = null;
+  return async () => {
+    if (!cached) {
+      const module = await importFn();
+      cached = module;
+    }
+    return cached;
+  };
+};
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
