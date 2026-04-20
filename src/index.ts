@@ -239,6 +239,27 @@ const errorHandler = (err: any, req: Request, res: Response, next: Function) => 
   });
 };
 
+// XSS Prevention utilities
+const encodeHTML = (text: string): string => {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#x27;',
+    '/': '&#x2F;',
+  };
+  return text.replace(/[&<>"'\/]/g, (char) => map[char]);
+};
+
+const encodeJSON = (obj: any): string => {
+  return JSON.stringify(obj).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+};
+
+const encodeURLComponent = (component: string): string => {
+  return encodeURIComponent(component);
+};
+
 app.use(validateCSRFToken);
 
 // Request signing and integrity verification
@@ -347,7 +368,7 @@ app.post('/agent', limiter, requireAuth(), async (req: Request, res: Response) =
         const chunk = {
           choices: [{ delta: { content: event.data.deltaContent } }]
         };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        res.write(`data: ${encodeJSON(chunk)}\n\n`);
       }
     });
 
