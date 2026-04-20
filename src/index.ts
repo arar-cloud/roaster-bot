@@ -55,9 +55,71 @@ const sessions = new Map<string, { userId: string; createdAt: number; refreshTok
 const TOKEN_EXPIRY = 15 * 60 * 1000; // 15 minutes
 const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+// Password reset token management
+const passwordResetTokens = new Map<string, {
+  userId: string;
+  expiresAt: number;
+  used: boolean;
+  createdAt: number;
+}>();
+const RESET_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
+
+// Track failed login attempts to prevent brute force
+const failedLoginAttempts = new Map<string, { count: number; lockedUntil?: number }>();
+
 // Generate secure token
 const generateToken = (): string => {
   return crypto.randomBytes(32).toString('hex');
+};
+
+// Generate password reset token
+const generatePasswordResetToken = (userId: string): string => {
+  const token = crypto.randomBytes(32).toString('hex');
+  passwordResetTokens.set(token, {
+    userId,
+    expiresAt: Date.now() + RESET_TOKEN_EXPIRY,
+    used: false,
+    createdAt: Date.now(),
+  });
+  return token;
+};
+
+// Validate and consume password reset token
+const validateResetToken = (token: string): { valid: boolean; userId?: string; error?: string } => {
+  const resetToken = passwordResetTokens.get(token);
+  if (!resetToken) {
+    return { valid: false, error: 'Invalid or expired reset token' };
+  }
+  if (resetToken.used) {
+    return { valid: false, error: 'Reset token already used' };
+  }
+  if (resetToken.expiresAt < Date.now()) {
+    passwordResetTokens.delete(token);
+    return { valid: false, error: 'Reset token expired' };
+  }
+  return { valid: true, userId: resetToken.userId };
+};
+
+// Mark reset token as used
+const consumeResetToken = (token: string): void => {
+  const resetToken = passwordResetTokens.get(token);
+  if (resetToken) {
+    resetToken.used = true;
+  }
+};
+
+// Invalidate all sessions for a user (logout all devices on password reset)
+const invalidateUserSessions = (userId: string): void => {
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === userId) {
+      sessions.delete(token);
+    }
+  }
+};
+
+// Account enumeration prevention - constant-time response
+const constantTimeDelay = (): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, 100 + Math.random() * 100));
 };
 
 // Session validation middleware
