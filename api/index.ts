@@ -118,9 +118,117 @@ const errorHandlerMiddleware = (err, req, res, next) => {
 
 import app from '../src/index.js';
 
-// Apply security middleware globally
-app.use(rateLimitMiddleware); // Apply rate limiting to all routes
-app.use(validateInput()); // Apply input validation to all routes
-app.use(errorHandlerMiddleware); // Apply error handling to catch and sanitize errors
+// Import auth module for token validation and authorization
+import authSession from './auth-session.ts';
+
+// Enhanced token validation middleware with session recovery (issue-7ae92d25e4)
+const validateTokenMiddleware = (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  
+  if (!token) {
+    // Check if route requires authentication
+    if (req.path.startsWith('/api/protected/') || req.path.startsWith('/api/admin/')) {
+      return res.status(401).json({ error: 'Unauthorized: Missing authentication token' });
+    }
+    return next();
+  }
+
+  try {
+    // Validate token and extract user information
+    const user = authSession.extractUserFromToken(token);
+    req.user = user;
+    req.token = token;
+    next();
+  } catch (error) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
+  }
+};
+
+// Role-based authorization middleware (issue-c77040b212)
+const authorizeRole = (requiredRole) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ error: 'Unauthorized: User not authenticated' });
+    }
+
+    const hasPermission = authSession.hasRole(req.token, requiredRole);
+    if (!hasPermission) {
+      return res.status(403).json({ error: 'Forbidden: Insufficient permissions for this operation' });
+    }
+    next();
+  };
+};
+
+// Apply global security middleware
+app.use(rateLimitMiddleware); // Apply rate limiting to all routes (issue-40bdd8439f)
+app.use(validateInput()); // Apply input validation to all routes (issue-701cae7257)
+app.use(validateTokenMiddleware); // Validate auth tokens where present (issue-7ae92d25e4)
+
+// Example protected endpoint with authorization (issue-c77040b212)
+app.get('/api/protected/profile', (req, res) => {
+  if (!req.user) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // Return user profile - only accessible to authenticated users
+  res.json({ userId: req.user.userId, role: req.user.role });
+});
+
+// Example admin-only endpoint (issue-c77040b212)
+app.post('/api/admin/users', authorizeRole('admin'), (req, res) => {
+  // Only accessible to admin role users
+  res.json({ message: 'Admin operation performed' });
+});
+
+// Authentication endpoints
+app.post('/api/auth/login', (req, res) => {
+  const { userId, password } = req.body;
+  
+  // Validate inputs
+  if (!userId || !password) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+  
+  try {
+    // In production: verify password against hashed password in database
+    // For now: create session with default role
+    const session = authSession.createAuthSession(userId, 'user');
+    res.json({
+      token: session.token,
+      refreshToken: session.refreshToken,
+      expiresIn: TOKEN_EXPIRY_MS / 1000,
+    });
+  } catch (error) {
+    return res.status(400).json({ error: 'Login failed' });
+  }
+});
+
+app.post('/api/auth/refresh', (req, res) => {
+  const { refreshToken } = req.body;
+  
+  if (!refreshToken) {
+    return res.status(400).json({ error: 'Missing refresh token' });
+  }
+  
+  try {
+    const newSession = authSession.refreshAuthToken(refreshToken);
+    res.json({
+      token: newSession.token,
+      refreshToken: newSession.refreshToken,
+      expiresIn: TOKEN_EXPIRY_MS / 1000,
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Token refresh failed' });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  if (req.token) {
+    authSession.revokeAuthToken(req.token);
+  }
+  res.json({ message: 'Logout successful' });
+});
+
+// Apply error handling middleware last to catch all errors (issue-7ae92d25e4)
+app.use(errorHandlerMiddleware);
 
 export default app;
