@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 import { z } from 'zod';
+import helmet from 'helmet';
 
 // Extend Express Request type properly
 declare global {
@@ -82,6 +83,52 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Security headers middleware (Helmet)
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+    },
+  },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  frameguard: { action: 'deny' },
+  xssFilter: true,
+}));
+
+// HTTPS redirect middleware
+app.use((req: Request, res: Response, next: Function) => {
+  if (process.env.NODE_ENV === 'production' && req.header('x-forwarded-proto') !== 'https') {
+    return res.redirect(307, `https://${req.header('host')}${req.url}`);
+  }
+  next();
+});
+
+// CSRF token generation and validation
+const csrfTokens = new Map<string, { expiresAt: number }>();
+
+const generateCSRFToken = (): string => {
+  const token = crypto.randomBytes(32).toString('hex');
+  csrfTokens.set(token, { expiresAt: Date.now() + 60 * 60 * 1000 }); // 1 hour expiry
+  return token;
+};
+
+const validateCSRFToken = (req: Request, res: Response, next: Function) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const token = req.headers['x-csrf-token'] as string || req.body.csrfToken;
+    if (!token || !csrfTokens.has(token) || csrfTokens.get(token)!.expiresAt < Date.now()) {
+      csrfTokens.delete(token);
+      return res.status(403).json({ error: 'Invalid or expired CSRF token' });
+    }
+    csrfTokens.delete(token); // Single-use token
+  }
+  next();
+};
+
+app.use(validateCSRFToken);
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
