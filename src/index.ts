@@ -24,6 +24,32 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Simple LRU cache for query results with TTL
+class ResponseCache {
+  private cache: Map<string, { data: any; expiry: number }> = new Map();
+  private maxSize = 100;
+
+  get(key: string): any | null {
+    const item = this.cache.get(key);
+    if (!item) return null;
+    if (Date.now() > item.expiry) {
+      this.cache.delete(key);
+      return null;
+    }
+    return item.data;
+  }
+
+  set(key: string, data: any, ttlMs: number = 5 * 60 * 1000): void {
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, { data, expiry: Date.now() + ttlMs });
+  }
+}
+
+const queryCache = new ResponseCache();
+
 app.use(compression());
 
 app.use(express.json({
