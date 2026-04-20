@@ -77,11 +77,32 @@ const validateSession = (req: Request, res: Response, next: Function) => {
   next();
 };
 
+// General API rate limiter
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => req.ip || 'unknown',
+});
+
+// Strict rate limiter for authentication endpoints (per-IP)
+const authLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip || 'unknown',
+  message: 'Too many authentication attempts, please try again later'
+});
+
+// Per-user rate limiter for sensitive operations
+const userLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  keyGenerator: (req) => {
+    return (req as any).userId || req.ip || 'unknown';
+  },
 });
 
 // Security headers middleware (Helmet)
