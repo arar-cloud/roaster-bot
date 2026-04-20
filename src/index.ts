@@ -3,15 +3,48 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import { z } from 'zod';
 
 // Extend Express Request type properly
 declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      validatedBody?: Record<string, any>;
     }
   }
 }
+
+// Validation schemas for API endpoints
+const chatMessageSchema = z.object({
+  prompt: z.string().min(1).max(5000),
+  conversationId: z.string().uuid().optional(),
+  model: z.string().max(50).optional()
+});
+
+const copilotRequestSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    content: z.string().max(5000)
+  })).min(1).max(100)
+});
+
+// Input validation middleware factory
+const validateRequestBody = (schema: z.ZodSchema) => {
+  return (req: Request, res: Response, next: Function) => {
+    try {
+      const validated = schema.parse(req.body);
+      (req as any).validatedBody = validated;
+      next();
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        res.status(400).json({ error: 'Invalid request parameters', details: error.errors.map(e => ({ path: e.path.join('.'), message: e.message })) });
+      } else {
+        res.status(400).json({ error: 'Invalid request format' });
+      }
+    }
+  };
+};
 
 const app = express();
 const port = process.env.PORT || 3000;
