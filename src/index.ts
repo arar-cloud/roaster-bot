@@ -128,6 +128,34 @@ const validateCSRFToken = (req: Request, res: Response, next: Function) => {
   next();
 };
 
+// Authorization middleware factory
+const requireAuth = (roles?: string[]) => {
+  return (req: Request, res: Response, next: Function) => {
+    if (!(req as any).userId) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    if (roles && !(req as any).userRole || !roles.includes((req as any).userRole)) {
+      return res.status(403).json({ error: 'Insufficient permissions' });
+    }
+    next();
+  };
+};
+
+// Secure error handler middleware
+const errorHandler = (err: any, req: Request, res: Response, next: Function) => {
+  console.error('[ERROR]', new Date().toISOString(), {
+    path: req.path,
+    method: req.method,
+    userId: (req as any).userId,
+    message: err.message,
+  });
+  const statusCode = err.statusCode || 500;
+  const isDev = process.env.NODE_ENV === 'development';
+  res.status(statusCode).json({
+    error: isDev ? err.message : 'An internal server error occurred'
+  });
+};
+
 app.use(validateCSRFToken);
 
 app.use(express.json({
@@ -149,7 +177,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, requireAuth(), async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
