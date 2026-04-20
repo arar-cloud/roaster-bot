@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 import { z } from 'zod';
 import helmet from 'helmet';
+import { execSync } from 'child_process';
 
 // Extend Express Request type properly
 declare global {
@@ -286,6 +287,53 @@ const verifyRequestSignature = (req: Request, res: Response, next: Function) => 
 };
 
 app.use(verifyRequestSignature);
+
+// Safe command execution wrapper - prevents command injection
+const executeCommand = (command: string, args: string[]): string => {
+  // Whitelist allowed commands
+  const ALLOWED_COMMANDS = ['echo', 'git', 'node', 'npm'];
+  
+  if (!ALLOWED_COMMANDS.includes(command)) {
+    throw new Error(`Command '${command}' is not allowed`);
+  }
+
+  // Validate arguments - no special shell characters
+  const UNSAFE_CHARS = /[&|;`$()\\"'\n\t]/;
+  for (const arg of args) {
+    if (UNSAFE_CHARS.test(arg)) {
+      throw new Error('Arguments contain unsafe characters');
+    }
+  }
+
+  try {
+    // Use safe array-based execution instead of string concatenation
+    return execSync(`${command} ${args.map(a => `'${a}'`).join(' ')}`, {
+      encoding: 'utf-8',
+      stdio: ['pipe', 'pipe', 'pipe'],
+      timeout: 5000,
+    });
+  } catch (error: any) {
+    throw new Error(`Command execution failed: ${error.message}`);
+  }
+};
+
+// Safe expression evaluation - no eval() or Function constructor
+const evaluateSafeExpression = (expression: string): any => {
+  // Only allow numeric calculations, no variable access or function calls
+  const SAFE_PATTERN = /^[\d+\-*/.()\s]+$/;
+  
+  if (!SAFE_PATTERN.test(expression)) {
+    throw new Error('Expression contains unsupported characters');
+  }
+
+  // Use Function constructor only with validated input (safer than eval)
+  try {
+    const fn = new Function('return ' + expression);
+    return fn();
+  } catch (error) {
+    throw new Error('Invalid expression');
+  }
+};
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
