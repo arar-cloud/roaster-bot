@@ -179,6 +179,31 @@ const errorHandler = (err: any, req: Request, res: Response, next: Function) => 
 
 app.use(validateCSRFToken);
 
+// Request signing and integrity verification
+const SIGNING_KEY = process.env.SIGNING_KEY || crypto.randomBytes(32).toString('hex');
+
+const verifyRequestSignature = (req: Request, res: Response, next: Function) => {
+  // For critical endpoints (marked by header)
+  if (req.headers['x-signature-required'] === 'true') {
+    const signature = req.headers['x-signature'] as string;
+    if (!signature || !req.rawBody) {
+      return res.status(400).json({ error: 'Missing request signature' });
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', SIGNING_KEY)
+      .update(req.rawBody)
+      .digest('hex');
+
+    if (signature !== expectedSignature) {
+      return res.status(401).json({ error: 'Invalid request signature' });
+    }
+  }
+  next();
+};
+
+app.use(verifyRequestSignature);
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
