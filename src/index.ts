@@ -341,6 +341,10 @@ app.use(express.json({
   }
 }));
 
+// Apply global middleware
+app.use(limiter); // General rate limiting
+app.use(userLimiter); // Per-user rate limiting
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
