@@ -32,6 +32,29 @@ app.use(express.json({
   }
 }));
 
+// Middleware to add caching headers and ETag support
+app.use((req: Request, res: Response, next) => {
+  const originalJson = res.json.bind(res);
+  const originalSend = res.send.bind(res);
+  
+  res.json = function(data: any) {
+    const etagValue = crypto.createHash('md5').update(JSON.stringify(data)).digest('hex');
+    res.setHeader('ETag', `"${etagValue}"`);
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    if (req.headers['if-none-match'] === `"${etagValue}"`) {
+      return res.status(304).end();
+    }
+    return originalJson(data);
+  };
+  
+  res.send = function(data: any) {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    return originalSend(data);
+  };
+  
+  next();
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
