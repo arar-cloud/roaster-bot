@@ -49,6 +49,33 @@ const validateRequestBody = (schema: z.ZodSchema) => {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Session/Token management
+const sessions = new Map<string, { userId: string; createdAt: number; refreshToken: string; expiresAt: number }>();
+const TOKEN_EXPIRY = 15 * 60 * 1000; // 15 minutes
+const REFRESH_TOKEN_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Generate secure token
+const generateToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+// Session validation middleware
+const validateSession = (req: Request, res: Response, next: Function) => {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return res.status(401).json({ error: 'Missing authentication token' });
+  }
+
+  const session = sessions.get(token);
+  if (!session || session.expiresAt < Date.now()) {
+    return res.status(401).json({ error: 'Session expired or invalid' });
+  }
+
+  (req as any).userId = session.userId;
+  (req as any).sessionToken = token;
+  next();
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
