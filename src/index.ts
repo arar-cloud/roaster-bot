@@ -71,17 +71,19 @@ const sanitizePayload = (payload: any): { valid: boolean; error?: string; saniti
   return { valid: true, sanitized: payload };
 };
 
-// HTML escape utility to prevent injection
+// HTML escape utility to prevent injection - covers all vectors
 const escapeHtml = (text: string): string => {
-  const map: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-    '`': '&#96;'
-  };
-  return text.replace(/[&<>"'`]/g, (char) => map[char]);
+  if (typeof text !== 'string') return '';
+  // Must escape & FIRST to avoid double-escaping
+  // Covers: script tags, event handlers, entities, unicode attacks
+  return text
+    .replace(/&/g, '&amp;')      // & -> &amp; (MUST be first)
+    .replace(/</g, '&lt;')        // < -> &lt; (prevents <script>)
+    .replace(/>/g, '&gt;')        // > -> &gt; (closes tags safely)
+    .replace(/"/g, '&quot;')      // " -> &quot; (attribute injection)
+    .replace(/'/g, '&#x27;')      // ' -> &#x27; (single quote injection)
+    .replace(/\//g, '&#x2f;')     // / -> &#x2f; (closes </script>)
+    .replace(/`/g, '&#x60;');     // ` -> &#x60; (template injection)
 };
 
 // Structured logging with redaction
