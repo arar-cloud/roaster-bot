@@ -303,26 +303,38 @@ app.use((req: Request, res: Response, next: any) => {
   next();
 });
 
-// Centralized error handler
+// Centralized error handler - prevent credential leaks
 app.use((err: any, req: Request, res: Response, next: any) => {
   const clientIp = req.ip || 'unknown';
   const eventId = crypto.randomUUID();
   
-  // Log full error server-side with context
+  // Sanitize error message - never expose internals, tokens, or file paths
+  let sanitizedMessage = err.message || 'Unknown error';
+  if (sanitizedMessage.includes('WEBHOOK_SECRET') || 
+      sanitizedMessage.includes('ADMIN_API_KEY') ||
+      sanitizedMessage.includes('X-GitHub-Token') ||
+      sanitizedMessage.includes('undefined') ||
+      sanitizedMessage.includes('/src/') ||
+      sanitizedMessage.includes(process.env.WEBHOOK_SECRET || '')) {
+    sanitizedMessage = 'An error occurred';
+  }
+  
+  // Log full error server-side with redacted context (never expose stack to client)
   const errorContext = {
     message: err.message || 'Unknown error',
-    stack: err.stack,
     type: err.constructor.name,
     endpoint: req.path,
-    method: req.method
+    method: req.method,
+    // Only log stack in development, never send to client
+    stack: process.env.NODE_ENV !== 'production' ? err.stack : undefined
   };
   secureLog('error', 'Unhandled error', { eventId, clientIp, ...errorContext });
   
-  // Return sanitized error response to client
-  const statusCode = err.statusCode || 500;
+  // Return sanitized error response to client - never expose internals
+  const statusCode = (err.statusCode >= 400 && err.statusCode < 600) ? err.statusCode : 500;
   if (!res.headersSent) {
     res.status(statusCode).json({
-      error: statusCode === 500 ? 'Internal server error' : err.message || 'An error occurred',
+      error: statusCode === 500 ? 'Internal server error' : sanitizedMessage,
       eventId: eventId // For client to reference in support requests
     });
   }
