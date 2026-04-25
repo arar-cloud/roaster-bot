@@ -55,12 +55,12 @@ app.use(express.static('public'));
 app.use(captureRawBody);
 function captureRawBody(req: any, res: Response, next: Function) {
   if (req.path === '/agent' && req.method === 'POST') {
-    let rawBody = '';
+    const buffers: Buffer[] = [];
     req.on('data', (chunk: Buffer) => {
-      rawBody += chunk.toString();
+      buffers.push(chunk);
     });
     req.on('end', () => {
-      req.rawBody = rawBody;
+      req.rawBody = Buffer.concat(buffers).toString('utf8');
       next();
     });
   } else {
