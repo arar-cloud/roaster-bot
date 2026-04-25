@@ -97,16 +97,42 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
 
 app.use(verifyWebhookSignature);
 
+// Token-scoped client cache for connection reuse
+const clientCache = new Map<string, { client: CopilotClient; lastUsed: number }>();
+const CLIENT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 function getCopilotClient(token: string): CopilotClient {
-  // Create per-request client instance to prevent token cross-contamination
-  // Each request gets its own isolated CopilotClient with dedicated token context
-  return new CopilotClient({
+  const now = Date.now();
+  const cached = clientCache.get(token);
+  
+  // Reuse cached client if still valid
+  if (cached && now - cached.lastUsed < CLIENT_CACHE_TTL) {
+    cached.lastUsed = now;
+    return cached.client;
+  }
+  
+  // Create new client and cache by token
+  const client = new CopilotClient({
     env: {
       GITHUB_TOKEN: token,
       ...process.env
     }
   });
+  
+  clientCache.set(token, { client, lastUsed: now });
+  return client;
 }
+
+// Clean up expired cache entries periodically
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of clientCache.entries()) {
+    if (now - entry.lastUsed > CLIENT_CACHE_TTL) {
+      entry.client.stop().catch(() => {});
+      clientCache.delete(token);
+    }
+  }
+}, 60 * 1000); // Check every minute
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Signature already verified by middleware
