@@ -37,6 +37,21 @@ app.use(express.json({
 
 app.use(express.static('public'));
 
+let copilotClient: CopilotClient | null = null;
+
+function getCopilotClient(token: string): CopilotClient {
+  // Reuse singleton connection pool, inject per-request token via env
+  if (!copilotClient) {
+    copilotClient = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  }
+  return copilotClient;
+}
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification with constant-time comparison
   const signature = req.get('X-Hub-Signature-256');
@@ -63,13 +78,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Retrieve singleton client (connection pool reused)
+  const client = getCopilotClient(token);
   
   try {
     const systemPrompt = `
