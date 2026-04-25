@@ -97,6 +97,23 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
 
 app.use(verifyWebhookSignature);
 
+// Middleware: Request timeout for streaming endpoints
+function requestTimeout(timeout: number) {
+  return (req: Request, res: Response, next: Function) => {
+    const timer = setTimeout(() => {
+      if (!res.headersSent) {
+        res.status(408).send('Request timeout');
+      } else {
+        res.end();
+      }
+    }, timeout);
+    
+    res.on('finish', () => clearTimeout(timer));
+    res.on('close', () => clearTimeout(timer));
+    next();
+  };
+}
+
 // Token-scoped client cache for connection reuse
 const clientCache = new Map<string, { client: CopilotClient; lastUsed: number }>();
 const CLIENT_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -134,7 +151,7 @@ setInterval(() => {
   }
 }, 60 * 1000); // Check every minute
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, requestTimeout(55 * 1000), async (req: Request, res: Response) => {
   // Signature already verified by middleware
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
