@@ -277,9 +277,50 @@ app.get('/health', requireApiKey, (req: Request, res: Response) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-app.post('/agent', strictLimiter, validateContentType, async (req: Request, res: Response) => {
+// Webhook signature verification middleware
+const verifyWebhookSignature = (req: Request, res: Response, next: any) => {
+  const signature = req.get('X-Hub-Signature-256');
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  const clientIp = req.ip || 'unknown';
+  const eventId = (req as any).eventId || crypto.randomUUID();
+
+  if (!webhookSecret) {
+    secureLog('error', 'WEBHOOK_SECRET not configured', { eventId, clientIp });
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
+  if (!signature) {
+    secureLog('warn', 'Missing webhook signature header', { eventId, clientIp });
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const rawBody = (req as any).rawBody;
+  if (!rawBody) {
+    secureLog('warn', 'Missing or invalid request body', { eventId, clientIp });
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const computed = `sha256=${hmac.update(rawBody).digest('hex')}`;
+
+  try {
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed))) {
+      secureLog('warn', 'Webhook signature verification failed', { eventId, clientIp, attempt: 'mismatch' });
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+  } catch (err) {
+    secureLog('error', 'Signature comparison error', { eventId, clientIp, error: (err as Error).message });
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  secureLog('info', 'Webhook signature verified successfully', { eventId, clientIp });
+  next();
+};
+
+app.post('/agent', strictLimiter, validateContentType, verifyWebhookSignature, async (req: Request, res: Response) => {
   const clientIp = req.ip || 'unknown';
   const eventId = crypto.randomUUID();
+  (req as any).eventId = eventId;
   const startTime = Date.now();
 
   try {
@@ -289,37 +330,6 @@ app.post('/agent', strictLimiter, validateContentType, async (req: Request, res:
       secureLog('warn', 'Invalid webhook payload', { eventId, clientIp, reason: payloadValidation.error });
       return res.status(400).json({ error: 'Invalid webhook payload' });
     }
-
-    // Webhook signature verification
-    const signature = req.get('X-Hub-Signature-256');
-    const webhookSecret = process.env.WEBHOOK_SECRET;
-
-    // Verify webhook signature with HMAC-SHA256
-    if (!webhookSecret) {
-      secureLog('error', 'WEBHOOK_SECRET not configured', { eventId, clientIp });
-      return res.status(500).json({ error: 'Server configuration error' });
-    }
-
-    if (!signature) {
-      secureLog('warn', 'Missing webhook signature', { eventId, clientIp });
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    const rawBody = req.rawBody;
-    if (!rawBody) {
-      secureLog('warn', 'Missing request body', { eventId, clientIp });
-      return res.status(400).json({ error: 'Invalid request' });
-    }
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const computed = `sha256=${hmac.update(rawBody).digest('hex')}`;
-
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed))) {
-      secureLog('warn', 'Invalid webhook signature', { eventId, clientIp, signatureMatch: false });
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
-    secureLog('info', 'Webhook signature verified', { eventId, clientIp });
 
   const token = req.get('X-GitHub-Token');
   
