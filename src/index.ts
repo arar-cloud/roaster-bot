@@ -85,28 +85,7 @@ function getCopilotClient(token: string): CopilotClient {
 }
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification with constant-time comparison
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (!webhookSecret) {
-    return res.status(500).send('Webhook secret not configured');
-  }
-
-  if (!signature) {
-    return res.status(401).send('Missing signature header');
-  }
-
-  const rawBody = req.rawBody;
-  if (!rawBody) return res.status(400).send('Missing raw body.');
-
-  const expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-
-  const isValid = crypto.timingCompare(signature, expectedSignature);
-  if (!isValid) {
-    return res.status(401).send('Invalid signature');
-  }
-
+  // Signature already verified by middleware
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
