@@ -10,6 +10,12 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      }
+    } catch (error) {
+      const sanitizedError = error instanceof Error
+        ? error.message.replace(token, '[REDACTED]')
+        : 'Failed to initialize CopilotClient';
+      throw new Error(sanitizedError);
     }
   }
 }
@@ -69,7 +75,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!rawBody) return res.status(400).send('Missing raw body.');
 
   const expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-  
+
   const isValid = crypto.timingCompare(signature, expectedSignature);
   if (!isValid) {
     return res.status(401).send('Invalid signature');
@@ -80,12 +86,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   // Retrieve singleton client (connection pool reused)
   const client = getCopilotClient(token);
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -95,7 +101,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     if (!req.body.messages || !Array.isArray(req.body.messages)) {
       return res.status(400).send('Invalid request: messages must be an array');
     }
-    
+
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     if (!lastMessage || !lastMessage.content) {
@@ -134,7 +140,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error('CopilotClient error:', errorMessage);
-    
+
     if (!res.headersSent) {
       if (error instanceof Error && error.message.includes('401')) {
         res.status(401).send('Authentication failed with GitHub API');
