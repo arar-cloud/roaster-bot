@@ -92,9 +92,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
+    if (!req.body.messages || !Array.isArray(req.body.messages)) {
+      return res.status(400).send('Invalid request: messages must be an array');
+    }
+    
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    if (!lastMessage || !lastMessage.content) {
+      return res.status(400).send('Invalid request: no user message found');
+    }
+    const prompt = lastMessage.content;
 
     // Create session following SDK docs
     const session = await client.createSession({
@@ -125,8 +132,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('CopilotClient error:', errorMessage);
+    
+    if (!res.headersSent) {
+      if (error instanceof Error && error.message.includes('401')) {
+        res.status(401).send('Authentication failed with GitHub API');
+      } else if (error instanceof Error && error.message.includes('429')) {
+        res.status(429).send('Rate limited by GitHub API');
+      } else {
+        res.status(500).send("The roaster overheated.");
+      }
+    }
   } finally {
     await client.stop();
   }
