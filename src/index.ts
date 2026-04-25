@@ -241,13 +241,27 @@ app.use(helmet({
   xssFilter: true,
   noSniff: true,
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  hidePoweredBy: true,
 }));
+
+// Enforce stream size limits before body parsing
+app.use(enforceStreamSizeLimit(1048576)); // 1MB limit
 
 // Raw body capture middleware - MUST run before JSON parsing
 app.use((req: Request, res: Response, next: any) => {
-  if (req.method === 'POST') {
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
     let rawBody = '';
+    let size = 0;
+    const maxSize = 1048576; // 1MB
+    
     req.on('data', chunk => {
+      size += chunk.length;
+      if (size > maxSize) {
+        secureLog('warn', 'Request body exceeds size limit', { clientIp: req.ip, size });
+        res.status(413).json({ error: 'Payload too large' });
+        req.connection.destroy();
+        return;
+      }
       rawBody += chunk.toString();
     });
     req.on('end', () => {
@@ -260,7 +274,8 @@ app.use((req: Request, res: Response, next: any) => {
 });
 
 app.use(express.json({
-  limit: '1mb'
+  limit: '1mb',
+  strict: true // Only parse objects and arrays, reject primitives
 }));
 
 // Global request timeout - prevent slowloris attacks
