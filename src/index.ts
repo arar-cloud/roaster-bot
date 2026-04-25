@@ -63,7 +63,7 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-    const isValid = crypto.timingCompare(signature, expectedSignature);
+    const isValid = crypto.timingCompare(signature, expectedSignature) === 0;
     
     if (!isValid) {
       return res.status(401).send('Invalid signature');
