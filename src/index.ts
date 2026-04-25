@@ -36,9 +36,30 @@ const sanitizePayload = (payload: any): { valid: boolean; error?: string; saniti
     return { valid: false, error: 'Payload exceeds maximum size' };
   }
   
-  // Validate required GitHub webhook fields
-  if (typeof payload.action !== 'string' || payload.action.length === 0 || payload.action.length > 128) {
+  // Validate required GitHub webhook fields - strict length limits per GitHub spec
+  if (typeof payload.action !== 'string' || payload.action.length === 0 || payload.action.length > 50) {
     return { valid: false, error: 'Invalid action field' };
+  }
+  
+  // Validate action contains only lowercase alphanumeric and underscores (GitHub standard)
+  if (!/^[a-z0-9_]+$/.test(payload.action)) {
+    return { valid: false, error: 'Invalid action format' };
+  }
+  
+  // If userMessages array is present, validate it for prompt injection prevention
+  if (Array.isArray(payload.userMessages)) {
+    if (payload.userMessages.length > 50) {
+      return { valid: false, error: 'Too many user messages' };
+    }
+    for (const msg of payload.userMessages) {
+      if (typeof msg !== 'string' || msg.length > 4096) {
+        return { valid: false, error: 'Invalid user message format' };
+      }
+      // Check for potential prompt injection patterns
+      if (msg.includes('ignore previous') || msg.includes('system prompt') || msg.includes('forget') || msg.includes('jailbreak')) {
+        return { valid: false, error: 'Suspicious message content detected' };
+      }
+    }
   }
   
   // Sanitize pull_request content if present
