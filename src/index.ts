@@ -25,7 +25,10 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(helmet());
-app.use(compression());
+app.use(compression({
+  threshold: 1024, // Only compress responses >= 1KB to avoid overhead on small payloads
+  level: 6, // Balanced compression level (6/9) for CPU efficiency
+}));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
