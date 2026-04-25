@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import cors from 'cors';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -29,6 +30,23 @@ const limiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Configure CORS for webhook endpoints
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    const allowedOrigins = ['https://github.com', 'https://api.github.com'];
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS not allowed'), false);
+    }
+  },
+  credentials: false,
+  methods: ['POST', 'GET'],
+  allowedHeaders: ['Content-Type', 'X-Hub-Signature-256', 'X-GitHub-Token', 'X-GitHub-Event']
+};
+
+app.use(cors(corsOptions));
 
 // Apply security headers
 app.use(helmet({
