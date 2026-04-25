@@ -2,8 +2,12 @@ import request from 'supertest';
 import crypto from 'crypto';
 
 const WEBHOOK_SECRET = 'test-secret-key';
+const ADMIN_API_KEY = 'test-admin-key';
+const VALID_GITHUB_TOKEN = 'ghp_validtoken1234567890';
+
 process.env.WEBHOOK_SECRET = WEBHOOK_SECRET;
-process.env.ADMIN_API_KEY = 'test-admin-key';
+process.env.ADMIN_API_KEY = ADMIN_API_KEY;
+process.env.NODE_ENV = 'test';
 
 // Import must happen after env vars are set
 const app = require('./index.ts').app || require('./index.ts').default;
