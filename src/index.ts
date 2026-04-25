@@ -73,7 +73,6 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
 }
 
 app.use(verifyWebhookSignature);
-app.use(limiter);
 
 function getCopilotClient(token: string): CopilotClient {
   // Create per-request client instance to prevent token cross-contamination
