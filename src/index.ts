@@ -47,10 +47,16 @@ app.use(helmet({
 }));
 
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+app.use((req, res, next) => {
+  req.setTimeout(30000);
+  next();
+});
 
 app.get('/', limiter, (req, res) => {
   res.send(`
