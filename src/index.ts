@@ -158,6 +158,31 @@ app.use((req, res, next) => {
   next();
 });
 
+// Centralized error handler
+app.use((err: any, req: Request, res: Response, next: any) => {
+  const clientIp = req.ip || 'unknown';
+  const eventId = crypto.randomUUID();
+  
+  // Log full error server-side with context
+  const errorContext = {
+    message: err.message || 'Unknown error',
+    stack: err.stack,
+    type: err.constructor.name,
+    endpoint: req.path,
+    method: req.method
+  };
+  secureLog('error', 'Unhandled error', { eventId, clientIp, ...errorContext });
+  
+  // Return sanitized error response to client
+  const statusCode = err.statusCode || 500;
+  if (!res.headersSent) {
+    res.status(statusCode).json({
+      error: statusCode === 500 ? 'Internal server error' : err.message || 'An error occurred',
+      eventId: eventId // For client to reference in support requests
+    });
+  }
+});
+
 app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
