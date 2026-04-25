@@ -37,13 +37,25 @@ const limiter = rateLimit({
 app.use(limiter);
 
 app.use(express.json({
-  limit: '10kb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
+  limit: '10kb'
 }));
 
 app.use(express.static('public'));
+app.use(captureRawBody);
+function captureRawBody(req: any, res: Response, next: Function) {
+  if (req.path === '/agent' && req.method === 'POST') {
+    let rawBody = '';
+    req.on('data', (chunk: Buffer) => {
+      rawBody += chunk.toString();
+    });
+    req.on('end', () => {
+      req.rawBody = rawBody;
+      next();
+    });
+  } else {
+    next();
+  }
+}
 
 // Middleware: Verify webhook signature before rate limiting
 function verifyWebhookSignature(req: any, res: Response, next: Function) {
