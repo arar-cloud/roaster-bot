@@ -18,6 +18,28 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Secret masking utility
+const maskSecret = (secret: string, visibleChars: number = 4): string => {
+  if (!secret || secret.length <= visibleChars) return '***';
+  return secret.substring(0, visibleChars) + '*'.repeat(Math.max(3, secret.length - visibleChars));
+};
+
+// Structured logging with redaction
+const secureLog = (level: string, message: string, context?: Record<string, any>) => {
+  const redactedContext = context
+    ? Object.entries(context).reduce((acc, [key, val]) => {
+        if (typeof val === 'string' && (key.toLowerCase().includes('token') || key.toLowerCase().includes('secret'))) {
+          acc[key] = maskSecret(val);
+        } else {
+          acc[key] = val;
+        }
+        return acc;
+      }, {} as Record<string, any>)
+    : undefined;
+  const timestamp = new Date().toISOString();
+  console.log(JSON.stringify({ timestamp, level, message, ...redactedContext }));
+};
+
 // Enforce required environment variables at startup
 if (!process.env.WEBHOOK_SECRET) {
   console.error('FATAL: WEBHOOK_SECRET environment variable is required');
