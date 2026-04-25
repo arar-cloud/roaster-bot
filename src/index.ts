@@ -183,7 +183,7 @@ setInterval(() => {
   }
 }, 60 * 1000); // Check every minute
 
-app.post('/agent', limiter, requestTimeout(55 * 1000), async (req: Request, res: Response) => {
+app.post('/agent', requestTimeout(55 * 1000), async (req: Request, res: Response) => {
   // Signature already verified by middleware
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
