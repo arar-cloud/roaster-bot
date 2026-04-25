@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import compression from 'compression';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
