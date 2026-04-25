@@ -113,6 +113,25 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Stricter rate limiter for webhook/AI endpoints
+const strictLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 20, // 20 requests per 15 minutes for webhook endpoint
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
+});
+
+// Content-Type validation middleware
+const validateContentType = (req: Request, res: Response, next: any) => {
+  const contentType = req.get('Content-Type');
+  if (!contentType || !contentType.includes('application/json')) {
+    return res.status(415).json({ error: 'Content-Type must be application/json' });
+  }
+  next();
+};
+
 // Configure CORS for webhook endpoints
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
