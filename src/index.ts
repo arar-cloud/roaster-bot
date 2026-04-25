@@ -138,7 +138,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorMessage = error instanceof Error ? error.message.replace(token, '[REDACTED]') : 'Unknown error';
     console.error('CopilotClient error:', errorMessage);
 
     if (!res.headersSent) {
@@ -155,6 +155,17 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    if (copilotClient) {
+      copilotClient.stop().catch(err => console.error('Error stopping CopilotClient:', err));
+    }
+    process.exit(0);
+  });
 });
