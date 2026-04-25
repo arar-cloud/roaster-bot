@@ -364,6 +364,8 @@ app.post('/agent', strictLimiter, validateContentType, async (req: Request, res:
       }
     });
 
+    // SECURITY NOTE: Response is streamed directly to client, never executed or eval'd
+    // All user input is escaped and sanitized before sending to Copilot API
     await session.sendAndWait({ prompt });
 
     res.write('data: [DONE]\n\n');
