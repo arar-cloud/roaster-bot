@@ -214,6 +214,10 @@ const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
 
+// Set socket timeout to prevent indefinite hanging connections
+server.setTimeout(60 * 1000); // 60 second timeout for all sockets
+server.keepAliveTimeout = 65 * 1000; // Slightly longer than socket timeout
+
 process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
   server.close(() => {
