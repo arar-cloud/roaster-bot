@@ -187,11 +187,24 @@ app.use(helmet({
   hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
 }));
 
-app.use(express.json({
-  limit: '1mb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+// Raw body capture middleware - MUST run before JSON parsing
+app.use((req: Request, res: Response, next: any) => {
+  if (req.method === 'POST') {
+    let rawBody = '';
+    req.on('data', chunk => {
+      rawBody += chunk.toString();
+    });
+    req.on('end', () => {
+      (req as any).rawBody = rawBody;
+      next();
+    });
+  } else {
+    next();
   }
+});
+
+app.use(express.json({
+  limit: '1mb'
 }));
 
 app.use((req, res, next) => {
