@@ -221,9 +221,18 @@ app.post('/agent', limiter, requestTimeout(55 * 1000), async (req: Request, res:
       } else {
         res.status(500).send("The roaster overheated.");
       }
+    } else {
+      res.end();
     }
   } finally {
-    await client.stop();
+    try {
+      await Promise.race([
+        client.stop(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Client stop timeout')), 5000))
+      ]);
+    } catch (cleanupError) {
+      console.error('Client cleanup error:', cleanupError instanceof Error ? cleanupError.message : 'Unknown cleanup error');
+    }
   }
 });
 
