@@ -152,11 +152,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   
   // Validate GitHub token presence and format
   if (!token) {
-    return res.status(401).json({ error: 'Missing GitHub token' });
+    secureLog('warn', 'Missing GitHub token', { eventId, clientIp });
+    return res.status(401).json({ error: 'Authentication required' });
   }
   
   if (typeof token !== 'string' || token.length === 0) {
-    return res.status(400).json({ error: 'Invalid token format' });
+    secureLog('warn', 'Invalid token format', { eventId, clientIp });
+    return res.status(400).json({ error: 'Invalid request' });
+  }
+
+  // Validate token format (basic checks, e.g., GitHub token patterns)
+  if (!token.startsWith('ghu_') && !token.startsWith('ghp_') && !token.startsWith('ghs_') && !token.startsWith('gho_')) {
+    secureLog('warn', 'Token format mismatch', { eventId, clientIp, tokenType: 'invalid' });
+    return res.status(400).json({ error: 'Invalid request' });
   }
 
   // Initialize client with the user's token
@@ -169,9 +177,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
         ...process.env
       }
     });
+    secureLog('info', 'Copilot client initialized', { eventId, clientIp, tokenType: 'valid' });
   } catch (error) {
-    console.error('Failed to initialize Copilot client (token error)');
-    return res.status(500).json({ error: 'Authentication failed' });
+    secureLog('error', 'Failed to initialize Copilot client', { eventId, clientIp, errorType: error instanceof Error ? error.constructor.name : 'unknown' });
+    return res.status(500).json({ error: 'Service unavailable' });
   }
   
   try {
