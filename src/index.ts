@@ -117,7 +117,8 @@ const limiter = rateLimit({
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     const allowedOrigins = ['https://github.com', 'https://api.github.com'];
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Stricter: require origin header to be present and in whitelist
+    if (origin && allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
       callback(new Error('CORS not allowed'), false);
@@ -126,6 +127,27 @@ const corsOptions = {
   credentials: false,
   methods: ['POST', 'GET'],
   allowedHeaders: ['Content-Type', 'X-Hub-Signature-256', 'X-GitHub-Token', 'X-GitHub-Event']
+};
+
+// API Key authentication middleware for protected endpoints
+const requireApiKey = (req: Request, res: Response, next: any) => {
+  const apiKey = req.get('X-API-Key');
+  const expectedKey = process.env.ADMIN_API_KEY;
+  
+  if (!expectedKey) {
+    secureLog('error', 'ADMIN_API_KEY not configured', {});
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+  
+  if (!apiKey) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  if (!crypto.timingSafeEqual(Buffer.from(apiKey), Buffer.from(expectedKey))) {
+    return res.status(403).json({ error: 'Invalid API key' });
+  }
+  
+  next();
 };
 
 app.use(cors(corsOptions));
