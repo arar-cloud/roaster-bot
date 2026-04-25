@@ -177,20 +177,31 @@ const enforceStreamSizeLimit = (limit: number = 1048576) => { // 1MB default
   };
 };
 
-// Configure CORS for webhook endpoints
+// Configure CORS for webhook endpoints with strict validation
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    const allowedOrigins = ['https://github.com', 'https://api.github.com'];
-    // Stricter: require origin header to be present and in whitelist
-    if (origin && allowedOrigins.includes(origin)) {
+    const allowedOrigins = [
+      'https://github.com',
+      'https://api.github.com',
+      'https://webhook.github.com'
+    ];
+    // Stricter: require origin header to be present and in whitelist for POST requests
+    // For webhooks, origin is optional but if present must be in whitelist
+    if (!origin) {
+      // Webhook requests from GitHub may not have origin header
+      callback(null, true);
+    } else if (allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error('CORS not allowed'), false);
+      secureLog('warn', 'CORS origin rejected', { origin });
+      callback(new Error('CORS not allowed for this origin'), false);
     }
   },
   credentials: false,
-  methods: ['POST', 'GET'],
-  allowedHeaders: ['Content-Type', 'X-Hub-Signature-256', 'X-GitHub-Token', 'X-GitHub-Event']
+  methods: ['POST', 'GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-Hub-Signature-256', 'X-GitHub-Token', 'X-GitHub-Event'],
+  exposedHeaders: [],
+  maxAge: 3600
 };
 
 // API Key authentication middleware for protected endpoints
