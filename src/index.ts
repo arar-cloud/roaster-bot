@@ -89,6 +89,28 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
+
+    // Validate userMessages input
+    if (!Array.isArray(userMessages)) {
+      return res.status(400).json({ error: 'userMessages must be an array' });
+    }
+
+    if (userMessages.length === 0 || userMessages.length > 100) {
+      return res.status(400).json({ error: 'userMessages must contain 1-100 items' });
+    }
+
+    for (const msg of userMessages) {
+      if (typeof msg !== 'object' || msg === null) {
+        return res.status(400).json({ error: 'Each message must be an object' });
+      }
+      if (typeof msg.role !== 'string' || !['user', 'assistant'].includes(msg.role)) {
+        return res.status(400).json({ error: 'Invalid message role' });
+      }
+      if (typeof msg.content !== 'string' || msg.content.length === 0 || msg.content.length > 4096) {
+        return res.status(400).json({ error: 'Message content must be 1-4096 characters' });
+      }
+    }
+
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
