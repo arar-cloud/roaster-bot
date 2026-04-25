@@ -27,7 +27,17 @@ const port = process.env.PORT || 3000;
 app.use(helmet());
 app.use(compression());
 
-// Middleware: Validate Content-Type before JSON parsing
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiter early to reject excessive traffic before expensive header checks
+app.use(limiter);
+
+// Middleware: Validate Content-Type before JSON parsing (after rate limiting)
 app.use((req: Request, res: Response, next: Function) => {
   if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
     const contentType = req.get('Content-Type');
@@ -37,15 +47,6 @@ app.use((req: Request, res: Response, next: Function) => {
   }
   next();
 });
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use(limiter);
 
 app.use(express.json({
   limit: '10kb'
