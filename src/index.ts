@@ -67,15 +67,30 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  
+  // Validate GitHub token presence and format
+  if (!token) {
+    return res.status(401).json({ error: 'Missing GitHub token' });
+  }
+  
+  if (typeof token !== 'string' || token.length === 0) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Do not log token or include in error messages
+  let client;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (error) {
+    console.error('Failed to initialize Copilot client (token error)');
+    return res.status(500).json({ error: 'Authentication failed' });
+  }
   
   try {
     const systemPrompt = `
@@ -143,10 +158,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('Error during roasting session (error details suppressed)');
+    if (!res.headersSent) res.status(500).json({ error: 'The roaster overheated.' });
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (stopError) {
+      console.error('Error stopping client (error details suppressed)');
+    }
   }
 });
 
