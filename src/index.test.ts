@@ -15,13 +15,28 @@ const app = require('./index.ts').app || require('./index.ts').default;
 describe('Security Tests', () => {
   describe('HMAC Signature Verification', () => {
     it('should reject webhook requests without signature', async () => {
+      const payload = { action: 'opened' };
       const response = await request(app)
         .post('/agent')
-        .send({ action: 'opened' })
-        .set('X-GitHub-Token', 'ghp_validtoken');
+        .set('Content-Type', 'application/json')
+        .send(payload)
+        .set('X-GitHub-Token', VALID_GITHUB_TOKEN);
       
       expect(response.status).toBe(401);
       expect(response.body.error).toContain('Authentication');
+    });
+    
+    it('should reject webhook requests with invalid signature', async () => {
+      const payload = { action: 'opened' };
+      const invalidSignature = 'sha256=invalidsignature';
+      const response = await request(app)
+        .post('/agent')
+        .set('Content-Type', 'application/json')
+        .set('X-Hub-Signature-256', invalidSignature)
+        .set('X-GitHub-Token', VALID_GITHUB_TOKEN)
+        .send(payload);
+      
+      expect(response.status).toBe(401);
     });
 
     it('should reject webhook requests with invalid signature', async () => {
