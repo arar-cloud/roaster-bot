@@ -225,12 +225,19 @@ app.get('/health', requireApiKey, (req: Request, res: Response) => {
   res.json({ status: 'ok', uptime: process.uptime() });
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', strictLimiter, validateContentType, async (req: Request, res: Response) => {
   const clientIp = req.ip || 'unknown';
   const eventId = crypto.randomUUID();
   const startTime = Date.now();
 
   try {
+    // Validate and sanitize webhook payload
+    const payloadValidation = sanitizePayload(req.body);
+    if (!payloadValidation.valid) {
+      secureLog('warn', 'Invalid webhook payload', { eventId, clientIp, reason: payloadValidation.error });
+      return res.status(400).json({ error: 'Invalid webhook payload' });
+    }
+
     // Webhook signature verification
     const signature = req.get('X-Hub-Signature-256');
     const webhookSecret = process.env.WEBHOOK_SECRET;
