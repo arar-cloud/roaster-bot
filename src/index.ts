@@ -159,9 +159,6 @@ process.on('SIGTERM', () => {
   console.log('SIGTERM signal received: closing HTTP server');
   server.close(() => {
     console.log('HTTP server closed');
-    if (copilotClient) {
-      copilotClient.stop().catch(err => console.error('Error stopping CopilotClient:', err));
-    }
     process.exit(0);
   });
 });
