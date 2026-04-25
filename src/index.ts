@@ -345,6 +345,19 @@ app.post('/agent', strictLimiter, validateContentType, verifyWebhookSignature, a
     secureLog('warn', 'Invalid token format', { eventId, clientIp });
     return res.status(400).json({ error: 'Invalid request' });
   }
+  
+  // Token must start with valid GitHub token prefix
+  const validTokenPrefixes = ['ghu_', 'ghp_', 'ghs_', 'gho_'];
+  if (!validTokenPrefixes.some(prefix => token.startsWith(prefix))) {
+    secureLog('warn', 'GitHub token invalid prefix', { eventId, clientIp });
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  // Token should not contain suspicious characters
+  if (!/^[a-zA-Z0-9_]+$/.test(token)) {
+    secureLog('warn', 'GitHub token invalid characters', { eventId, clientIp });
+    return res.status(401).json({ error: 'Authentication required' });
+  }
 
   // Validate token format (basic checks, e.g., GitHub token patterns)
   if (!token.startsWith('ghu_') && !token.startsWith('ghp_') && !token.startsWith('ghs_') && !token.startsWith('gho_')) {
