@@ -68,12 +68,17 @@ function captureRawBody(req: any, res: Response, next: Function) {
   }
 }
 
+// Short-lived cache for computed signatures to avoid recomputation on retries
+const signatureCache = new Map<string, { sig: string; expires: number }>();
+const SIGNATURE_CACHE_TTL = 30 * 1000; // 30 seconds
+
 // Middleware: Verify webhook signature before rate limiting
 function verifyWebhookSignature(req: any, res: Response, next: Function) {
   if (req.path === '/agent' && req.method === 'POST') {
     const signature = req.get('X-Hub-Signature-256');
     const webhookSecret = process.env.WEBHOOK_SECRET;
 
+    // Early returns for missing configuration/headers (fail fast)
     if (!webhookSecret) {
       return res.status(500).send('Webhook secret not configured');
     }
@@ -85,7 +90,23 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    // Generate cache key from rawBody hash
+    const bodyHash = crypto.createHash('sha256').update(rawBody).digest('hex');
+    const cacheKey = bodyHash + ':' + webhookSecret;
+    const now = Date.now();
+
+    // Check cache first to avoid HMAC computation
+    let expectedSignature: string;
+    const cached = signatureCache.get(cacheKey);
+    if (cached && now < cached.expires) {
+      expectedSignature = cached.sig;
+    } else {
+      // Compute HMAC and cache result
+      expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+      signatureCache.set(cacheKey, { sig: expectedSignature, expires: now + SIGNATURE_CACHE_TTL });
+    }
+
+    // Timing-safe comparison last (after all preliminary checks)
     const isValid = crypto.timingCompare(signature, expectedSignature) === 0;
     
     if (!isValid) {
@@ -94,6 +115,16 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
   }
   next();
 }
+
+// Clean up expired signature cache entries
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of signatureCache.entries()) {
+    if (now > entry.expires) {
+      signatureCache.delete(key);
+    }
+  }
+}, 60 * 1000); // Check every minute
 
 app.use(verifyWebhookSignature);
 
