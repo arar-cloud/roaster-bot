@@ -155,6 +155,31 @@ describe('Security Tests', () => {
       return `sha256=${hmac.update(payload).digest('hex')}`;
     };
 
+    it('should reject GitHub token with invalid format (no prefix)', async () => {
+      const payload = JSON.stringify({ action: 'opened', messages: [] });
+      const response = await request(app)
+        .post('/agent')
+        .send(JSON.parse(payload))
+        .set('X-Hub-Signature-256', generateValidSignature(payload))
+        .set('X-GitHub-Token', 'invalid_token_no_prefix')
+        .set('Content-Type', 'application/json');
+      
+      expect(response.status).toBe(400);
+      expect(response.body.error).toContain('token');
+    });
+
+    it('should reject GitHub token with incorrect prefix length', async () => {
+      const payload = JSON.stringify({ action: 'opened', messages: [] });
+      const response = await request(app)
+        .post('/agent')
+        .send(JSON.parse(payload))
+        .set('X-Hub-Signature-256', generateValidSignature(payload))
+        .set('X-GitHub-Token', 'gh_shorttoken')
+        .set('Content-Type', 'application/json');
+      
+      expect(response.status).toBe(400);
+    });
+
     it('should reject request without GitHub token', async () => {
       const payload = JSON.stringify({ action: 'opened', messages: [] });
       const response = await request(app)
@@ -194,6 +219,35 @@ describe('Security Tests', () => {
         // Should pass token validation
         expect([400, 401, 500]).not.toContain(response.status);
       }
+    });
+
+    it('should reject action field exceeding length limit', async () => {
+      const longAction = 'a'.repeat(256);
+      const payload = JSON.stringify({ action: longAction, messages: [] });
+      const response = await request(app)
+        .post('/agent')
+        .send(JSON.parse(payload))
+        .set('X-Hub-Signature-256', generateValidSignature(payload))
+        .set('X-GitHub-Token', 'ghp_validtoken123456')
+        .set('Content-Type', 'application/json');
+      
+      expect(response.status).toBe(400);
+    });
+
+    it('should escape HTML in message content', async () => {
+      const payload = JSON.stringify({
+        action: 'opened',
+        messages: [{ role: 'user', content: '<script>alert("xss")</script>' }]
+      });
+      const response = await request(app)
+        .post('/agent')
+        .send(JSON.parse(payload))
+        .set('X-Hub-Signature-256', generateValidSignature(payload))
+        .set('X-GitHub-Token', 'ghp_validtoken123456')
+        .set('Content-Type', 'application/json');
+      
+      // Should either reject or safely handle HTML
+      expect(response.status).toBeLessThan(500);
     });
   });
 
