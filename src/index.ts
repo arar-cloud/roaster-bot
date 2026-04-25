@@ -146,13 +146,35 @@ const strictLimiter = rateLimit({
   skipFailedRequests: false,
 });
 
-// Content-Type validation middleware
+// Content-Type validation middleware - strict enforcement
 const validateContentType = (req: Request, res: Response, next: any) => {
   const contentType = req.get('Content-Type');
-  if (!contentType || !contentType.includes('application/json')) {
-    return res.status(415).json({ error: 'Content-Type must be application/json' });
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    if (!contentType) {
+      return res.status(400).json({ error: 'Content-Type header required' });
+    }
+    if (!contentType.startsWith('application/json')) {
+      return res.status(415).json({ error: 'Content-Type must be application/json' });
+    }
   }
   next();
+};
+
+// Stream size limiter to prevent payload bypass attacks
+const enforceStreamSizeLimit = (limit: number = 1048576) => { // 1MB default
+  return (req: Request, res: Response, next: any) => {
+    if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+      let size = 0;
+      req.on('data', (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > limit) {
+          res.status(413).json({ error: 'Payload too large' });
+          req.connection.destroy();
+        }
+      });
+    }
+    next();
+  };
 };
 
 // Configure CORS for webhook endpoints
