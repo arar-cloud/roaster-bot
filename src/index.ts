@@ -112,28 +112,41 @@ app.get('/', limiter, (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  const clientIp = req.ip || 'unknown';
+  const eventId = crypto.randomUUID();
+  const startTime = Date.now();
 
-  // Verify webhook signature with HMAC-SHA256
-  if (!webhookSecret) {
-    return res.status(500).json({ error: 'WEBHOOK_SECRET not configured' });
-  }
+  try {
+    // Webhook signature verification
+    const signature = req.get('X-Hub-Signature-256');
+    const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (!signature) {
-    return res.status(401).json({ error: 'Missing webhook signature' });
-  }
+    // Verify webhook signature with HMAC-SHA256
+    if (!webhookSecret) {
+      secureLog('error', 'WEBHOOK_SECRET not configured', { eventId, clientIp });
+      return res.status(500).json({ error: 'Server configuration error' });
+    }
 
-  const rawBody = req.rawBody;
-  if (!rawBody) return res.status(400).send('Missing raw body.');
+    if (!signature) {
+      secureLog('warn', 'Missing webhook signature', { eventId, clientIp });
+      return res.status(401).json({ error: 'Authentication required' });
+    }
 
-  const hmac = crypto.createHmac('sha256', webhookSecret);
-  const computed = `sha256=${hmac.update(rawBody).digest('hex')}`;
+    const rawBody = req.rawBody;
+    if (!rawBody) {
+      secureLog('warn', 'Missing request body', { eventId, clientIp });
+      return res.status(400).json({ error: 'Invalid request' });
+    }
 
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed))) {
-    return res.status(401).json({ error: 'Invalid webhook signature' });
-  }
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    const computed = `sha256=${hmac.update(rawBody).digest('hex')}`;
+
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(computed))) {
+      secureLog('warn', 'Invalid webhook signature', { eventId, clientIp, signatureMatch: false });
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    secureLog('info', 'Webhook signature verified', { eventId, clientIp });
 
   const token = req.get('X-GitHub-Token');
   
