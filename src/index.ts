@@ -24,6 +24,66 @@ const maskSecret = (secret: string, visibleChars: number = 4): string => {
   return secret.substring(0, visibleChars) + '*'.repeat(Math.max(3, secret.length - visibleChars));
 };
 
+// Webhook payload sanitization utility
+const sanitizePayload = (payload: any): { valid: boolean; error?: string; sanitized?: any } => {
+  if (!payload || typeof payload !== 'object') {
+    return { valid: false, error: 'Payload must be an object' };
+  }
+  
+  // Check payload size (rough estimate)
+  const payloadStr = JSON.stringify(payload);
+  if (payloadStr.length > 65536) { // 64KB limit for GitHub webhook payload
+    return { valid: false, error: 'Payload exceeds maximum size' };
+  }
+  
+  // Validate required GitHub webhook fields
+  if (typeof payload.action !== 'string' || payload.action.length === 0 || payload.action.length > 128) {
+    return { valid: false, error: 'Invalid action field' };
+  }
+  
+  // Sanitize pull_request content if present
+  if (payload.pull_request) {
+    const pr = payload.pull_request;
+    if (typeof pr.title !== 'string' || pr.title.length > 1024) {
+      return { valid: false, error: 'Invalid PR title' };
+    }
+    if (typeof pr.body !== 'string' || pr.body.length > 65536) {
+      return { valid: false, error: 'Invalid PR body' };
+    }
+    // Escape HTML/script content
+    pr.title = escapeHtml(pr.title);
+    pr.body = escapeHtml(pr.body);
+  }
+  
+  // Sanitize push commit content if present
+  if (Array.isArray(payload.commits)) {
+    if (payload.commits.length > 100) {
+      return { valid: false, error: 'Too many commits in payload' };
+    }
+    for (const commit of payload.commits) {
+      if (typeof commit.message !== 'string' || commit.message.length > 4096) {
+        return { valid: false, error: 'Invalid commit message' };
+      }
+      commit.message = escapeHtml(commit.message);
+    }
+  }
+  
+  return { valid: true, sanitized: payload };
+};
+
+// HTML escape utility to prevent injection
+const escapeHtml = (text: string): string => {
+  const map: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+    '`': '&#96;'
+  };
+  return text.replace(/[&<>"'`]/g, (char) => map[char]);
+};
+
 // Structured logging with redaction
 const secureLog = (level: string, message: string, context?: Record<string, any>) => {
   const redactedContext = context
