@@ -27,6 +27,17 @@ const port = process.env.PORT || 3000;
 app.use(helmet());
 app.use(compression());
 
+// Middleware: Validate Content-Type before JSON parsing
+app.use((req: Request, res: Response, next: Function) => {
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+    const contentType = req.get('Content-Type');
+    if (contentType && !contentType.includes('application/json')) {
+      return res.status(400).send('Content-Type must be application/json');
+    }
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
