@@ -43,6 +43,36 @@ app.use(express.json({
 
 app.use(express.static('public'));
 
+// Middleware: Verify webhook signature before rate limiting
+function verifyWebhookSignature(req: any, res: Response, next: Function) {
+  if (req.path === '/agent' && req.method === 'POST') {
+    const signature = req.get('X-Hub-Signature-256');
+    const webhookSecret = process.env.WEBHOOK_SECRET;
+
+    if (!webhookSecret) {
+      return res.status(500).send('Webhook secret not configured');
+    }
+
+    if (!signature) {
+      return res.status(401).send('Missing signature header');
+    }
+
+    const rawBody = req.rawBody;
+    if (!rawBody) return res.status(400).send('Missing raw body.');
+
+    const expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    const isValid = crypto.timingCompare(signature, expectedSignature);
+    
+    if (!isValid) {
+      return res.status(401).send('Invalid signature');
+    }
+  }
+  next();
+}
+
+app.use(verifyWebhookSignature);
+app.use(limiter);
+
 function getCopilotClient(token: string): CopilotClient {
   // Create per-request client instance to prevent token cross-contamination
   // Each request gets its own isolated CopilotClient with dedicated token context
