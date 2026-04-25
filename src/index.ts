@@ -218,6 +218,13 @@ app.get('/', limiter, (req, res) => {
   `);
 });
 
+// Protected health check endpoint
+app.get('/health', requireApiKey, (req: Request, res: Response) => {
+  const clientIp = req.ip || 'unknown';
+  secureLog('info', 'Health check accessed', { clientIp });
+  res.json({ status: 'ok', uptime: process.uptime() });
+});
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   const clientIp = req.ip || 'unknown';
   const eventId = crypto.randomUUID();
