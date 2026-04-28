@@ -77,6 +77,18 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip counting failed requests to prevent attackers from exhausting rate limit on retries
+  skipFailedRequests: true,
+  // Skip counting successful requests from public endpoints (optional)
+  skipSuccessfulRequests: false,
+});
+
+// Middleware to enforce request payload size limits
+const requestSizeLimit = express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  },
+  limit: '1mb', // Prevent oversized payload DoS attacks
 });
 
 app.use(express.json({
