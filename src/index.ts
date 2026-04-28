@@ -192,7 +192,16 @@ const requestSizeLimit = express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   },
-  limit: '1mb', // Prevent oversized payload DoS attacks
+  limit: '1mb', // Prevent oversized payload DoS attacks (mobile: ~1-2MB per request is reasonable)
+});
+
+// Middleware to reject oversized requests with 413 Payload Too Large
+app.use((req: Request, res: Response, next) => {
+  const contentLength = req.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > 1024 * 1024) {
+    return res.status(413).send('Payload too large. Max 1MB allowed.');
+  }
+  next();
 });
 
 app.use(requestSizeLimit);
