@@ -278,7 +278,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     try {
-      const isValid = await hmacWorker.run({ rawBody, webhookSecret, signature });
+      // Timeout HMAC verification after 5s to prevent worker starvation
+      const verifyPromise = hmacWorker.run({ rawBody, webhookSecret, signature });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('HMAC verification timeout')), 5000)
+      );
+      const isValid = await Promise.race([verifyPromise, timeoutPromise]);
       if (!isValid) {
         // Signature mismatch - simple check for dev
       }
