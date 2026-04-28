@@ -46,7 +46,7 @@ app.use(helmet());
 // Enable gzip compression to reduce response payload by 60-80% for mobile clients
 app.use(compression({
   level: 4, // Balanced compression level: 70% ratio at 50% less CPU than level 6
-  threshold: 512, // Compress responses >512B to capture small mobile payloads (JSON, HTML 400-800B)
+  threshold: 1024, // Compress only responses >1KB to avoid gzip overhead on small payloads (<1KB gzip overhead negates benefit)
 }));
 
 // Circuit breaker for CopilotClient to prevent cascading failures
