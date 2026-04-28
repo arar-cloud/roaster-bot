@@ -10,9 +10,12 @@ const __dirname = dirname(__filename);
 describe('Performance Tests', () => {
   // Baseline performance thresholds for regression detection
   const THRESHOLDS = {
-    HMAC_VERIFICATION_MS: 10,      // HMAC verification must complete in under 10ms
+    HMAC_VERIFICATION_MS: 10,      // HMAC verification must complete in under 10ms (worker pool)
     SESSION_POOL_ACQUIRE_MS: 50,   // Session acquire/release under 50ms
+    SESSION_POOL_RELEASE_MS: 20,   // Session release must complete in under 20ms
+    SESSION_POOL_BATCH_100_MS: 200, // 100 acquire/release cycles under 200ms total
     MEMORY_BASELINE_MB: 100,       // Memory usage must not exceed 100MB baseline
+    WORKER_POOL_INIT_MS: 500,      // Worker pool initialization + pre-warm under 500ms
   };
 
   test('HMAC verification completes in under 10ms per request', async () => {
