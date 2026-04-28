@@ -36,6 +36,35 @@ const copilotClient = new CopilotClient({
   token: process.env.GITHUB_TOKEN || '',
 }) as any; // Safe: we control token input
 
+// Session pool to reuse connections and avoid per-request instantiation
+class SessionPool {
+  private sessions: any[] = [];
+  private inUse: Set<any> = new Set();
+  private maxPoolSize = 5;
+
+  async acquire() {
+    // Return available session or create new one if under limit
+    let session = this.sessions.find((s) => !this.inUse.has(s));
+    if (!session && this.sessions.length < this.maxPoolSize) {
+      session = await copilotClient.createSession({
+        model: "gpt-4o",
+        streaming: true,
+      });
+      this.sessions.push(session);
+    }
+    if (session) {
+      this.inUse.add(session);
+    }
+    return session;
+  }
+
+  release(session: any) {
+    this.inUse.delete(session);
+  }
+}
+
+const sessionPool = new SessionPool();
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -74,7 +103,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Reuse cached copilotClient (initialized at module load)
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
@@ -90,15 +118,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs (using cached singleton)
-    const session = await copilotClient.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
+    // Acquire session from pool instead of creating new one per request
+    const session = await sessionPool.acquire();
+    if (!session) {
+      return res.status(503).send('Session pool exhausted. Try again later.');
+    }
+
+    // Update system message for this request (reusing connection)
+    if (session.updateSystemMessage) {
+      await session.updateSystemMessage({
         mode: "replace",
         content: systemPrompt
-      }
-    });
+      });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -117,6 +149,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     res.write('data: [DONE]\n\n');
     res.end();
+    sessionPool.release(session);
 
   } catch (error) {
     console.error('Error:', error);
