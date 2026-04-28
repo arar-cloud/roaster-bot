@@ -71,8 +71,10 @@ class SessionPool {
       }
     }
 
+    // Remove all expired sessions from both Map and Set to prevent memory leak
     for (const session of toRemove) {
       this.sessions.delete(session);
+      this.inUse.delete(session);
     }
   }
 
