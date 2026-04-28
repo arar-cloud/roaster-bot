@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
+import compression from 'compression';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
@@ -30,6 +31,12 @@ const hmacWorker = new Piscina({
 });
 
 app.use(helmet());
+
+// Enable gzip compression to reduce response payload by 60-80% for mobile clients
+app.use(compression({
+  level: 6, // Balance between compression ratio and CPU usage
+  threshold: 512, // Only compress responses larger than 512 bytes
+}));
 
 // Initialize CopilotClient once at module load time with only token (no env spread)
 const copilotClient = new CopilotClient({
