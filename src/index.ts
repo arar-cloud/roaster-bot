@@ -197,7 +197,22 @@ const requestSizeLimit = express.json({
 
 app.use(requestSizeLimit);
 
-app.use(express.static('public'));
+// Cache-Control middleware for static assets and API responses
+app.use((req: Request, res: Response, next) => {
+  // Cache static assets for 1 hour with ETag validation
+  if (req.path.startsWith('/public') || req.path === '/index.html' || req.path === '/') {
+    res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+  } else {
+    // API responses should not be cached
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  }
+  next();
+});
+
+app.use(express.static('public', {
+  // Serve with ETag for conditional requests
+  etag: true,
+}));
 
 app.get('/', limiter, (req: Request, res: Response) => {
   res.sendFile('index.html', { root: 'public' });
