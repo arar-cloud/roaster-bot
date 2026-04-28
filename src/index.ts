@@ -228,11 +228,16 @@ const limiter = rateLimit({
   },
 });
 
+// Middleware to capture raw body without parsing JSON sync on main thread
+app.use(express.raw({ type: 'application/json', limit: '1mb' }), (req: Request, res: Response, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    (req as any).rawBody = req.body.toString('utf8');
+  }
+  next();
+});
+
 // Middleware to enforce request payload size limits
 const requestSizeLimit = express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  },
   limit: '1mb', // Prevent oversized payload DoS attacks (mobile: ~1-2MB per request is reasonable)
 });
 
