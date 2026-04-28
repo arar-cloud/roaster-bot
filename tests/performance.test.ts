@@ -29,11 +29,25 @@ describe('Performance Tests', () => {
 
     const baselineMemory = process.memoryUsage().heapUsed / 1024 / 1024;
     const startTime = performance.now();
+    
+    // Run HMAC verification
     const result = await hmacWorker.run({ rawBody, webhookSecret, signature });
+    
     const elapsed = performance.now() - startTime;
+    const finalMemory = process.memoryUsage().heapUsed / 1024 / 1024;
 
+    // Assert result is valid
     expect(result).toBe(true);
-    expect(elapsed).toBeLessThan(10);
+    
+    // Assert latency is under 10ms baseline
+    expect(elapsed).toBeLessThan(THRESHOLDS.HMAC_VERIFICATION_MS);
+    
+    // Assert memory did not spike beyond baseline (allow 10MB overhead for worker thread)
+    const memoryDelta = finalMemory - baselineMemory;
+    expect(memoryDelta).toBeLessThan(10);
+    
+    console.log(`✓ HMAC verification: ${elapsed.toFixed(2)}ms (threshold: ${THRESHOLDS.HMAC_VERIFICATION_MS}ms)`);
+    console.log(`✓ Memory delta: ${memoryDelta.toFixed(2)}MB`);
 
     await hmacWorker.destroy();
   }, 30000);
