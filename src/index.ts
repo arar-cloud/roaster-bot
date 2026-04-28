@@ -66,32 +66,48 @@ class SessionPool {
   private inUse: Set<any> = new Set();
   private maxPoolSize = 5;
   private readonly SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
-  private lastCleanupTime = 0;
-  private readonly CLEANUP_INTERVAL_MS = 90000; // Lazy cleanup every 90s instead of aggressive 30s
+  private cleanupRunning = false;
+  private readonly CLEANUP_INTERVAL_MS = 90000; // Background cleanup every 90s
+  private cleanupTimer: NodeJS.Timeout | null = null;
 
   constructor() {
-    // No active interval; cleanup triggered on-demand only (lazy eviction)
+    // Start background cleanup timer to avoid per-request overhead
+    this.startBackgroundCleanup();
+  }
+
+  private startBackgroundCleanup() {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupIdleSessions();
+    }, this.CLEANUP_INTERVAL_MS);
+    // Allow timer to be garbage collected if no other references exist
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref();
+    }
   }
 
   private cleanupIdleSessions() {
-    const now = Date.now();
-    // Only run cleanup if CLEANUP_INTERVAL_MS has elapsed
-    if (now - this.lastCleanupTime < this.CLEANUP_INTERVAL_MS) return;
-    
-    this.lastCleanupTime = now;
-    const toRemove: any[] = [];
+    // Skip if cleanup already in progress (debounce guard)
+    if (this.cleanupRunning) return;
+    this.cleanupRunning = true;
 
-    for (const [session, metadata] of this.sessions.entries()) {
-      // Remove sessions idle for more than SESSION_IDLE_TIMEOUT_MS
-      if (!this.inUse.has(session) && now - metadata.lastUsedAt > this.SESSION_IDLE_TIMEOUT_MS) {
-        toRemove.push(session);
+    try {
+      const now = Date.now();
+      const toRemove: any[] = [];
+
+      for (const [session, metadata] of this.sessions.entries()) {
+        // Remove sessions idle for more than SESSION_IDLE_TIMEOUT_MS
+        if (!this.inUse.has(session) && now - metadata.lastUsedAt > this.SESSION_IDLE_TIMEOUT_MS) {
+          toRemove.push(session);
+        }
       }
-    }
 
-    // Remove all expired sessions from both Map and Set to prevent memory leak
-    for (const session of toRemove) {
-      this.sessions.delete(session);
-      this.inUse.delete(session);
+      // Remove all expired sessions from both Map and Set to prevent memory leak
+      for (const session of toRemove) {
+        this.sessions.delete(session);
+        this.inUse.delete(session);
+      }
+    } finally {
+      this.cleanupRunning = false;
     }
   }
 
