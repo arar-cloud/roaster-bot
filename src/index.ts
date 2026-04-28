@@ -46,6 +46,16 @@ function verifyHmacSync(rawBody: string, webhookSecret: string, signature: strin
   }
 }
 
+// POST /agent handler using captured rawBody for HMAC verification
+app.post('/agent', async (req: Request, res: Response) => {
+  try {
+    const signature = req.headers['x-github-hook-id'] as string;
+    const webhookSecret = process.env.GITHUB_WEBHOOK_SECRET || '';
+    
+    // Use rawBody captured by middleware instead of regenerating
+    const isValid = verifyHmacSync((req as any).rawBody || '', webhookSecret, signature);
+}
+
 app.use(helmet());
 
 // Capture raw body before JSON parsing for HMAC verification (must happen before express.json())
