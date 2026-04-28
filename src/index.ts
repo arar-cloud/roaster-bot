@@ -60,9 +60,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Reuse cached copilotClient (initialized at module load)
-  // Override token per request if needed
-  const client = copilotClient;
-  
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
@@ -78,7 +75,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs
+    // Create session following SDK docs (using cached singleton)
     const session = await copilotClient.createSession({
       model: "gpt-4o",
       streaming: true,
