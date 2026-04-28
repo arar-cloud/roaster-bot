@@ -79,7 +79,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
+    const session = await copilotClient.createSession({
       model: "gpt-4o",
       streaming: true,
       systemMessage: {
