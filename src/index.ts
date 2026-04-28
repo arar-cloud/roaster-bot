@@ -91,11 +91,7 @@ const requestSizeLimit = express.json({
   limit: '1mb', // Prevent oversized payload DoS attacks
 });
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
+app.use(requestSizeLimit);
 
 app.use(express.static('public'));
 
