@@ -56,16 +56,23 @@ class CircuitBreaker {
   private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED'; // CLOSED=healthy, OPEN=failing, HALF_OPEN=testing
   private readonly FAILURE_THRESHOLD = 5; // Open after 5 consecutive failures
   private readonly SUCCESS_RESET = 3; // Reset on 3 successes in HALF_OPEN
-  private readonly TIMEOUT_MS = 60000; // Retry after 60s
+  private readonly INITIAL_TIMEOUT_MS = 60000; // Start at 60s
+  private readonly MAX_TIMEOUT_MS = 240000; // Cap at 240s
   private openedAt: number = 0;
+  private openCount = 0; // Track how many times circuit has opened for exponential backoff
 
   async execute<T>(fn: () => Promise<T>): Promise<T> {
     if (this.state === 'OPEN') {
-      if (Date.now() - this.openedAt > this.TIMEOUT_MS) {
+      // Exponential backoff: 60s, 120s, 240s (max)
+      const exponentialTimeout = Math.min(
+        this.INITIAL_TIMEOUT_MS * Math.pow(2, this.openCount - 1),
+        this.MAX_TIMEOUT_MS
+      );
+      if (Date.now() - this.openedAt > exponentialTimeout) {
         this.state = 'HALF_OPEN';
         this.successCount = 0;
       } else {
-        throw new Error('Circuit breaker OPEN: GitHub API unavailable');
+        throw new Error('Circuit breaker OPEN: GitHub API unavailable (exponential backoff active)');
       }
     }
 
@@ -94,6 +101,18 @@ class CircuitBreaker {
     if (this.failureCount >= this.FAILURE_THRESHOLD) {
       this.state = 'OPEN';
       this.openedAt = Date.now();
+      this.openCount++; // Increment for next exponential backoff calculation
+    }
+  }
+
+  private onSuccess() {
+    this.failureCount = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.successCount++;
+      if (this.successCount >= this.SUCCESS_RESET) {
+        this.state = 'CLOSED';
+        this.openCount = 0; // Reset exponential backoff counter on recovery
+      }
     }
   }
 }
