@@ -112,9 +112,6 @@ class SessionPool {
   }
 
   async acquire() {
-    // Trigger lazy cleanup before acquiring to evict idle sessions
-    this.cleanupIdleSessions();
-    
     // Return available session that is not idle, or create new one if under limit
     const now = Date.now();
     let session = Array.from(this.sessions.entries())
@@ -156,8 +153,6 @@ class SessionPool {
     // Update lastUsedAt on release for idle timeout tracking
     const metadata = this.sessions.get(session);
     if (metadata) metadata.lastUsedAt = Date.now();
-    // Trigger lazy cleanup on release
-    this.cleanupIdleSessions();
   }
 
   shutdown() {
