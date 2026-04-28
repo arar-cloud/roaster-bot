@@ -189,10 +189,15 @@ class SessionPool {
 
     if (!session && this.sessions.size < this.maxPoolSize) {
       try {
-        session = await copilotClient.createSession({
-          model: "gpt-4o",
-          streaming: true,
-        });
+        // Wrap with circuit breaker and retry logic to handle GitHub API degradation
+        session = await circuitBreaker.execute(() =>
+          retryWithBackoff(() =>
+            copilotClient.createSession({
+              model: "gpt-4o",
+              streaming: true,
+            })
+          )
+        );
         if (!session) {
           console.warn('Failed to create session: copilotClient.createSession returned undefined');
           return undefined;
