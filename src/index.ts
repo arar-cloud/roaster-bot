@@ -313,10 +313,32 @@ async function triggerAsyncPrewarm() {
   }
 }
 
-// Distributed rate limit store mock for serverless (in production, use Redis/Memcached)
+// Distributed rate limit store with auto-cleanup to prevent memory leaks at scale
 class DistributedRateLimitStore {
   private local: Map<string, { count: number; resetTime: number }> = new Map();
   private readonly WINDOW_MS = 15 * 60 * 1000;
+  private readonly CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // Cleanup every 5 minutes
+  private cleanupTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    // Auto-cleanup expired entries to prevent unbounded memory growth
+    this.cleanupTimer = setInterval(() => {
+      const now = Date.now();
+      let cleaned = 0;
+      for (const [key, entry] of this.local.entries()) {
+        if (now > entry.resetTime) {
+          this.local.delete(key);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        console.debug(`Rate limit store: cleaned ${cleaned} expired entries`);
+      }
+    }, this.CLEANUP_INTERVAL_MS);
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref(); // Allow process to exit if this is the only active timer
+    }
+  }
 
   get(key: string): number {
     const entry = this.local.get(key);
@@ -338,6 +360,14 @@ class DistributedRateLimitStore {
 
   reset(key: string): void {
     this.local.delete(key);
+  }
+
+  shutdown(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    this.local.clear();
   }
 }
 
