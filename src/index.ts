@@ -153,6 +153,14 @@ class SessionPool {
 
 const sessionPool = new SessionPool();
 
+// Start server and pre-warm pools
+(async () => {
+  await prewarmWorkerPool();
+  app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+})();
+
 // Request queue to prevent client starvation under high concurrency
 class RequestQueue {
   private queue: Array<() => Promise<any>> = [];
