@@ -10,7 +10,7 @@ export default async function verifyHmac({
   signature: string;
 }): Promise<boolean> {
   const hmac = crypto.createHmac('sha256', webhookSecret);
-  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  const digest = hmac.update(rawBody).digest('hex');
   const expectedSignature = 'sha256=' + digest;
   
   // Use crypto.timingSafeEqual to prevent timing attacks
