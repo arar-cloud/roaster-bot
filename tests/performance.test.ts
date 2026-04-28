@@ -3,6 +3,8 @@ import Piscina from 'piscina';
 import { join } from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+// Import SessionPool for testing (must be exported from src/index.ts)
+// Note: SessionPool is defined locally in tests for isolation; in production it's internal to src/index.ts
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
