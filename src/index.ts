@@ -77,6 +77,9 @@ class SessionPool {
   }
 
   async acquire() {
+    // Trigger lazy cleanup before acquiring to evict idle sessions
+    this.cleanupIdleSessions();
+    
     // Return available session that is not idle, or create new one if under limit
     const now = Date.now();
     let session = Array.from(this.sessions.entries())
