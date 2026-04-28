@@ -35,7 +35,7 @@ app.use(helmet());
 // Enable gzip compression to reduce response payload by 60-80% for mobile clients
 app.use(compression({
   level: 6, // Balance between compression ratio and CPU usage
-  threshold: 2048, // Only compress responses larger than 2048 bytes to reduce CPU overhead on small payloads
+  threshold: 1024, // Compress responses >1KB to improve mobile bandwidth; most API responses are 400-800B but benefit from compression when aggregated
 }));
 
 // Initialize CopilotClient once at module load time with only token (no env spread)
