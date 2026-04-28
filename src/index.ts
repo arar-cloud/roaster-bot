@@ -377,7 +377,7 @@ app.get('/', limiter, (req: Request, res: Response) => {
   res.sendFile('index.html', { root: 'public' });
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, requestSizeLimit, async (req: Request, res: Response) => {
   // Webhook signature verification (async to prevent event loop blocking)
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
