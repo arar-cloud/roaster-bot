@@ -169,6 +169,13 @@ const limiter = rateLimit({
   skipFailedRequests: true,
   // Skip counting successful requests from public endpoints (optional)
   skipSuccessfulRequests: false,
+  // Trust proxy to extract real client IP (Vercel, Cloudflare, etc.)
+  keyGenerator: (req) => {
+    // Extract real IP from proxy headers
+    const forwarded = req.get('x-forwarded-for');
+    if (forwarded) return forwarded.split(',')[0].trim();
+    return req.ip || req.socket.remoteAddress || 'unknown';
+  },
 });
 
 // Middleware to enforce request payload size limits
