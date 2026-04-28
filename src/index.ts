@@ -57,6 +57,74 @@ app.use(compression({
   threshold: 512, // Compress responses >512B to capture small mobile payloads (JSON, HTML 400-800B)
 }));
 
+// Circuit breaker for CopilotClient to prevent cascading failures
+class CircuitBreaker {
+  private failureCount = 0;
+  private successCount = 0;
+  private state: 'CLOSED' | 'OPEN' | 'HALF_OPEN' = 'CLOSED'; // CLOSED=healthy, OPEN=failing, HALF_OPEN=testing
+  private readonly FAILURE_THRESHOLD = 5; // Open after 5 consecutive failures
+  private readonly SUCCESS_RESET = 3; // Reset on 3 successes in HALF_OPEN
+  private readonly TIMEOUT_MS = 60000; // Retry after 60s
+  private openedAt: number = 0;
+
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.state === 'OPEN') {
+      if (Date.now() - this.openedAt > this.TIMEOUT_MS) {
+        this.state = 'HALF_OPEN';
+        this.successCount = 0;
+      } else {
+        throw new Error('Circuit breaker OPEN: GitHub API unavailable');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this.onSuccess();
+      return result;
+    } catch (err) {
+      this.onFailure();
+      throw err;
+    }
+  }
+
+  private onSuccess() {
+    this.failureCount = 0;
+    if (this.state === 'HALF_OPEN') {
+      this.successCount++;
+      if (this.successCount >= this.SUCCESS_RESET) {
+        this.state = 'CLOSED';
+      }
+    }
+  }
+
+  private onFailure() {
+    this.failureCount++;
+    if (this.failureCount >= this.FAILURE_THRESHOLD) {
+      this.state = 'OPEN';
+      this.openedAt = Date.now();
+    }
+  }
+}
+
+const circuitBreaker = new CircuitBreaker();
+
+// Retry logic with exponential backoff
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err as Error;
+      if (attempt < maxRetries - 1) {
+        const delayMs = Math.min(1000 * Math.pow(2, attempt), 10000); // Cap at 10s
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastError || new Error('Retry exhausted');
+}
+
 // Initialize CopilotClient once at module load time with only token (no env spread)
 const copilotClient = new CopilotClient({
   token: process.env.GITHUB_TOKEN || '',
