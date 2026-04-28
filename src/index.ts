@@ -354,8 +354,6 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
-app.use(requestSizeLimit);
-
 // Cache-Control middleware for static assets and API responses
 app.use((req: Request, res: Response, next) => {
   // Cache static assets for 1 hour with ETag validation
