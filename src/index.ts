@@ -24,10 +24,12 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Initialize worker pool for async HMAC verification
+// Initialize worker pool for async HMAC verification with timeout and backpressure
 const hmacWorker = new Piscina({
   filename: join(__dirname, 'hmac-worker.ts'),
   maxThreads: 4,
+  idleTimeout: 30000, // Reclaim idle threads after 30s
+  maxQueue: 16, // Queue max 16 tasks before rejecting (backpressure)
 });
 
 // Pre-warm worker pool threads to eliminate cold-start latency
