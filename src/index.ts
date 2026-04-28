@@ -121,6 +121,8 @@ class SessionPool {
     // Update lastUsedAt on release for idle timeout tracking
     const metadata = this.sessions.get(session);
     if (metadata) metadata.lastUsedAt = Date.now();
+    // Trigger lazy cleanup on release
+    this.cleanupIdleSessions();
   }
 
   shutdown() {
