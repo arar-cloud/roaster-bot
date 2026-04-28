@@ -214,4 +214,30 @@ describe('Performance Tests', () => {
     // Verify cleanup runs frequently enough to evict idle sessions
     expect(cleanup_interval_ms).toBeLessThan(idle_timeout_ms);
   });
+
+  test('SessionPool memory stays bounded after cleanup cycles for leak detection', async () => {
+    const pool = new SessionPool();
+    const numSessions = 5;
+    const mockSessions = Array(numSessions).fill(null).map((_, i) => ({
+      id: `session-${i}`,
+      updateSystemMessage: async () => {}
+    }));
+    
+    // Record baseline memory
+    const initialMemory = process.memoryUsage().heapUsed;
+    
+    // Add sessions to pool, then cleanup multiple times to detect leaks
+    for (let cycle = 0; cycle < 3; cycle++) {
+      for (const session of mockSessions) {
+        (pool as any).sessions.set(session, { createdAt: Date.now(), lastUsedAt: Date.now() });
+      }
+      (pool as any).cleanupIdleSessions();
+    }
+    
+    const finalMemory = process.memoryUsage().heapUsed;
+    const leakSize = (finalMemory - initialMemory) / (1024 * 1024);
+    console.log(`Memory after cleanup: ${leakSize.toFixed(2)}MB allocated (baseline: <${BASELINE.SESSION_POOL_MEMORY_MB}MB)`);
+    expect(leakSize).toBeLessThan(BASELINE.SESSION_POOL_MEMORY_MB);
+    pool.shutdown();
+  });
 });
