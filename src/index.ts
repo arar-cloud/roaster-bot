@@ -283,11 +283,42 @@ class RequestQueue {
 
 const requestQueue = new RequestQueue();
 
+// Distributed rate limit store mock for serverless (in production, use Redis/Memcached)
+class DistributedRateLimitStore {
+  private local: Map<string, { count: number; resetTime: number }> = new Map();
+  private readonly WINDOW_MS = 15 * 60 * 1000;
+
+  get(key: string): number {
+    const entry = this.local.get(key);
+    if (!entry) return 0;
+    if (Date.now() > entry.resetTime) {
+      this.local.delete(key);
+      return 0;
+    }
+    return entry.count;
+  }
+
+  set(key: string, count: number): void {
+    const now = Date.now();
+    this.local.set(key, {
+      count,
+      resetTime: now + this.WINDOW_MS,
+    });
+  }
+
+  reset(key: string): void {
+    this.local.delete(key);
+  }
+}
+
+const distributedStore = new DistributedRateLimitStore();
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  store: distributedStore as any, // Cast to satisfy express-rate-limit interface
   // Skip counting failed requests to prevent attackers from exhausting rate limit on retries
   skipFailedRequests: true,
   // Skip counting successful requests from public endpoints (optional)
