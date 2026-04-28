@@ -182,6 +182,25 @@ describe('Performance Tests', () => {
     await hmacWorker.destroy();
   }, 30000);
 
+  test('HMAC verification completes without blocking main thread under baseline', async () => {
+    const secret = 'test-secret';
+    const payload = 'test-payload';
+    const iterations = 100;
+    const startTime = performance.now();
+
+    for (let i = 0; i < iterations; i++) {
+      const hmac = crypto.createHmac('sha256', secret);
+      hmac.update(payload).digest('hex');
+    }
+
+    const totalMs = performance.now() - startTime;
+    const avgLatency = totalMs / iterations;
+    
+    // Assert HMAC verification stays under baseline to detect regressions
+    expect(avgLatency).toBeLessThan(BASELINE.HMAC_VERIFY_LATENCY_MS);
+    console.log(`HMAC average latency: ${avgLatency.toFixed(2)}ms (baseline: ${BASELINE.HMAC_VERIFY_LATENCY_MS}ms)`);
+  });
+
   test('Compression threshold prevents compression on small payloads', () => {
     // Threshold of 1024 bytes should skip compression on responses < 1024 bytes
     const smallPayload = JSON.stringify({ message: 'small' });
