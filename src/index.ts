@@ -79,18 +79,32 @@ class SessionPool {
       .find(([s]) => !this.inUse.has(s) && now - this.sessions.get(s)!.lastUsedAt < this.SESSION_IDLE_TIMEOUT_MS)?.[0];
 
     if (!session && this.sessions.size < this.maxPoolSize) {
-      session = await copilotClient.createSession({
-        model: "gpt-4o",
-        streaming: true,
-      });
-      this.sessions.set(session, { createdAt: now, lastUsedAt: now });
+      try {
+        session = await copilotClient.createSession({
+          model: "gpt-4o",
+          streaming: true,
+        });
+        if (!session) {
+          console.warn('Failed to create session: copilotClient.createSession returned undefined');
+          return undefined;
+        }
+        this.sessions.set(session, { createdAt: now, lastUsedAt: now });
+      } catch (err) {
+        console.error('Failed to create new session:', err);
+        return undefined;
+      }
     }
 
     if (session) {
-      this.inUse.add(session);
-      // Update lastUsedAt on acquire
-      const metadata = this.sessions.get(session);
-      if (metadata) metadata.lastUsedAt = Date.now();
+      // Double-check session is tracked before marking in-use
+      if (this.sessions.has(session)) {
+        this.inUse.add(session);
+        const metadata = this.sessions.get(session);
+        if (metadata) metadata.lastUsedAt = Date.now();
+      } else {
+        console.warn('Attempted to acquire untracked session');
+        return undefined;
+      }
     }
     return session;
   }
