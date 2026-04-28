@@ -18,6 +18,28 @@ describe('Performance Tests', () => {
     WORKER_POOL_INIT_MS: 500,      // Worker pool initialization + pre-warm under 500ms
   };
 
+  test('Worker pool pre-warms within 500ms on startup', async () => {
+    const startTime = performance.now();
+    const testWorker = new Piscina({
+      filename: join(__dirname, '../src/hmac-worker.ts'),
+      maxThreads: 4,
+    });
+    
+    // Pre-warm 4 threads
+    const prewarmTasks = Array(4).fill(null).map(() =>
+      testWorker.run({
+        rawBody: 'warmup',
+        webhookSecret: 'warmup-secret',
+        signature: 'sha256=warmup'
+      }).catch(() => {})
+    );
+    await Promise.all(prewarmTasks);
+    const elapsed = performance.now() - startTime;
+    
+    expect(elapsed).toBeLessThan(THRESHOLDS.WORKER_POOL_INIT_MS);
+    await testWorker.destroy();
+  });
+
   test('HMAC verification completes in under 10ms per request', async () => {
     const hmacWorker = new Piscina({
       filename: join(__dirname, '../src/hmac-worker.ts'),
