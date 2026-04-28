@@ -27,6 +27,7 @@ describe('Performance Tests', () => {
     const digest = hmac.update(rawBody).digest('hex');
     const signature = 'sha256=' + digest;
 
+    const baselineMemory = process.memoryUsage().heapUsed / 1024 / 1024;
     const startTime = performance.now();
     const result = await hmacWorker.run({ rawBody, webhookSecret, signature });
     const elapsed = performance.now() - startTime;
