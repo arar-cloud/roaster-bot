@@ -156,9 +156,6 @@ const sessionPool = new SessionPool();
 // Start server and pre-warm pools
 (async () => {
   await prewarmWorkerPool();
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-  });
 })();
 
 // Request queue to prevent client starvation under high concurrency
@@ -336,9 +333,13 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-const server = app.listen(port, () => {
-  console.log(`Server running on ${port}`);
-});
+// Start server after pre-warming worker pool
+const server = await (async () => {
+  await prewarmWorkerPool();
+  return app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+})();
 
 // Graceful shutdown: terminate worker pool and session pool on app exit
 const gracefulShutdown = async () => {
