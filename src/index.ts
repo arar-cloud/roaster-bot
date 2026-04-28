@@ -48,6 +48,18 @@ function verifyHmacSync(rawBody: string, webhookSecret: string, signature: strin
 
 app.use(helmet());
 
+// Capture raw body before JSON parsing for HMAC verification (must happen before express.json())
+app.use((req: Request, res: Response, next: any) => {
+  let data = '';
+  req.on('data', (chunk: Buffer) => {
+    data += chunk.toString('utf8');
+  });
+  req.on('end', () => {
+    (req as any).rawBody = data;
+    next();
+  });
+});
+
 // Restrict request body size to 100KB to prevent memory exhaustion DoS attacks with streaming payloads
 // GitHub webhooks are typically <10KB; 100KB provides safety margin without blocking legitimate requests
 app.use(express.json({ limit: '100kb' }));
