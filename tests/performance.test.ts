@@ -40,6 +40,23 @@ describe('Performance Tests', () => {
     await testWorker.destroy();
   });
 
+  test('SessionPool release completes in under 20ms', async () => {
+    const pool = new SessionPool();
+    // Mock session object for testing
+    const mockSession = { id: 'test-session', updateSystemMessage: async () => {} };
+    
+    // Manually add to pool to simulate acquired state
+    (pool as any).sessions.set(mockSession, { createdAt: Date.now(), lastUsedAt: Date.now() });
+    (pool as any).inUse.add(mockSession);
+    
+    const startTime = performance.now();
+    pool.release(mockSession);
+    const elapsed = performance.now() - startTime;
+    
+    expect(elapsed).toBeLessThan(THRESHOLDS.SESSION_POOL_RELEASE_MS);
+    pool.shutdown();
+  });
+
   test('HMAC verification completes in under 10ms per request', async () => {
     const hmacWorker = new Piscina({
       filename: join(__dirname, '../src/hmac-worker.ts'),
