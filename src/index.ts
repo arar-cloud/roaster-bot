@@ -125,6 +125,41 @@ class SessionPool {
 
 const sessionPool = new SessionPool();
 
+// Request queue to prevent client starvation under high concurrency
+class RequestQueue {
+  private queue: Array<() => Promise<any>> = [];
+  private inFlight = 0;
+  private readonly maxConcurrency = 3; // Limit concurrent requests to shared client
+
+  async enqueue(fn: () => Promise<any>) {
+    return new Promise((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      });
+      this.process();
+    });
+  }
+
+  private async process() {
+    while (this.inFlight < this.maxConcurrency && this.queue.length > 0) {
+      this.inFlight++;
+      const fn = this.queue.shift();
+      if (fn) {
+        await fn();
+      }
+      this.inFlight--;
+      if (this.queue.length > 0) this.process();
+    }
+  }
+}
+
+const requestQueue = new RequestQueue();
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
