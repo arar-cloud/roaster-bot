@@ -243,20 +243,25 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-    });
+    try {
+      await requestQueue.enqueue(async () => {
+        session.on((event: any) => {
+          if (event.type === "assistant.message_delta") {
+            const chunk = {
+              choices: [{ delta: { content: event.data.deltaContent } }]
+            };
+            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+          }
+        });
 
-    await session.sendAndWait({ prompt });
+        await session.sendAndWait({ prompt });
+      });
 
-    res.write('data: [DONE]\n\n');
-    res.end();
-    sessionPool.release(session);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } finally {
+      sessionPool.release(session);
+    }
 
   } catch (error) {
     console.error('Error:', error);
