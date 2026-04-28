@@ -45,28 +45,67 @@ const copilotClient = new CopilotClient({
 
 // Session pool to reuse connections and avoid per-request instantiation
 class SessionPool {
-  private sessions: any[] = [];
+  private sessions: Map<any, { createdAt: number; lastUsedAt: number }> = new Map();
   private inUse: Set<any> = new Set();
   private maxPoolSize = 5;
+  private readonly SESSION_IDLE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+  private cleanupInterval: NodeJS.Timeout;
+
+  constructor() {
+    // Periodically clean up idle sessions to reduce memory overhead
+    this.cleanupInterval = setInterval(() => this.cleanupIdleSessions(), 60000);
+  }
+
+  private cleanupIdleSessions() {
+    const now = Date.now();
+    const toRemove: any[] = [];
+
+    for (const [session, metadata] of this.sessions.entries()) {
+      // Remove sessions idle for more than SESSION_IDLE_TIMEOUT_MS
+      if (!this.inUse.has(session) && now - metadata.lastUsedAt > this.SESSION_IDLE_TIMEOUT_MS) {
+        toRemove.push(session);
+      }
+    }
+
+    for (const session of toRemove) {
+      this.sessions.delete(session);
+    }
+  }
 
   async acquire() {
-    // Return available session or create new one if under limit
-    let session = this.sessions.find((s) => !this.inUse.has(s));
-    if (!session && this.sessions.length < this.maxPoolSize) {
+    // Return available session that is not idle, or create new one if under limit
+    const now = Date.now();
+    let session = Array.from(this.sessions.entries())
+      .find(([s]) => !this.inUse.has(s) && now - this.sessions.get(s)!.lastUsedAt < this.SESSION_IDLE_TIMEOUT_MS)?.[0];
+
+    if (!session && this.sessions.size < this.maxPoolSize) {
       session = await copilotClient.createSession({
         model: "gpt-4o",
         streaming: true,
       });
-      this.sessions.push(session);
+      this.sessions.set(session, { createdAt: now, lastUsedAt: now });
     }
+
     if (session) {
       this.inUse.add(session);
+      // Update lastUsedAt on acquire
+      const metadata = this.sessions.get(session);
+      if (metadata) metadata.lastUsedAt = Date.now();
     }
     return session;
   }
 
   release(session: any) {
     this.inUse.delete(session);
+    // Update lastUsedAt on release for idle timeout tracking
+    const metadata = this.sessions.get(session);
+    if (metadata) metadata.lastUsedAt = Date.now();
+  }
+
+  shutdown() {
+    clearInterval(this.cleanupInterval);
+    this.sessions.clear();
+    this.inUse.clear();
   }
 }
 
