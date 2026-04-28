@@ -64,6 +64,13 @@ class SessionPool {
 }
 
 describe('Performance Tests', () => {
+  // Baseline thresholds for performance regression detection
+  const BASELINE = {
+    HMAC_VERIFY_LATENCY_MS: 10, // HMAC verification in worker should complete <10ms
+    SESSION_POOL_MEMORY_MB: 5, // Pool should use <5MB for 5 sessions
+    RATE_LIMITER_OVERHEAD_MS: 2, // Rate limiter should add <2ms overhead per request
+  };
+
   // Baseline performance thresholds for regression detection
   const THRESHOLDS = {
     HMAC_VERIFICATION_MS: 10,      // HMAC verification must complete in under 10ms (worker pool)
@@ -162,8 +169,8 @@ describe('Performance Tests', () => {
     // Assert result is valid
     expect(result).toBe(true);
     
-    // Assert latency is under 10ms baseline
-    expect(elapsed).toBeLessThan(THRESHOLDS.HMAC_VERIFICATION_MS);
+    // Assert latency is under 10ms baseline (BASELINE metric)
+    expect(elapsed).toBeLessThan(BASELINE.HMAC_VERIFY_LATENCY_MS);
     
     // Assert memory did not spike beyond baseline (allow 10MB overhead for worker thread)
     const memoryDelta = finalMemory - baselineMemory;
