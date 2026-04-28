@@ -211,6 +211,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
+
+// Graceful shutdown: terminate worker pool and session pool on app exit
+const gracefulShutdown = async () => {
+  console.log('Shutting down gracefully...');
+  server.close();
+  sessionPool.shutdown();
+  await hmacWorker.destroy();
+  process.exit(0);
+};
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
