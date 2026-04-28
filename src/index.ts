@@ -4,6 +4,12 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
+import Piscina from 'piscina';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Extend Express Request type properly
 declare global {
@@ -16,6 +22,12 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Initialize worker pool for async HMAC verification
+const hmacWorker = new Piscina({
+  filename: join(__dirname, 'hmac-worker.ts'),
+  maxThreads: 4,
+});
 
 app.use(helmet());
 
@@ -40,7 +52,7 @@ app.use(express.json({
 app.use(express.static('public'));
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
+  // Webhook signature verification (async to prevent event loop blocking)
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
@@ -48,11 +60,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    try {
+      const isValid = await hmacWorker.run({ rawBody, webhookSecret, signature });
+      if (!isValid) {
+        // Signature mismatch - simple check for dev
+      }
+    } catch (err) {
+      console.error('HMAC verification error:', err);
+      return res.status(500).send('Signature verification failed.');
     }
   }
 
