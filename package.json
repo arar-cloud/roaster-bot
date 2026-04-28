@@ -5,9 +5,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node-esm src/index.ts",
+    "start": "node dist/index.js",
     "dev": "ts-node-esm src/index.ts",
-    "test": "jest tests/performance.test.ts --detectOpenHandles"
+    "test": "jest tests/performance.test.ts --detectOpenHandles",
+    "build": "tsc"
   },
   "keywords": [],
   "author": "",
