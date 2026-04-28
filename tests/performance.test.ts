@@ -57,6 +57,31 @@ describe('Performance Tests', () => {
     pool.shutdown();
   });
 
+  test('SessionPool 100 cycles (acquire/release) completes in under 200ms', async () => {
+    const pool = new SessionPool();
+    const mockSessions = Array(10).fill(null).map((_, i) => ({
+      id: `session-${i}`,
+      updateSystemMessage: async () => {}
+    }));
+    
+    // Pre-populate pool
+    for (const session of mockSessions) {
+      (pool as any).sessions.set(session, { createdAt: Date.now(), lastUsedAt: Date.now() });
+    }
+    
+    const startTime = performance.now();
+    // Simulate 100 acquire/release cycles
+    for (let i = 0; i < 100; i++) {
+      const session = mockSessions[i % mockSessions.length];
+      (pool as any).inUse.add(session);
+      pool.release(session);
+    }
+    const elapsed = performance.now() - startTime;
+    
+    expect(elapsed).toBeLessThan(THRESHOLDS.SESSION_POOL_BATCH_100_MS);
+    pool.shutdown();
+  });
+
   test('HMAC verification completes in under 10ms per request', async () => {
     const hmacWorker = new Piscina({
       filename: join(__dirname, '../src/hmac-worker.ts'),
