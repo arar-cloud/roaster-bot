@@ -9,6 +9,60 @@ import { dirname } from 'path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
+// Test-local SessionPool mock for performance regression testing
+class SessionPool {
+  private sessions: Map<any, { createdAt: number; lastUsedAt: number }> = new Map();
+  private inUse: Set<any> = new Set();
+  private cleanupRunning = false;
+  private readonly SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+  private readonly CLEANUP_INTERVAL_MS = 90000;
+  private cleanupTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupIdleSessions();
+    }, this.CLEANUP_INTERVAL_MS);
+    if (this.cleanupTimer.unref) {
+      this.cleanupTimer.unref();
+    }
+  }
+
+  private cleanupIdleSessions() {
+    if (this.cleanupRunning) return;
+    this.cleanupRunning = true;
+    try {
+      const now = Date.now();
+      const toRemove: any[] = [];
+      for (const [session, metadata] of this.sessions.entries()) {
+        if (!this.inUse.has(session) && now - metadata.lastUsedAt > this.SESSION_IDLE_TIMEOUT_MS) {
+          toRemove.push(session);
+        }
+      }
+      for (const session of toRemove) {
+        this.sessions.delete(session);
+        this.inUse.delete(session);
+      }
+    } finally {
+      this.cleanupRunning = false;
+    }
+  }
+
+  release(session: any) {
+    this.inUse.delete(session);
+    const metadata = this.sessions.get(session);
+    if (metadata) metadata.lastUsedAt = Date.now();
+  }
+
+  shutdown() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    this.sessions.clear();
+    this.inUse.clear();
+  }
+}
+
 describe('Performance Tests', () => {
   // Baseline performance thresholds for regression detection
   const THRESHOLDS = {
