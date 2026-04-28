@@ -30,6 +30,23 @@ const hmacWorker = new Piscina({
   maxThreads: 4,
 });
 
+// Pre-warm worker pool threads to eliminate cold-start latency
+async function prewarmWorkerPool() {
+  try {
+    const prewarmTasks = Array(4).fill(null).map(() =>
+      hmacWorker.run({
+        rawBody: 'warmup',
+        webhookSecret: 'warmup-secret',
+        signature: 'sha256=warmup'
+      }).catch(() => {}) // Ignore warmup failures, threads are ready
+    );
+    await Promise.all(prewarmTasks);
+    console.log('Worker pool pre-warmed: 4 threads ready');
+  } catch (err) {
+    console.warn('Worker pool pre-warm warning:', err);
+  }
+}
+
 app.use(helmet());
 
 // Enable gzip compression to reduce response payload by 60-80% for mobile clients
