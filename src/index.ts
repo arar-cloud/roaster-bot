@@ -5,7 +5,7 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
-import Piscina from 'piscina';
+
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -24,28 +24,20 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Initialize worker pool for async HMAC verification with timeout and backpressure
-const hmacWorker = new Piscina({
-  filename: join(__dirname, 'hmac-worker.ts'),
-  maxThreads: 4,
-  idleTimeout: 30000, // Reclaim idle threads after 30s
-  maxQueue: 16, // Queue max 16 tasks before rejecting (backpressure)
-});
-
-// Pre-warm worker pool threads to eliminate cold-start latency
-async function prewarmWorkerPool() {
+// HMAC verification using synchronous crypto.timingSafeEqual()
+// Eliminates 10-50ms worker pool marshalling overhead per webhook
+function verifyHmacSync(rawBody: string, webhookSecret: string, signature: string): boolean {
   try {
-    const prewarmTasks = Array(4).fill(null).map(() =>
-      hmacWorker.run({
-        rawBody: 'warmup',
-        webhookSecret: 'warmup-secret',
-        signature: 'sha256=warmup'
-      }).catch(() => {}) // Ignore warmup failures, threads are ready
-    );
-    await Promise.all(prewarmTasks);
-    console.log('Worker pool pre-warmed: 4 threads ready');
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    const digest = hmac.update(rawBody).digest('hex');
+    const expectedSignature = 'sha256=' + digest;
+    
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
   } catch (err) {
-    console.warn('Worker pool pre-warm warning:', err);
+    // timingSafeEqual throws if buffers have different lengths
+    return false;
   }
 }
 
@@ -243,10 +235,7 @@ class SessionPool {
 
 const sessionPool = new SessionPool();
 
-// Start server and pre-warm pools
-(async () => {
-  await prewarmWorkerPool();
-})();
+
 
 // Request queue to prevent client starvation under high concurrency
 class RequestQueue {
