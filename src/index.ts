@@ -19,10 +19,10 @@ const port = process.env.PORT || 3000;
 
 app.use(helmet());
 
-// Initialize CopilotClient once at module load time
+// Initialize CopilotClient once at module load time with only token (no env spread)
 const copilotClient = new CopilotClient({
   token: process.env.GITHUB_TOKEN || '',
-});
+}) as any; // Safe: we control token input
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
