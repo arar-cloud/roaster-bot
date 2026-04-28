@@ -21,8 +21,13 @@ declare global {
   }
 }
 
+// Module-level singleton: app is initialized once and reused across all requests
+// This is critical for Vercel/serverless handlers to reuse the Express instance across warm containers
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Export for use by Vercel handler and local server
+export { app };
 
 // HMAC verification using synchronous crypto.timingSafeEqual()
 // Eliminates 10-50ms worker pool marshalling overhead per webhook
@@ -372,6 +377,14 @@ class DistributedRateLimitStore {
 }
 
 const distributedStore = new DistributedRateLimitStore();
+
+// Ensure store is cleaned up on graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  distributedStore.shutdown();
+  sessionPool.shutdown();
+  process.exit(0);
+});
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
