@@ -128,7 +128,7 @@ class SessionPool {
   }
 
   shutdown() {
-    clearInterval(this.cleanupInterval);
+    // Cleanup is lazy (no active interval), so just clear collections
     this.sessions.clear();
     this.inUse.clear();
   }
