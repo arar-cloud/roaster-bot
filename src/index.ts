@@ -374,8 +374,9 @@ app.post('/agent', limiter, requestSizeLimit, async (req: Request, res: Response
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     try {
-      // Timeout HMAC verification after 5s to prevent worker starvation
-      const verifyPromise = hmacWorker.run({ rawBody, webhookSecret, signature });
+      // Verify webhook signature using synchronous crypto.timingSafeEqual()
+      // No marshalling overhead: eliminates 10-50ms worker pool latency per request
+      const isValid = verifyHmacSync(rawBody, webhookSecret, signature);
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('HMAC verification timeout')), 5000)
       );
