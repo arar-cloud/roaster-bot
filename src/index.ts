@@ -48,16 +48,20 @@ class SessionPool {
   private sessions: Map<any, { createdAt: number; lastUsedAt: number }> = new Map();
   private inUse: Set<any> = new Set();
   private maxPoolSize = 5;
-  private readonly SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes: faster eviction to reduce memory
-  private cleanupInterval: NodeJS.Timeout;
+  private readonly SESSION_IDLE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+  private lastCleanupTime = 0;
+  private readonly CLEANUP_INTERVAL_MS = 90000; // Lazy cleanup every 90s instead of aggressive 30s
 
   constructor() {
-    // Periodically clean up idle sessions to reduce memory overhead (every 30s for faster eviction)
-    this.cleanupInterval = setInterval(() => this.cleanupIdleSessions(), 30000);
+    // No active interval; cleanup triggered on-demand only (lazy eviction)
   }
 
   private cleanupIdleSessions() {
     const now = Date.now();
+    // Only run cleanup if CLEANUP_INTERVAL_MS has elapsed
+    if (now - this.lastCleanupTime < this.CLEANUP_INTERVAL_MS) return;
+    
+    this.lastCleanupTime = now;
     const toRemove: any[] = [];
 
     for (const [session, metadata] of this.sessions.entries()) {
