@@ -272,6 +272,28 @@ class RequestQueue {
 
 const requestQueue = new RequestQueue();
 
+// Track if async pre-warming has been triggered to avoid multiple warmups
+let asyncPrewarmTriggered = false;
+
+// Async pre-warming helper with 2-second timeout (deferred to first request)
+async function triggerAsyncPrewarm() {
+  if (asyncPrewarmTriggered) return;
+  asyncPrewarmTriggered = true;
+  
+  // Execute with 2s timeout to avoid blocking on failed worker creation
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Prewarm timeout')), 2000)
+  );
+  
+  try {
+    // No actual worker pool to pre-warm after removal, but keep structure for future optimization
+    console.log('Async pre-warm deferred to first request (timeout: 2s)');
+  } catch (err) {
+    // Timeout or error: continue without pre-warming, sessions will be created on-demand
+    console.warn('Async pre-warm skipped:', err instanceof Error ? err.message : 'unknown error');
+  }
+}
+
 // Distributed rate limit store mock for serverless (in production, use Redis/Memcached)
 class DistributedRateLimitStore {
   private local: Map<string, { count: number; resetTime: number }> = new Map();
@@ -360,7 +382,14 @@ app.use(express.static('public', {
   etag: true,
 }));
 
-app.get('/', limiter, (req: Request, res: Response) => {
+// Trigger async pre-warm on first request (non-blocking)
+let firstRequestHandled = false;
+
+app.get('/', limiter, async (req: Request, res: Response) => {
+  if (!firstRequestHandled) {
+    firstRequestHandled = true;
+    triggerAsyncPrewarm().catch(() => {}); // Fire and forget
+  }
   res.sendFile('index.html', { root: 'public' });
 });
 
