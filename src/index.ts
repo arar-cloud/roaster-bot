@@ -48,6 +48,11 @@ function verifyHmacSync(rawBody: string, webhookSecret: string, signature: strin
 
 app.use(helmet());
 
+// Restrict request body size to 100KB to prevent memory exhaustion DoS attacks with streaming payloads
+// GitHub webhooks are typically <10KB; 100KB provides safety margin without blocking legitimate requests
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ limit: '100kb', extended: false }));
+
 // Enable gzip compression to reduce response payload by 60-80% for mobile clients
 app.use(compression({
   level: 4, // Balanced compression level: 70% ratio at 50% less CPU than level 6
