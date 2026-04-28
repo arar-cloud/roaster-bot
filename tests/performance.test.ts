@@ -8,6 +8,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 describe('Performance Tests', () => {
+  // Baseline performance thresholds for regression detection
+  const THRESHOLDS = {
+    HMAC_VERIFICATION_MS: 10,      // HMAC verification must complete in under 10ms
+    SESSION_POOL_ACQUIRE_MS: 50,   // Session acquire/release under 50ms
+    MEMORY_BASELINE_MB: 100,       // Memory usage must not exceed 100MB baseline
+  };
+
   test('HMAC verification completes in under 10ms per request', async () => {
     const hmacWorker = new Piscina({
       filename: join(__dirname, '../src/hmac-worker.ts'),
