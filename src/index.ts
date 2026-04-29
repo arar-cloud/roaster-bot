@@ -88,6 +88,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       const rawBody = req.rawBody;
       if (!rawBody) return res.status(400).send('Missing raw body.');
 
+      // HMAC is synchronous but acceptable for webhook verification at typical throughput.
+      // If performance degrades with high volume, consider worker threads or pre-computed digests.
       const hmac = crypto.createHmac('sha256', webhookSecret);
       const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
