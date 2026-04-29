@@ -55,14 +55,8 @@ const limiter = rateLimit({
   keyGenerator: (req) => req.ip || 'unknown', // Use IP for rate limiting key
 });
 
-// Add request timeout middleware to prevent connection buildup
-app.use((req, res, next) => {
-  const timeout = 30 * 1000; // 30 second timeout
-  req.setTimeout(timeout, () => {
-    res.status(408).json({ error: 'Request timeout' });
-  });
-  next();
-});
+// Enable trust-proxy to get accurate client IP in cloud environments
+app.set('trust proxy', 1);
 
 // Enable compression for all responses (gzip, brotli support)
 // Reduces payload sizes by 60-80% for JSON and HTML responses
@@ -87,7 +81,7 @@ const captureRawBody = (req: any, res, buf) => {
 
 app.use(express.static(publicDir, {
   maxAge: '1h',
-  etag: false
+  etag: true  // Enable etag for 304 Not Modified responses (40-60% bandwidth savings)
 }));
 
 app.get('/', (req, res) => {
