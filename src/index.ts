@@ -27,6 +27,14 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
 
+// Enable compression for all responses (gzip, brotli support)
+// Reduces payload sizes by 60-80% for JSON, HTML, and streaming responses
+// Threshold raised to 2048 bytes to avoid compression overhead on tiny payloads
+app.use(compression({
+  level: 6,
+  threshold: 2048
+}));
+
 // Pre-compute absolute path for static files during app initialization
 // Eliminates per-request path resolution overhead
 const publicDir = path.resolve(process.cwd(), 'public');
