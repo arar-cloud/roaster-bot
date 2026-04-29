@@ -91,14 +91,6 @@ const agentMiddleware = (req: Request, res: Response, next) => {
 // Enable trust-proxy to get accurate client IP in cloud environments
 app.set('trust proxy', 1);
 
-// Enable compression for all responses (gzip, brotli support)
-// Reduces payload sizes by 60-80% for JSON and HTML responses
-// Threshold raised to 2048 bytes to avoid compression overhead on tiny payloads
-app.use(compression({
-  level: 6,
-  threshold: 2048
-}));
-
 // express.json() enforces the limit option (1MB) internally via its parser.
 // Removed verify callback to reduce per-request latency on all routes.
 // rawBody capture moved to /agent endpoint middleware for webhook verification only.
