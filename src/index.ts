@@ -69,14 +69,22 @@ function getCopilotClient(token: string): CopilotClient {
   return copilotClientInstance as CopilotClient;
 }
 
-// Rate limiter config: cache IP to avoid repeated req.ip lookups
+// Rate limiter config: use only pre-cached IP to avoid repeated req.ip calls
 // Applies only to /agent endpoint via middleware chain
+// keyGenerator receives req.cachedIp set by agentMiddleware before rate limiter runs
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req as any).cachedIp || req.ip || 'unknown'
+  keyGenerator: (req) => {
+    const ip = (req as any).cachedIp;
+    if (!ip) {
+      console.warn('Missing cachedIp in rate limiter keyGenerator');
+      return 'unknown';
+    }
+    return ip;
+  }
 });
 
 // Middleware to cache IP address and set endpoint timeout
