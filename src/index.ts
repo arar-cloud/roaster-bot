@@ -80,7 +80,11 @@ app.get('/', (req, res) => {
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   try {
-    // Webhook signature verification
+    // Validate token early before any async operations
+    const token = req.get('X-GitHub-Token');
+    if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+
+    // Webhook signature verification: check before initializing client
     const signature = req.get('X-Hub-Signature-256');
     const webhookSecret = process.env.WEBHOOK_SECRET;
 
@@ -100,11 +104,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     }
 
-    const token = req.get('X-GitHub-Token');
-    if (!token) return res.status(401).send('Missing X-GitHub-Token.');
-
-  // Initialize client with the user's token using singleton
-  const client = getCopilotClient(token);
+    // Initialize client with the user's token using singleton (only after auth verification)
+    const client = getCopilotClient(token);
   
   try {
     const systemPrompt = `
