@@ -1,3 +1,3 @@
-// Serverless entrypoint: re-export directly from src/index.ts
-// Import statement combined at module scope to reduce resolution hops
-export { default } from '../src/index.js';
+// Serverless entrypoint: direct import from src/index.ts
+// Eliminates re-export indirection to reduce cold-start latency in Vercel serverless context
+import '../src/index.js';
