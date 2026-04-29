@@ -16,6 +16,22 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Singleton CopilotClient instance, lazily initialized
+let copilotClientInstance: CopilotClient | null = null;
+let lastTokenHash: string = '';
+
+function getCopilotClient(token: string): CopilotClient {
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  
+  // Reinitialize if token has changed (token rotation support)
+  if (!copilotClientInstance || lastTokenHash !== tokenHash) {
+    copilotClientInstance = new CopilotClient({ token });
+    lastTokenHash = tokenHash;
+  }
+  
+  return copilotClientInstance;
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
