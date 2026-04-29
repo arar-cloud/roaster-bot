@@ -127,11 +127,14 @@ const captureRawBody = (req: any, res, buf) => {
 
 app.use(express.static(publicDir, {
   maxAge: '1h',
-  etag: true  // Enable etag for 304 Not Modified responses (40-60% bandwidth savings)
+  etag: true,  // Enable etag for 304 Not Modified responses (40-60% bandwidth savings)
+  lastModified: true,  // Enable Last-Modified header for conditional requests
+  immutable: false  // Allow 304 revalidation on cache expiry
 }));
 
 app.get('/', (req, res) => {
-  res.set('Cache-Control', 'public, max-age=3600');
+  // Let express.static handle the file with ETag and Cache-Control
+  // This ensures conditional request (If-None-Match) triggers 304 Not Modified
   res.sendFile('index.html', { root: publicDir });
 });
 
