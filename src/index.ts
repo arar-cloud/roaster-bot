@@ -49,17 +49,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// Validate Content-Length header before processing
-app.use((req, res, next) => {
-  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-  const maxPayloadSize = 1024 * 1024; // 1MB
-  
-  if (contentLength > maxPayloadSize) {
-    return res.status(413).json({ error: 'Payload too large' });
-  }
-  next();
-});
-
+// express.json() enforces the limit option (1MB) internally via its parser,
+// making manual Content-Length validation redundant and adding latency.
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
