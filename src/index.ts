@@ -39,7 +39,19 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Validate Content-Length header before processing
+app.use((req, res, next) => {
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  const maxPayloadSize = 1024 * 1024; // 1MB
+  
+  if (contentLength > maxPayloadSize) {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  next();
+});
+
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
