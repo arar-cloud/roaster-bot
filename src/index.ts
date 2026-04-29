@@ -81,13 +81,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const token = req.get('X-GitHub-Token');
     if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Initialize client with the user's token using singleton
+  const client = getCopilotClient(token);
   
   try {
     const systemPrompt = `
