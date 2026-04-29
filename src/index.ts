@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import compression from 'compression';
+import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
@@ -16,6 +17,10 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Pre-compute absolute path for static files during app initialization
+// Eliminates per-request path resolution overhead
+const publicDir = path.resolve(process.cwd(), 'public');
 
 // Singleton CopilotClient instance, lazily initialized
 let copilotClientInstance: CopilotClient | null = null;
@@ -66,14 +71,14 @@ app.use(express.json({
   }
 }));
 
-app.use(express.static('public', {
+app.use(express.static(publicDir, {
   maxAge: '1h',
   etag: false
 }));
 
 app.get('/', (req, res) => {
   res.set('Cache-Control', 'public, max-age=3600');
-  res.sendFile('public/index.html', { root: '.' });
+  res.sendFile('index.html', { root: publicDir });
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
