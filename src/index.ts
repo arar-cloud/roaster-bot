@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import compression from 'compression';
+import helmet from 'helmet';
 import path from 'path';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
@@ -17,6 +18,14 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Apply helmet security middleware with optimized options
+// contentSecurityPolicy disabled to allow streaming JSON responses
+// crossOriginResourcePolicy enabled for CORS security
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
 
 // Pre-compute absolute path for static files during app initialization
 // Eliminates per-request path resolution overhead
