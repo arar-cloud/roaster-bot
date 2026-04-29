@@ -29,10 +29,10 @@ app.use(helmet({
 
 // Enable compression for all responses (gzip, brotli support)
 // Reduces payload sizes by 60-80% for JSON, HTML, and streaming responses
-// Threshold raised to 2048 bytes to avoid compression overhead on tiny payloads
+// Threshold lowered to 1024 bytes to compress more typical API responses without meaningful overhead
 app.use(compression({
   level: 6,
-  threshold: 2048
+  threshold: 1024
 }));
 
 // Pre-compute absolute path for static files during app initialization
