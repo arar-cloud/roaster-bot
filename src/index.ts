@@ -69,6 +69,12 @@ function getCopilotClient(token: string): CopilotClient {
   return copilotClientInstance as CopilotClient;
 }
 
+// Pre-warm CopilotClient singleton at startup if DEFAULT_TOKEN available
+// Eliminates cold-start latency and connection setup from first user request
+if (process.env.DEFAULT_TOKEN && !copilotClientInstance) {
+  getCopilotClient(process.env.DEFAULT_TOKEN);
+}
+
 // Rate limiter config: use only pre-cached IP to avoid repeated req.ip calls
 // Applies only to /agent endpoint via middleware chain
 // keyGenerator receives req.cachedIp set by agentMiddleware before rate limiter runs
