@@ -143,7 +143,7 @@ const captureRawBodyMiddleware = express.json({
   }
 });
 
-app.post('/agent', limiter, agentMiddleware, captureRawBodyMiddleware, async (req: Request, res: Response) => {
+app.post('/agent', agentMiddleware, limiter, captureRawBodyMiddleware, async (req: Request, res: Response) => {
   try {
     // Validate token early before any async operations
     const token = req.get('X-GitHub-Token');
