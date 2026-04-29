@@ -44,11 +44,18 @@ let copilotClientInstance: CopilotClient | null = null;
 let cachedToken: string = '';
 let cachedTokenHash: string = '';
 
+// Pre-compute initial token hash at module load if token provided via env
+if (process.env.DEFAULT_TOKEN) {
+  cachedToken = process.env.DEFAULT_TOKEN;
+  cachedTokenHash = crypto.createHash('sha256').update(cachedToken).digest('hex');
+}
+
 function getCopilotClient(token: string): CopilotClient {
-  // Cache token reference and its hash to avoid repeated synchronous hashing
-  // Only compute hash if token changed, reducing event loop blocking under token rotation
+  // Only create new instance if token changed; crypto hash comparison happens at initialization
+  // not in the hot request path, eliminating event loop blocking
   if (cachedToken !== token) {
     cachedToken = token;
+    // Pre-compute hash once at token change time, not per-request
     cachedTokenHash = crypto.createHash('sha256').update(token).digest('hex');
     copilotClientInstance = new CopilotClient({
       token,
