@@ -18,15 +18,14 @@ const port = process.env.PORT || 3000;
 
 // Singleton CopilotClient instance, lazily initialized
 let copilotClientInstance: CopilotClient | null = null;
-let lastTokenHash: string = '';
+let lastToken: string = '';
 
 function getCopilotClient(token: string): CopilotClient {
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  
-  // Reinitialize if token has changed (token rotation support)
-  if (!copilotClientInstance || lastTokenHash !== tokenHash) {
+  // Avoid expensive SHA256 computation: compare tokens by value first
+  // Reinitialize only if token has actually changed (token rotation support)
+  if (!copilotClientInstance || lastToken !== token) {
     copilotClientInstance = new CopilotClient({ token });
-    lastTokenHash = tokenHash;
+    lastToken = token;
   }
   
   return copilotClientInstance;
