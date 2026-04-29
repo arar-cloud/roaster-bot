@@ -33,14 +33,16 @@ const publicDir = path.resolve(process.cwd(), 'public');
 
 // Singleton CopilotClient instance, lazily initialized
 let copilotClientInstance: CopilotClient | null = null;
-let lastToken: string = '';
+let lastTokenHash: string = '';
 
 function getCopilotClient(token: string): CopilotClient {
-  // Avoid expensive SHA256 computation: compare tokens by value first
-  // Reinitialize only if token has actually changed (token rotation support)
-  if (!copilotClientInstance || lastToken !== token) {
+  // Use SHA256 hash for token comparison instead of full string comparison
+  // Reduces memory pressure on very long tokens (>500 chars) and improves rotation check performance
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  
+  if (!copilotClientInstance || lastTokenHash !== tokenHash) {
     copilotClientInstance = new CopilotClient({ token });
-    lastToken = token;
+    lastTokenHash = tokenHash;
   }
   
   return copilotClientInstance;
