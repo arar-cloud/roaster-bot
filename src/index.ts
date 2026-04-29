@@ -83,6 +83,12 @@ const agentMiddleware = (req: Request, res: Response, next) => {
     if (!res.headersSent) {
       res.status(408).json({ error: 'Request timeout' });
     }
+    // Destroy socket to prevent zombie requests and resource leaks
+    try {
+      res.socket?.destroy();
+    } catch (err) {
+      console.error('Error destroying socket on timeout:', err);
+    }
   });
   
   next();
