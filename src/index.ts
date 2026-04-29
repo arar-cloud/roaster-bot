@@ -106,7 +106,15 @@ app.get('/', (req, res) => {
   res.sendFile('index.html', { root: publicDir });
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+// Endpoint-specific middleware for raw body capture (webhook verification only)
+const captureRawBodyMiddleware = express.json({
+  limit: '1mb',
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+});
+
+app.post('/agent', agentMiddleware, limiter, captureRawBodyMiddleware, async (req: Request, res: Response) => {
   try {
     // Validate token early before any async operations
     const token = req.get('X-GitHub-Token');
