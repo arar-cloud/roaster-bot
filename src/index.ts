@@ -31,21 +31,27 @@ app.use(helmet({
 // Eliminates per-request path resolution overhead
 const publicDir = path.resolve(process.cwd(), 'public');
 
-// Singleton CopilotClient instance, lazily initialized
+// Singleton CopilotClient instance with cached token hash
 let copilotClientInstance: CopilotClient | null = null;
-let lastTokenHash: string = '';
+let cachedToken: string = '';
+let cachedTokenHash: string = '';
 
 function getCopilotClient(token: string): CopilotClient {
-  // Use SHA256 hash for token comparison instead of full string comparison
-  // Reduces memory pressure on very long tokens (>500 chars) and improves rotation check performance
-  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  
-  if (!copilotClientInstance || lastTokenHash !== tokenHash) {
-    copilotClientInstance = new CopilotClient({ token });
-    lastTokenHash = tokenHash;
+  // Cache token reference and its hash to avoid repeated synchronous hashing
+  // Only compute hash if token changed, reducing event loop blocking under token rotation
+  if (cachedToken !== token) {
+    cachedToken = token;
+    cachedTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    copilotClientInstance = new CopilotClient({
+      token,
+      agent: {
+        keepAlive: true,
+        timeout: 30000
+      }
+    });
   }
   
-  return copilotClientInstance;
+  return copilotClientInstance as CopilotClient;
 }
 
 // Rate limiter config: cache IP to avoid repeated req.ip lookups
