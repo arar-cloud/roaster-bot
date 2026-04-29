@@ -46,14 +46,31 @@ function getCopilotClient(token: string): CopilotClient {
   return copilotClientInstance;
 }
 
+// Rate limiter config: cache IP to avoid repeated req.ip lookups
+// Applies only to /agent endpoint via middleware chain
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.method !== 'POST', // Only rate-limit POST requests
-  keyGenerator: (req) => req.ip || 'unknown', // Use IP for rate limiting key
+  keyGenerator: (req) => (req as any).cachedIp || req.ip || 'unknown'
 });
+
+// Middleware to cache IP address and set endpoint timeout
+const agentMiddleware = (req: Request, res: Response, next) => {
+  // Cache IP to avoid repeated resolution in rate limiter
+  (req as any).cachedIp = req.ip;
+  
+  // Set 30-second timeout for long-running /agent endpoint only
+  const timeout = 30 * 1000;
+  req.setTimeout(timeout, () => {
+    if (!res.headersSent) {
+      res.status(408).json({ error: 'Request timeout' });
+    }
+  });
+  
+  next();
+};
 
 // Enable trust-proxy to get accurate client IP in cloud environments
 app.set('trust proxy', 1);
