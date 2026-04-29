@@ -1,3 +1,3 @@
-// Serverless entrypoint: direct import from src/index.ts
-// Eliminates re-export indirection to reduce cold-start latency in Vercel serverless context
+// Serverless entrypoint: static import from src/index.ts
+// Enables tree-shaking and bundler optimizations to reduce cold-start latency in Vercel serverless context
 import '../src/index.js';
