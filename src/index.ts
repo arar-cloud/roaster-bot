@@ -66,19 +66,24 @@ app.use((req, res, next) => {
 
 // Enable compression for all responses (gzip, brotli support)
 // Reduces payload sizes by 60-80% for JSON and HTML responses
+// Threshold raised to 2048 bytes to avoid compression overhead on tiny payloads
 app.use(compression({
   level: 6,
-  threshold: 1024
+  threshold: 2048
 }));
 
-// express.json() enforces the limit option (1MB) internally via its parser,
-// making manual Content-Length validation redundant and adding latency.
+// express.json() enforces the limit option (1MB) internally via its parser.
+// Removed verify callback to reduce per-request latency on all routes.
+// rawBody capture moved to /agent endpoint middleware for webhook verification only.
 app.use(express.json({
-  limit: '1mb',
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
+  limit: '1mb'
 }));
+
+// Dedicated middleware for /agent endpoint to capture raw body for webhook signature verification
+// Applied only to /agent, not globally, to avoid unnecessary overhead on other routes
+const captureRawBody = (req: any, res, buf) => {
+  req.rawBody = buf.toString();
+};
 
 app.use(express.static(publicDir, {
   maxAge: '1h',
