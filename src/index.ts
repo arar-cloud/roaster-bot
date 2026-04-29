@@ -37,6 +37,17 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method !== 'POST', // Only rate-limit POST requests
+  keyGenerator: (req) => req.ip || 'unknown', // Use IP for rate limiting key
+});
+
+// Add request timeout middleware to prevent connection buildup
+app.use((req, res, next) => {
+  const timeout = 30 * 1000; // 30 second timeout
+  req.setTimeout(timeout, () => {
+    res.status(408).json({ error: 'Request timeout' });
+  });
+  next();
 });
 
 // Validate Content-Length header before processing
