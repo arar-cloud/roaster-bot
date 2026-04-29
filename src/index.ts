@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
@@ -48,6 +49,13 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Enable compression for all responses (gzip, brotli support)
+// Reduces payload sizes by 60-80% for JSON and HTML responses
+app.use(compression({
+  level: 6,
+  threshold: 1024
+}));
 
 // express.json() enforces the limit option (1MB) internally via its parser,
 // making manual Content-Length validation redundant and adding latency.
