@@ -16,6 +16,52 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Webhook verification middleware: validate signature before body parsing
+const verifyWebhookSignature = (req: Request, res: Response, next: any) => {
+  // Only verify POST /agent requests
+  if (req.method !== 'POST' || !req.path.endsWith('/agent')) {
+    return next();
+  }
+
+  const signature = req.get('X-Hub-Signature-256');
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+
+  if (webhookSecret && signature) {
+    // For webhook routes, verify before body parsing
+    let rawBody = '';
+    req.on('data', (chunk: Buffer) => {
+      rawBody += chunk.toString();
+      // Prevent buffer overflow DoS
+      if (rawBody.length > 1048576) { // 1MB limit
+        req.pause();
+        res.status(413).send('Payload too large');
+      }
+    });
+    req.on('end', () => {
+      // Compute HMAC using streaming (non-blocking)
+      const hmac = crypto.createHmac('sha256', webhookSecret);
+      hmac.update(rawBody);
+      const digest = 'sha256=' + hmac.digest('hex');
+
+      // Constant-time comparison with length check
+      const signatureBuf = Buffer.from(signature);
+      const digestBuf = Buffer.from(digest);
+      if (signatureBuf.length !== digestBuf.length) {
+        return res.status(401).send('Unauthorized');
+      }
+      if (!crypto.timingSafeEqual(signatureBuf, digestBuf)) {
+        return res.status(401).send('Unauthorized');
+      }
+
+      // Signature valid: attach rawBody and continue
+      (req as any).rawBody = rawBody;
+      next();
+    });
+  } else {
+    next();
+  }
+};
+
 // CopilotClient singleton with connection pooling
 let copilotClientInstance: InstanceType<typeof CopilotClient> | null = null;
 let sessionCache: any = null;
