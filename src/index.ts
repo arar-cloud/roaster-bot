@@ -63,19 +63,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    // Compute HMAC digest asynchronously using crypto.subtle (runs on thread pool)
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      'raw',
-      encoder.encode(webhookSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign']
-    );
-    const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(rawBody));
-    const digest = 'sha256=' + Buffer.from(signatureBytes).toString('hex');
+    // Compute HMAC digest synchronously using crypto.createHmac (optimized for HMAC)
+    const hmac = crypto.createHmac('sha256', webhookSecret);
+    hmac.update(rawBody);
+    const digest = 'sha256=' + hmac.digest('hex');
 
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+    // Ensure both buffers are equal length before timing-safe comparison
+    const signatureBuf = Buffer.from(signature);
+    const digestBuf = Buffer.from(digest);
+    if (signatureBuf.length !== digestBuf.length) {
+      res.status(401).send('Unauthorized');
+      return;
+    }
+    if (!crypto.timingSafeEqual(signatureBuf, digestBuf)) {
       res.status(401).send('Unauthorized');
       return;
     }
