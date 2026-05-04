@@ -16,6 +16,18 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// CopilotClient singleton to avoid per-request re-initialization
+let copilotClientInstance: InstanceType<typeof CopilotClient> | null = null;
+
+function getCopilotClient(): InstanceType<typeof CopilotClient> {
+  if (!copilotClientInstance) {
+    copilotClientInstance = new CopilotClient({
+      token: process.env.GITHUB_TOKEN || '',
+    });
+  }
+  return copilotClientInstance;
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -72,13 +84,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Reuse singleton client instance instead of creating new instance per request
+  const client = getCopilotClient();
 
   try {
     const systemPrompt = `
