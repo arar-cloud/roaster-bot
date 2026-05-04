@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import RedisStore from 'rate-limit-redis';
+import { createClient } from 'redis';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
