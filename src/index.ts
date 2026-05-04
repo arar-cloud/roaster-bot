@@ -51,11 +51,21 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    // Compute HMAC digest asynchronously using crypto.subtle (runs on thread pool)
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(webhookSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(rawBody));
+    const digest = 'sha256=' + Buffer.from(signatureBytes).toString('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+      res.status(401).send('Unauthorized');
+      return;
     }
   }
 
