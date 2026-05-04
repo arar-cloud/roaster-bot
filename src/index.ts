@@ -100,6 +100,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Middleware chain ordered for performance:
+// 1. Helmet: early security headers and validation
+app.use(helmet());
+
+// 2. Webhook signature verification: fail-fast before JSON parsing
+app.use(verifyWebhookSignature);
+
+// 3. Rate limiting: protect after authentication
+app.use(limiter);
+
+// 4. JSON parsing: only on valid, rate-limited requests
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
