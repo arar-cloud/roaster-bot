@@ -19,6 +19,13 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize Redis client for distributed rate limiting (optional)
+let redisClient: any = null;
+if (process.env.REDIS_URL) {
+  redisClient = createClient({ url: process.env.REDIS_URL });
+  redisClient.connect().catch(err => console.error('Redis connection failed:', err));
+}
+
 // Webhook verification middleware: validate signature before body parsing
 const verifyWebhookSignature = (req: Request, res: Response, next: any) => {
   // Only verify POST /agent requests
