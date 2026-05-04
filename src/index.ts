@@ -107,6 +107,12 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  ...(redisClient ? {
+    store: new RedisStore({
+      client: redisClient,
+      prefix: 'rl:',
+    })
+  } : {})
 });
 
 // Middleware chain ordered for performance:
