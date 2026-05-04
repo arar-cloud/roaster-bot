@@ -16,16 +16,34 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// CopilotClient singleton to avoid per-request re-initialization
+// CopilotClient singleton with connection pooling
 let copilotClientInstance: InstanceType<typeof CopilotClient> | null = null;
+let sessionCache: any = null;
+let sessionCacheExpiry = 0;
+const SESSION_CACHE_TTL = 300000; // 5 minutes
 
 function getCopilotClient(): InstanceType<typeof CopilotClient> {
   if (!copilotClientInstance) {
     copilotClientInstance = new CopilotClient({
       token: process.env.GITHUB_TOKEN || '',
+      // Explicit connection keep-alive for connection pooling
+      keepAlive: true,
     });
   }
   return copilotClientInstance;
+}
+
+function getCachedSession() {
+  const now = Date.now();
+  if (sessionCache && sessionCacheExpiry > now) {
+    return sessionCache;
+  }
+  return null;
+}
+
+function setCachedSession(session: any) {
+  sessionCache = session;
+  sessionCacheExpiry = Date.now() + SESSION_CACHE_TTL;
 }
 
 const limiter = rateLimit({
