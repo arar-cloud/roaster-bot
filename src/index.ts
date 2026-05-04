@@ -131,32 +131,9 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    // Compute HMAC digest synchronously using crypto.createHmac (optimized for HMAC)
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    hmac.update(rawBody);
-    const digest = 'sha256=' + hmac.digest('hex');
-
-    // Ensure both buffers are equal length before timing-safe comparison
-    const signatureBuf = Buffer.from(signature);
-    const digestBuf = Buffer.from(digest);
-    if (signatureBuf.length !== digestBuf.length) {
-      res.status(401).send('Unauthorized');
-      return;
-    }
-    if (!crypto.timingSafeEqual(signatureBuf, digestBuf)) {
-      res.status(401).send('Unauthorized');
-      return;
-    }
-  }
+app.post('/agent', async (req: Request, res: Response) => {
+  // Webhook signature verification already done in middleware
+  // rawBody is attached to request if signature was valid
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
