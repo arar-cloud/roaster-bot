@@ -89,16 +89,33 @@ app.get('/', limiter, (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
-
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
+  try {
+    const token = req.get('X-GitHub-Token');
+    if (!token) {
+      log.warn('Missing X-GitHub-Token header');
+      return res.status(401).json({ error: 'Missing X-GitHub-Token' });
     }
-  });
+
+    // Validate token format before use
+    if (!validateGitHubToken(token)) {
+      log.warn('Invalid X-GitHub-Token format');
+      return res.status(401).json({ error: 'Invalid token format' });
+    }
+
+    // Initialize client with the user's token
+    let client: CopilotClient;
+    try {
+      client = new CopilotClient({
+        env: {
+          GITHUB_TOKEN: token,
+          ...process.env
+        }
+      });
+      log.info('CopilotClient initialized successfully');
+    } catch (initError) {
+      log.error('CopilotClient initialization failed', initError);
+      return res.status(503).json({ error: 'Service initialization failed' });
+    }
   
   try {
     const systemPrompt = `
@@ -144,10 +161,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    log.error('API call failed', error);
+    if (!res.headersSent) res.status(500).json({ error: 'The roaster overheated.' });
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (stopError) {
+      log.error('Error stopping client', stopError);
+    }
+  }
+  } catch (initError) {
+    log.error('Request processing failed', initError);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
 });
 
