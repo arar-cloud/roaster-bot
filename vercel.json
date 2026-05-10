@@ -1,4 +1,11 @@
 {
+  "functions": {
+    "api/index.ts": {
+      "memory": 1024,
+      "maxDuration": 60,
+      "timeout": 60
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
