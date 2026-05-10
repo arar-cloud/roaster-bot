@@ -199,6 +199,33 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on ${port}`);
+const server = app.listen(port, () => {
+  log.info(`Server running on ${port}`);
+});
+
+// Graceful shutdown handlers
+const shutdownHandler = (signal: string) => {
+  log.info(`Received ${signal} signal, shutting down gracefully...`);
+  server.close(() => {
+    log.info('Server closed');
+    process.exit(0);
+  });
+  // Force exit after 30 seconds if connections not closed
+  setTimeout(() => {
+    log.error('Forced shutdown due to timeout');
+    process.exit(1);
+  }, 30000);
+};
+
+process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+process.on('SIGINT', () => shutdownHandler('SIGINT'));
+
+process.on('uncaughtException', (error) => {
+  log.error('Uncaught exception', error);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  log.error('Unhandled rejection', reason);
+  process.exit(1);
 });
