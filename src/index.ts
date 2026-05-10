@@ -23,8 +23,13 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json({
+// Limit payload size to 10MB
+app.use(express.json({ limit: '10mb',
   verify: (req: any, res, buf) => {
+    const contentLength = parseInt(req.get('content-length') || '0', 10);
+    if (contentLength > 10 * 1024 * 1024) {
+      throw new Error('Payload too large');
+    }
     req.rawBody = buf.toString();
   }
 }));
