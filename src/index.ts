@@ -23,6 +23,9 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Apply Helmet middleware for security headers
+app.use(helmet());
+
 // Validate critical environment variables at startup
 const requiredEnvVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN'];
 const missingVars = requiredEnvVars.filter(v => !process.env[v]);
