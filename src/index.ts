@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import http from 'http';
 import https from 'https';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Configure HTTP timeout globally
