@@ -33,6 +33,19 @@ if (missingVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingVars.join(', ')}`);
 }
 
+// Structured logging utility
+const log = {
+  info: (msg: string, data?: any) => console.log(`[INFO] ${msg}`, data || ''),
+  error: (msg: string, data?: any) => console.error(`[ERROR] ${msg}`, data || ''),
+  warn: (msg: string, data?: any) => console.warn(`[WARN] ${msg}`, data || '')
+};
+
+// Token format validation
+const validateGitHubToken = (token: string): boolean => {
+  if (!token || typeof token !== 'string') return false;
+  return token.length > 0 && !token.includes(' ');
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
