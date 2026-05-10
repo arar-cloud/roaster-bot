@@ -17,6 +17,29 @@ declare global {
     interface Request {
       rawBody?: string;
     }
+    try {
+      // Process message with timeout protection
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 25000)
+      );
+
+      const result = await Promise.race([
+        client.chat.completions.create({
+          model: 'gpt-4',
+          messages: [{ role: 'user', content: JSON.stringify(body) }],
+        }),
+        timeoutPromise
+      ]);
+
+      log.info('Message processed successfully');
+      return res.status(200).json({ success: true, data: result });
+    } catch (apiError) {
+      log.error('API call failed', apiError);
+      return res.status(502).json({ error: 'Upstream service error' });
+    }
+  } catch (error) {
+    log.error('Unhandled error in /agent endpoint', error);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
@@ -116,12 +139,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       log.error('CopilotClient initialization failed', initError);
       return res.status(503).json({ error: 'Service initialization failed' });
     }
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
