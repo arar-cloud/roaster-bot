@@ -7,7 +7,7 @@
   "scripts": {
     "start": "ts-node-esm src/index.ts",
     "dev": "ts-node-esm src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --eval \"console.log('Test suite placeholder - add unit/integration tests here')\""
   },
   "keywords": [],
   "author": "",
