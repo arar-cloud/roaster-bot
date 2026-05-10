@@ -1,8 +1,14 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import http from 'http';
+import https from 'https';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+
+// Configure HTTP timeout globally
+http.globalAgent.timeout = 30000;
+https.globalAgent.timeout = 30000;
 
 // Extend Express Request type properly
 declare global {
