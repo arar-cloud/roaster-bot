@@ -84,6 +84,21 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Enable gzip/brotli compression and security headers
+app.use(helmet.compression());
+
+// Caching middleware for static assets
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path.startsWith('/')) {
+    if (['.js', '.css', '.png', '.jpg', '.gif', '.svg', '.woff', '.woff2'].some(ext => req.path.endsWith(ext))) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else if (req.path === '/' || req.path.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate');
+    }
+  }
+  next();
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
