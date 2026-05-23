@@ -1,9 +1,17 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import http from 'http';
+import https from 'https';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
+
+// Configure global HTTP agents for connection pooling and keep-alive
+const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
+const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
+global.http = { globalAgent: httpAgent } as any;
+global.https = { globalAgent: httpsAgent } as any;
 
 // Extend Express Request type properly
 declare global {
