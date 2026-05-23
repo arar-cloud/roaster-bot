@@ -9,9 +9,34 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      isWebhookValid?: boolean;
     }
   }
 }
+
+// Async HMAC verification middleware
+const verifyWebhookSignature = async (req: any, res: any, next: any) => {
+  try {
+    const signature = req.headers['x-github-hook-signature-256'] as string;
+    if (!signature) {
+      req.isWebhookValid = false;
+      return next();
+    }
+
+    const secret = process.env.GITHUB_WEBHOOK_SECRET || '';
+    const hmac = crypto.createHmac('sha256', secret);
+    hmac.update(req.rawBody || '');
+    const hash = 'sha256=' + hmac.digest('hex');
+
+    req.isWebhookValid = crypto.timingSafeEqual(
+      Buffer.from(hash),
+      Buffer.from(signature)
+    );
+  } catch (error) {
+    req.isWebhookValid = false;
+  }
+  next();
+};
 
 const app = express();
 const port = process.env.PORT || 3000;
