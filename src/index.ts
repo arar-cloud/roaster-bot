@@ -14,6 +14,19 @@ declare global {
   }
 }
 
+// Singleton CopilotClient factory
+let copilotClientInstance: CopilotClient | null = null;
+
+const getCopilotClient = (): CopilotClient => {
+  if (!copilotClientInstance) {
+    const token = process.env.GITHUB_TOKEN || '';
+    copilotClientInstance = new CopilotClient({
+      token: token,
+    });
+  }
+  return copilotClientInstance;
+};
+
 // Async HMAC verification middleware
 const verifyWebhookSignature = async (req: any, res: any, next: any) => {
   try {
