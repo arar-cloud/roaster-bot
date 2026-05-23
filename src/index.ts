@@ -106,7 +106,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       streaming: true,
       systemMessage: {
         mode: "replace",
-        content: systemPrompt
+        content: SYSTEM_PROMPT
       }
     });
 
