@@ -56,22 +56,14 @@ app.use(express.json({
 
 app.use(express.static('public'));
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
-
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+app.post('/webhook', verifyWebhookSignature, async (req: Request, res: Response) => {
+  if (!req.isWebhookValid) {
+    res.status(401).send('Invalid signature');
+    return;
   }
+});
+
+app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
