@@ -38,7 +38,7 @@ const getCopilotClient = (): CopilotClient => {
   return copilotClientInstance;
 };
 
-// Async HMAC verification middleware
+// Async HMAC verification middleware using Web Crypto API (non-blocking)
 const verifyWebhookSignature = async (req: any, res: any, next: any) => {
   try {
     const signature = req.headers['x-github-hook-signature-256'] as string;
@@ -48,9 +48,20 @@ const verifyWebhookSignature = async (req: any, res: any, next: any) => {
     }
 
     const secret = process.env.GITHUB_WEBHOOK_SECRET || '';
-    const hmac = crypto.createHmac('sha256', secret);
-    hmac.update(req.rawBody || '');
-    const hash = 'sha256=' + hmac.digest('hex');
+    const encoder = new TextEncoder();
+    const secretKey = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+    const signatureBuffer = await crypto.subtle.sign(
+      'HMAC',
+      secretKey,
+      encoder.encode(req.rawBody || '')
+    );
+    const hash = 'sha256=' + Buffer.from(signatureBuffer).toString('hex');
 
     req.isWebhookValid = crypto.timingSafeEqual(
       Buffer.from(hash),
