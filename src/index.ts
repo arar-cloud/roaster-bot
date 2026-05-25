@@ -78,6 +78,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   });
   
+  // Extract message from request body
+  const { message } = req.body;
+  
+  if (!message) {
+    res.status(400).json({ error: 'Message is required' });
+    return;
+  }
+  
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
@@ -88,10 +96,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
-
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
     const session = await client.createSession({
@@ -116,7 +120,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    await session.sendAndWait({ prompt });
+    await session.sendAndWait({ prompt: message });
 
     res.write('data: [DONE]\n\n');
     res.end();
