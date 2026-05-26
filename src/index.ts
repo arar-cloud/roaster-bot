@@ -127,5 +127,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 });
 
 app.listen(port, () => {
-  console.log(`Server running on ${port}`);
+  console.log(`Roaster Bot server listening on port ${port}`);
 });
+
+export default app;
