@@ -69,6 +69,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
+
+  // Extract userMessages from request body
+  const { userMessages } = req.body;
+  if (!userMessages || !Array.isArray(userMessages)) {
+    return res.status(400).json({ error: 'userMessages is required and must be an array' });
+  }
   
   try {
     const systemPrompt = `
@@ -81,7 +87,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
