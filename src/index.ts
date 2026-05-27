@@ -48,6 +48,14 @@ const cachedHTML = `
     </html>
   `;
 
+// Pre-computed environment config to avoid spreading process.env on every request
+const envConfig = {
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN,
+  GITHUB_WEBHOOK_SECRET: process.env.GITHUB_WEBHOOK_SECRET,
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+  PORT: process.env.PORT,
+};
+
 // Environment override for user token in /agent handler
 function getClientWithUserToken(token: string): CopilotClient {
   const originalToken = process.env.GITHUB_TOKEN;
@@ -71,7 +79,7 @@ app.get('/', limiter, (req, res) => {
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
+  const webhookSecret = envConfig.GITHUB_WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
