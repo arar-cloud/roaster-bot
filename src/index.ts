@@ -56,6 +56,15 @@ const envConfig = {
   PORT: process.env.PORT,
 };
 
+// Constant-time HMAC verification to prevent timing attacks and event loop blocking
+function verifyWebhookSignature(signature: string, rawBody: string, secret: string): boolean {
+  if (!signature || !rawBody || !secret) return false;
+  const hmac = crypto.createHmac('sha256', secret);
+  const expectedDigest = Buffer.from('sha256=' + hmac.update(rawBody).digest('hex'));
+  const providedDigest = Buffer.from(signature);
+  return crypto.timingSafeEqual(expectedDigest, providedDigest);
+}
+
 // Factory function to create CopilotClient with custom token without global state mutation
 function createCopilotClient(token: string): CopilotClient {
   return new CopilotClient({
@@ -83,10 +92,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const expectedDigest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== expectedDigest) {
+    try {
+      if (!verifyWebhookSignature(signature, rawBody, webhookSecret)) {
+        return res.status(401).send('Unauthorized');
+      }
+    } catch (error) {
+      console.error('Signature verification error:', error);
       return res.status(401).send('Unauthorized');
     }
   }
