@@ -20,10 +20,25 @@ const port = process.env.PORT || 3000;
 app.use(helmet());
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  windowMs: 1 * 60 * 1000, // 1 minute sliding window for faster recovery
+  limit: 30, // Lower per-window limit with shorter window = smoother token bucket
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true, // Only count failed requests (4xx, 5xx) to reduce false rejections
+  skipFailedRequests: false,
+  keyGenerator: (req: Request) => {
+    // Use X-GitHub-Token for authenticated endpoints to prevent single user token hoarding
+    const token = req.get('X-GitHub-Token');
+    return token ? `token:${token}` : req.ip || 'unknown';
+  },
+  handler: (req: Request, res: Response) => {
+    // Graceful rate limit response with retry-after header
+    res.set('Retry-After', '60');
+    res.status(429).json({
+      error: 'Too many requests',
+      retryAfter: 60,
+    });
+  },
 });
 
 let copilotClient: CopilotClient | null = null;
