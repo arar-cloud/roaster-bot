@@ -26,6 +26,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+let copilotClient: CopilotClient | null = null;
+
+function getCopilotClient(): CopilotClient {
+  if (!copilotClient) {
+    copilotClient = new CopilotClient({
+      token: process.env.GITHUB_TOKEN || '',
+    });
+  }
+  return copilotClient;
+}
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
