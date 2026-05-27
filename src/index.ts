@@ -56,13 +56,11 @@ const envConfig = {
   PORT: process.env.PORT,
 };
 
-// Environment override for user token in /agent handler
-function getClientWithUserToken(token: string): CopilotClient {
-  const originalToken = process.env.GITHUB_TOKEN;
-  process.env.GITHUB_TOKEN = token;
-  const client = getCopilotClient();
-  process.env.GITHUB_TOKEN = originalToken;
-  return client;
+// Factory function to create CopilotClient with custom token without global state mutation
+function createCopilotClient(token: string): CopilotClient {
+  return new CopilotClient({
+    token: token,
+  });
 }
 
 app.use(express.json({
@@ -96,8 +94,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Reuse singleton client with user's token via environment
-  const client = getCopilotClient();
+  // Create client with user's token without mutating global state
+  const client = createCopilotClient(token);
   
   try {
     const systemPrompt = `
