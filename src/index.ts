@@ -150,6 +150,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
+// Global error handler - must be last middleware
+app.use((err: any, req: Request, res: Response, next: any) => {
+  console.error('Unhandled error:', err);
+  res.status(500).send({
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? err.message : undefined,
+  });
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
