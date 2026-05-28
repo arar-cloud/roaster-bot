@@ -35,11 +35,72 @@ const STATIC_HOME_RESPONSE = `
     </html>
   `;
 
+/**
+ * Streaming payload handler for large webhook bodies
+ * Buffers up to 10MB in memory, larger payloads use streaming to reduce memory pressure
+ */
+const MAX_JSON_SIZE = process.env.MAX_PAYLOAD_SIZE || '10mb';
+const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB threshold for streaming
+
 app.use(express.json({
+  limit: MAX_JSON_SIZE,
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    // Store raw body for signature verification (up to buffer limit)
+    if (buf.length < MAX_BUFFER_SIZE) {
+      req.rawBody = buf.toString();
+    } else {
+      // Large payload: mark for streaming handler
+      req.isLargePayload = true;
+      req.rawBody = '';
+      console.warn(`Large payload detected: ${buf.length} bytes, using streaming mode`);
+    }
   }
 }));
+
+// Optional: Streaming endpoint for very large payloads
+app.post('/webhook-stream', (req, res) => {
+  const signature = req.headers['x-gh-mac-sha256'];
+  const secret = process.env.GH_WEBHOOK_SECRET;
+
+  if (!signature || !secret) {
+    return res.status(400).json({ error: 'Missing signature or secret' });
+  }
+
+  // Streaming handler: accumulate chunks with backpressure support
+  let chunks: Buffer[] = [];
+  let totalSize = 0;
+  const maxStreamSize = MAX_BUFFER_SIZE * 2;
+
+  req.on('data', (chunk: Buffer) => {
+    totalSize += chunk.length;
+    if (totalSize > maxStreamSize) {
+      req.pause();
+      res.status(413).json({ error: 'Payload too large' });
+      req.destroy();
+      return;
+    }
+    chunks.push(chunk);
+  });
+
+  req.on('end', async () => {
+    const payload = Buffer.concat(chunks).toString();
+    try {
+      const isValid = await verifyWebhookSignatureAsync(payload, signature as string, secret);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      res.json({ message: 'Large webhook processed' });
+    } catch (err) {
+      console.error('Streaming webhook error:', err);
+      res.status(500).json({ error: 'Processing failed' });
+    }
+  });
+
+  req.on('error', (err) => {
+    console.error('Stream error:', err);
+    res.status(400).json({ error: 'Invalid stream' });
+  });
+});
 
 app.get('/', (req, res) => {
   res.set('Cache-Control', 'public, max-age=3600');
