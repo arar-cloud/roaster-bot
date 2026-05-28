@@ -23,14 +23,8 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
-  }
-}));
-
-app.get('/', (req, res) => {
-  res.send(`
+// Static HTML constant - computed once at startup, reused for every request
+const STATIC_HOME_RESPONSE = `
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
         <div style="text-align: center;">
@@ -39,7 +33,17 @@ app.get('/', (req, res) => {
         </div>
       </body>
     </html>
-  `);
+  `;
+
+app.use(express.json({
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+app.get('/', (req, res) => {
+  res.set('Cache-Control', 'public, max-age=3600');
+  res.send(STATIC_HOME_RESPONSE);
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
