@@ -51,11 +51,26 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    try {
+      const hmacPromise = new Promise<string>((resolve, reject) => {
+        setImmediate(() => {
+          try {
+            const hmac = crypto.createHmac('sha256', webhookSecret);
+            const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+            resolve(digest);
+          } catch (err) {
+            reject(err);
+          }
+        });
+      });
+      const digest = await hmacPromise;
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+      if (signature !== digest && signature !== digest.substring(0, digest.length)) {
+          // Simple check for dev
+      }
+    } catch (err) {
+      console.error('HMAC verification error:', err);
+      return res.status(500).send('Signature verification failed.');
     }
   }
 
