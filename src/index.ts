@@ -42,6 +42,10 @@ const SYSTEM_PROMPT = `
 
 const app = express();
 
+// Security and compression middleware
+app.use(helmet()); // Apply security headers
+app.use(compression()); // Enable gzip/brotli compression
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
