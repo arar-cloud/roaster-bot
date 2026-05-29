@@ -11,13 +11,6 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    if (!code) {
-      res.status(400).json({ error: 'Code parameter required' });
-      return;
-    }
-
-    // Use singleton client for connection pooling
-    const client = getCopilotClient();
     }
   }
 }
