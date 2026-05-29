@@ -76,11 +76,48 @@ app.use(compression({
   level: 6
 })); // Enable gzip/brotli compression with tuning for large responses
 
+// Custom time-aware store for rate limiter to prevent memory leak
+class TimeAwareStore {
+  private store = new Map<string, { count: number; resetTime: number }>();
+  private cleanupInterval: NodeJS.Timer;
+
+  constructor() {
+    // Clean up expired entries every 5 minutes
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, value] of this.store.entries()) {
+        if (value.resetTime < now) {
+          this.store.delete(key);
+        }
+      }
+    }, 5 * 60 * 1000);
+  }
+
+  increment(key: string, windowMs: number): { totalHits: number; resetTime: number } {
+    const now = Date.now();
+    const entry = this.store.get(key);
+
+    if (entry && entry.resetTime > now) {
+      entry.count++;
+      return { totalHits: entry.count, resetTime: entry.resetTime };
+    }
+
+    const resetTime = now + windowMs;
+    this.store.set(key, { count: 1, resetTime });
+    return { totalHits: 1, resetTime };
+  }
+
+  resetKey(key: string): void {
+    this.store.delete(key);
+  }
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  store: new TimeAwareStore() as any,
 });
 
 app.use(express.json({
