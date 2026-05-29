@@ -57,7 +57,10 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Security and compression middleware
 app.use(helmet()); // Apply security headers
-app.use(compression()); // Enable gzip/brotli compression
+app.use(compression({
+  threshold: 512,
+  level: 6
+})); // Enable gzip/brotli compression with tuning for large responses
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
