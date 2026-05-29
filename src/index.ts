@@ -15,8 +15,21 @@ declare global {
   }
 }
 
+// Cache environment variables at startup to avoid repeated lookups
+const webhookSecret = process.env.WEBHOOK_SECRET || '';
+const port = parseInt(process.env.PORT || '3000', 10);
+
+// Initialize CopilotClient singleton for connection pooling and reuse
+let copilotClient: CopilotClient | null = null;
+
+function getCopilotClient(): CopilotClient {
+  if (!copilotClient) {
+    copilotClient = new CopilotClient();
+  }
+  return copilotClient;
+}
+
 const app = express();
-const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
