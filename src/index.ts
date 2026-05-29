@@ -29,6 +29,17 @@ function getCopilotClient(): CopilotClient {
   return copilotClient;
 }
 
+// System prompt constant: pre-computed once, reused across all requests
+const SYSTEM_PROMPT = `
+  You are 'The Roaster' 🌶️💀.
+  Your goal is to DESTROY the user's self-esteem by roasting their code.
+  
+  CORE DIRECTIVES:
+  1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
+  2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
+  3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
+`;
+
 const app = express();
 
 const limiter = rateLimit({
@@ -86,16 +97,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
   
   try {
-    const systemPrompt = `
-      You are 'The Roaster' 🌶️💀.
-      Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
-      CORE DIRECTIVES:
-      1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
-      2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
-      3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
-    `;
-
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
