@@ -97,24 +97,15 @@ app.use(express.static('public', {
 }));
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification with timing-safe comparison
+  // Webhook signature verification with async crypto to prevent event loop blocking
   const signature = req.get('X-Hub-Signature-256');
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    const hmac = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
-    const expectedSignature = `sha256=${hmac}`;
-
-    try {
-      const signatureBuffer = Buffer.from(signature);
-      const expectedBuffer = Buffer.from(expectedSignature);
-
-      if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
-        return res.status(401).send('Unauthorized');
-      }
-    } catch (err) {
+    const isValid = await verifyWebhookSignature(signature, rawBody);
+    if (!isValid) {
       return res.status(401).send('Unauthorized');
     }
   }
