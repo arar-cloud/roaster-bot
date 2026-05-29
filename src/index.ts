@@ -49,6 +49,19 @@ const SYSTEM_PROMPT = `
 
 const app = express();
 
+// Global error handler middleware for unhandled errors
+app.use((err: any, req: Request, res: Response, next: any) => {
+  console.error('Unhandled error:', err);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Handle unhandled promise rejections at process level
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 // Security and compression middleware
 app.use(helmet()); // Apply security headers
 app.use(compression()); // Enable gzip/brotli compression
