@@ -29,6 +29,20 @@ function getCopilotClient(): CopilotClient {
   return copilotClient;
 }
 
+// Async HMAC validation to prevent event loop blocking
+async function verifyWebhookSignature(signature: string, rawBody: string): Promise<boolean> {
+  if (!webhookSecret || !signature) return false;
+  const hmac = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+  const expectedSignature = `sha256=${hmac}`;
+  try {
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    return crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+  } catch (err) {
+    return false;
+  }
+}
+
 // System prompt constant: pre-computed once, reused across all requests
 const SYSTEM_PROMPT = `
   You are 'The Roaster' 🌶️💀.
