@@ -25,6 +25,9 @@ const ENV_CACHE = {
 const app = express();
 const port = ENV_CACHE.PORT;
 
+// Enable response compression to reduce bandwidth 3-5x
+app.use(compression());
+
 // CopilotClient cache with TTL and LRU eviction to avoid repeated initialization
 class ClientCache {
   private cache = new Map<string, { client: CopilotClient; timestamp: number; lastAccess: number }>();
