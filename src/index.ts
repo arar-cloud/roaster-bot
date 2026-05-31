@@ -24,9 +24,9 @@ const ENV_CACHE = {
 const app = express();
 const port = ENV_CACHE.PORT;
 
-// CopilotClient cache with TTL to avoid repeated initialization
+// CopilotClient cache with TTL and LRU eviction to avoid repeated initialization
 class ClientCache {
-  private cache = new Map<string, { client: CopilotClient; timestamp: number }>();
+  private cache = new Map<string, { client: CopilotClient; timestamp: number; lastAccess: number }>();
   private readonly TTL = 3600000; // 1 hour
   private readonly MAX_SIZE = 50; // Max 50 cached clients
 
@@ -40,16 +40,26 @@ class ClientCache {
       return null;
     }
 
+    // Update last access time for LRU tracking
+    entry.lastAccess = Date.now();
     return entry.client;
   }
 
   set(token: string, client: CopilotClient): void {
-    // Simple eviction: remove oldest entry if cache is full
+    // LRU eviction: remove least-recently-used entry if cache is full
     if (this.cache.size >= this.MAX_SIZE) {
-      const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      let lruKey = '';
+      let lruTime = Date.now();
+      for (const [key, value] of this.cache.entries()) {
+        if (value.lastAccess < lruTime) {
+          lruTime = value.lastAccess;
+          lruKey = key;
+        }
+      }
+      this.cache.delete(lruKey);
     }
-    this.cache.set(token, { client, timestamp: Date.now() });
+    const now = Date.now();
+    this.cache.set(token, { client, timestamp: now, lastAccess: now });
   }
 
   clear(): void {
