@@ -79,6 +79,23 @@ const clientCache = new ClientCache();
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '15000', 10);
 const COPILOT_TIMEOUT_MS = parseInt(process.env.COPILOT_TIMEOUT_MS || '12000', 10);
 
+// Connection pooling: persistent keep-alive agents for external API calls
+const httpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: REQUEST_TIMEOUT_MS
+});
+
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 50,
+  maxFreeSockets: 10,
+  timeout: REQUEST_TIMEOUT_MS
+});
+
 // Token-based rate limiter: use X-GitHub-Token as key instead of IP
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
