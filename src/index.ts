@@ -249,18 +249,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    // Set highWaterMark to limit buffering; when exceeded, write returns false
+    const highWaterMark = 16 * 1024; // 16KB default
 
     // Track backpressure: pause session if res buffer is filling
     let isPaused = false;
+    let sessionPaused = false;
+
     const backpressureHandler = (event: any) => {
       if (event.type === "assistant.message_delta") {
         const chunk = {
           choices: [{ delta: { content: event.data.deltaContent } }]
         };
+        
+        // Attempt write; if returns false, buffer is full
         const canContinue = res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        
         if (!canContinue && !isPaused) {
           isPaused = true;
-          // In production, signal session to pause; for now, buffer management handled by Node
+          // Pause further event processing to avoid queuing
+          if (session && typeof session.pause === 'function') {
+            sessionPaused = true;
+            session.pause();
+          }
         }
       }
     };
@@ -268,6 +279,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     // Resume streaming when res buffer drains
     res.on('drain', () => {
       isPaused = false;
+      if (sessionPaused && session && typeof session.resume === 'function') {
+        sessionPaused = false;
+        session.resume();
+      }
     });
 
     session.on(backpressureHandler);
