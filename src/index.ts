@@ -73,11 +73,20 @@ const clientCache = new ClientCache();
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '15000', 10);
 const COPILOT_TIMEOUT_MS = parseInt(process.env.COPILOT_TIMEOUT_MS || '12000', 10);
 
+// Token-based rate limiter: use X-GitHub-Token as key instead of IP
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use GitHub token as rate limit key; fall back to IP if missing
+    return req.get('X-GitHub-Token') || req.ip || 'unknown';
+  },
+  skip: (req) => {
+    // Skip rate limiting for health checks
+    return req.path === '/';
+  }
 });
 
 app.use(express.json({
