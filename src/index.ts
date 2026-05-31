@@ -210,12 +210,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
+  // Initialize client with the user's token and connection pool agents
   const client = new CopilotClient({
     env: {
       GITHUB_TOKEN: token,
       ...process.env
-    }
+    },
+    // Enable connection pooling with persistent agents
+    httpAgent,
+    httpsAgent
   });
   
   try {
