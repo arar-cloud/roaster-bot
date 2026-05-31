@@ -31,45 +31,94 @@ const port = ENV_CACHE.PORT;
 app.use(compression());
 
 // CopilotClient cache with TTL and LRU eviction to avoid repeated initialization
+// Uses doubly-linked list for O(1) eviction instead of O(n) linear scan
 class ClientCache {
-  private cache = new Map<string, { client: CopilotClient; timestamp: number; lastAccess: number }>();
+  private cache = new Map<string, Node>();
+  private head: Node | null = null; // Most recently used
+  private tail: Node | null = null; // Least recently used
   private readonly TTL = 3600000; // 1 hour
   private readonly MAX_SIZE = 50; // Max 50 cached clients
 
+  private class Node {
+    token: string;
+    client: CopilotClient;
+    timestamp: number;
+    prev: Node | null = null;
+    next: Node | null = null;
+
+    constructor(token: string, client: CopilotClient, timestamp: number) {
+      this.token = token;
+      this.client = client;
+      this.timestamp = timestamp;
+    }
+  }
+
   get(token: string): CopilotClient | null {
-    const entry = this.cache.get(token);
-    if (!entry) return null;
+    const node = this.cache.get(token);
+    if (!node) return null;
 
     // Check if expired
-    if (Date.now() - entry.timestamp > this.TTL) {
+    if (Date.now() - node.timestamp > this.TTL) {
+      this.removeNode(node);
       this.cache.delete(token);
       return null;
     }
 
-    // Update last access time for LRU tracking
-    entry.lastAccess = Date.now();
-    return entry.client;
+    // Move to head (most recently used) - O(1) operation
+    this.moveToHead(node);
+    return node.client;
   }
 
   set(token: string, client: CopilotClient): void {
-    // LRU eviction: remove least-recently-used entry if cache is full
-    if (this.cache.size >= this.MAX_SIZE) {
-      let lruKey = '';
-      let lruTime = Date.now();
-      for (const [key, value] of this.cache.entries()) {
-        if (value.lastAccess < lruTime) {
-          lruTime = value.lastAccess;
-          lruKey = key;
-        }
-      }
-      this.cache.delete(lruKey);
-    }
     const now = Date.now();
-    this.cache.set(token, { client, timestamp: now, lastAccess: now });
+    
+    if (this.cache.has(token)) {
+      // Update existing node and move to head
+      const node = this.cache.get(token)!;
+      node.client = client;
+      node.timestamp = now;
+      this.moveToHead(node);
+      return;
+    }
+
+    // Create new node - O(1) operation
+    const newNode = new (this as any).Node(token, client, now);
+    this.cache.set(token, newNode);
+    this.addToHead(newNode);
+
+    // O(1) eviction: remove tail if at capacity
+    if (this.cache.size > this.MAX_SIZE && this.tail) {
+      this.removeNode(this.tail);
+      this.cache.delete(this.tail.token);
+    }
+  }
+
+  private moveToHead(node: Node): void {
+    if (node === this.head) return;
+    this.removeNode(node);
+    this.addToHead(node);
+  }
+
+  private addToHead(node: Node): void {
+    node.prev = null;
+    node.next = this.head;
+    if (this.head) this.head.prev = node;
+    this.head = node;
+    if (!this.tail) this.tail = node;
+  }
+
+  private removeNode(node: Node): void {
+    if (node.prev) node.prev.next = node.next;
+    else this.head = node.next;
+    
+    if (node.next) node.next.prev = node.prev;
+    else this.tail = node.prev;
   }
 
   clear(): void {
     this.cache.clear();
+    this.head = null;
+    this.tail = null;
   }
 }
 
