@@ -13,8 +13,16 @@ declare global {
   }
 }
 
+// Pre-warm environment variables at startup to avoid repeated lookups on every request
+const ENV_CACHE = {
+  PORT: parseInt(process.env.PORT || '3000', 10),
+  WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
+  GITHUB_TOKEN: process.env.GITHUB_TOKEN || '',
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || ''
+};
+
 const app = express();
-const port = process.env.PORT || 3000;
+const port = ENV_CACHE.PORT;
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
