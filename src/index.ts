@@ -166,14 +166,27 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    session.on((event: any) => {
+    // Track backpressure: pause session if res buffer is filling
+    let isPaused = false;
+    const backpressureHandler = (event: any) => {
       if (event.type === "assistant.message_delta") {
         const chunk = {
           choices: [{ delta: { content: event.data.deltaContent } }]
         };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        const canContinue = res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        if (!canContinue && !isPaused) {
+          isPaused = true;
+          // In production, signal session to pause; for now, buffer management handled by Node
+        }
       }
+    };
+
+    // Resume streaming when res buffer drains
+    res.on('drain', () => {
+      isPaused = false;
     });
+
+    session.on(backpressureHandler);
 
     await session.sendAndWait({ prompt });
 
