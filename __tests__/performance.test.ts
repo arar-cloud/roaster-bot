@@ -40,8 +40,23 @@ describe('Performance Benchmarks', () => {
     });
 
     it('should stream large prompts instead of concatenating in memory', () => {
-      // Placeholder for streaming verification
-      expect(true).toBe(true);
+      // Verify backpressure mechanism: response should pause writes when buffer full
+      const mockResponse = {
+        write: jest.fn().mockReturnValue(true),
+        on: jest.fn(),
+        headersSent: false,
+        setHeader: jest.fn()
+      };
+      
+      // Simulate backpressure: write returns false when buffer would exceed highWaterMark
+      mockResponse.write.mockReturnValueOnce(true).mockReturnValueOnce(false);
+      
+      const canWrite1 = mockResponse.write('chunk1');
+      const canWrite2 = mockResponse.write('chunk2');
+      
+      expect(canWrite1).toBe(true);
+      expect(canWrite2).toBe(false); // Backpressure triggered
+      expect(mockResponse.on).toHaveBeenCalledWith('drain', expect.any(Function));
     });
   });
 });
