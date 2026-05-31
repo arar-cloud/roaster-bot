@@ -178,6 +178,32 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+// Configure connection pooling and keep-alive for HTTP clients
+server.keepAliveTimeout = 65000; // 65 seconds
+server.headersTimeout = 66000; // 66 seconds
+
+// Enable TCP_NODELAY to reduce latency on small packets
+server.on('connection', (socket) => {
+  socket.setNoDelay(true);
+});
+
+// Graceful shutdown on SIGTERM
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, starting graceful shutdown...');
+  
+  server.close(async () => {
+    console.log('HTTP server closed');
+    clientCache.clear();
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error('Forced shutdown after timeout');
+    clientCache.clear();
+    process.exit(1);
+  }, 30000);
 });
