@@ -77,6 +77,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   });
   
+  const timeoutMs = 30000; // 30 second timeout
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+  
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
@@ -89,6 +93,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
+    if (!userMessages || userMessages.length === 0) {
+      clearTimeout(timeoutId);
+      return res.status(400).json({ error: 'Missing messages parameter' });
+    }
+    
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
@@ -117,12 +126,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     await session.sendAndWait({ prompt });
 
+    clearTimeout(timeoutId);
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
+    clearTimeout(timeoutId);
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (error instanceof Error && error.name === 'AbortError') {
+      if (!res.headersSent) res.status(504).send('Request timeout');
+    } else {
+      if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    }
   } finally {
     await client.stop();
   }
