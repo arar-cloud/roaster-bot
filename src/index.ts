@@ -29,14 +29,7 @@ app.use(helmet());
 app.use(express.static('public'));
 app.use(limiter);
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    // Only store rawBody if webhook secret is configured to avoid memory overhead
-    if (process.env.WEBHOOK_SECRET) {
-      req.rawBody = buf.toString();
-    }
-  }
-}));
+app.use(express.json());
 
 app.post('/agent', async (req: Request, res: Response) => {
   // Webhook signature verification - strict validation with constant-time comparison
