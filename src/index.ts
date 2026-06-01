@@ -49,8 +49,8 @@ function sanitizeMessage(message: any): string {
 
 app.use(express.json({
   limit: '1mb', // Prevent memory exhaustion from oversized payloads
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req, res, buf) => {
+    (req as any).rawBody = buf.toString();
   }
 }));
 
