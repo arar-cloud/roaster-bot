@@ -122,11 +122,17 @@ app.post('/agent', async (req: Request, res: Response) => {
     return res.status(400).send('GitHub token format is invalid');
   }
 
+  // Validate that the token is not empty after format check
+  if (!token.trim()) {
+    return res.status(400).send('GitHub token cannot be empty');
+  }
+
   // Initialize client with the user's token
+  // Create CopilotClient with only the required token parameter
+  // Do NOT use spread operator (...process.env) as it exposes all environment variables
   const client = new CopilotClient({
     env: {
-      GITHUB_TOKEN: token,
-      ...process.env
+      GITHUB_TOKEN: token
     }
   });
   
