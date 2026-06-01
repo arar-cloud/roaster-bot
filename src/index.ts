@@ -93,7 +93,7 @@ app.post('/agent', express.json({
     }
   });
   
-  const timeoutMs = 30000; // 30 second timeout
+  const timeoutMs = parseInt(process.env.REQUEST_TIMEOUT_MS || '30000', 10); // configurable timeout in ms
   const abortController = new AbortController();
   const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
   
