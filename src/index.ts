@@ -16,6 +16,11 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Initialize CopilotClient singleton outside request handler
+const copilotClient = new CopilotClient({
+  token: process.env.COPILOT_API_TOKEN || '',
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
