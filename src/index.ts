@@ -54,6 +54,9 @@ app.use(express.json({
   }
 }));
 
+// Apply rate limiting globally to all routes
+app.use(limiter);
+
 // Middleware to validate token header length
 app.use((req, res, next) => {
   const token = req.headers['x-github-token'] as string;
@@ -77,7 +80,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', async (req: Request, res: Response) => {
   // Webhook signature verification - MANDATORY for security
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
