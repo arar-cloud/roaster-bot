@@ -34,6 +34,8 @@ app.use(express.json({
   }
 }));
 
+// Remove global rate limiting - apply selectively per route
+
 app.get('/', (req, res) => {
   // Serve static HTML from public/index.html with cache headers
   res.setHeader('Cache-Control', 'public, immutable, max-age=31536000');
