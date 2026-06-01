@@ -94,15 +94,23 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    // Set 30-second timeout for external API call to prevent indefinite hangs
+    const timeoutPromise = new Promise<never>((_, reject) => 
+      setTimeout(() => reject(new Error('Copilot API timeout: request exceeded 30s')), 30000)
+    );
+
+    // Create session following SDK docs with timeout race condition
+    const session = await Promise.race([
+      client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      }),
+      timeoutPromise
+    ]);
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -124,7 +132,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   } catch (error) {
     console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+    if (!res.headersSent) res.status(500).json({ error: errorMessage });
   } finally {
     await client.stop();
   }
