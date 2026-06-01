@@ -36,20 +36,31 @@ app.use(express.json({
 }));
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
+  // Webhook signature verification - strict validation with constant-time comparison
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+  // Verify secret is configured before attempting verification
+  if (!webhookSecret) {
+    return res.status(400).send('Webhook secret not configured.');
+  }
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  // Verify signature header is present
+  if (!signature) {
+    return res.status(401).send('Missing signature.');
+  }
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).send('Missing raw body.');
+
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+
+  // Use constant-time comparison to prevent timing attacks
+  try {
+    crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  } catch {
+    return res.status(401).send('Unauthorized.');
   }
 
   const token = req.get('X-GitHub-Token');
