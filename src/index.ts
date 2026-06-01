@@ -23,6 +23,30 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Sanitize user messages to prevent prompt injection attacks
+function sanitizeMessage(message: any): string {
+  if (typeof message !== 'string') {
+    throw new Error('Message must be a string');
+  }
+  
+  const MAX_MESSAGE_LENGTH = 4096;
+  
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    throw new Error('Message exceeds maximum length');
+  }
+  
+  // Remove null bytes and control characters that could be used for injection
+  const sanitized = message
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+    .trim();
+  
+  if (sanitized.length === 0) {
+    throw new Error('Message cannot be empty after sanitization');
+  }
+  
+  return sanitized;
+}
+
 app.use(express.json({
   limit: '1mb', // Prevent memory exhaustion from oversized payloads
   verify: (req: any, res, buf) => {
@@ -116,7 +140,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    const prompt = lastMessage ? sanitizeMessage(lastMessage.content) : "Roast me.";
 
     // Create session following SDK docs
     const session = await client.createSession({
