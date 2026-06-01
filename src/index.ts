@@ -24,6 +24,22 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Module-level singleton CopilotClient to reuse across requests
+let clientInstance: CopilotClient | null = null;
+
+function getOrCreateClient(token: string): CopilotClient {
+  if (clientInstance) {
+    return clientInstance;
+  }
+  clientInstance = new CopilotClient({
+    env: {
+      GITHUB_TOKEN: token,
+      ...process.env
+    }
+  });
+  return clientInstance;
+}
+
 // Apply security and middleware early before routes
 app.use(helmet());
 app.use(express.static('public'));
