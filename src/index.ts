@@ -35,17 +35,17 @@ app.use(express.json({
 }));
 
 app.get('/', (req, res) => {
-  res.send(`
-    <html>
-      <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
-        <div style="text-align: center;">
-          <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
-          <p style="color: #ccc;">Prepare your code for total annihilation.</p>
-        </div>
-      </body>
-    </html>
-  `);
+  // Serve static HTML from public/index.html with cache headers
+  res.setHeader('Cache-Control', 'public, immutable, max-age=31536000');
+  res.sendFile('public/index.html', { root: '.' });
 });
+
+// Serve all static files from public directory with caching
+app.use(express.static('public', {
+  maxAge: '1y',
+  etag: false,
+  lastModified: false,
+}));
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
