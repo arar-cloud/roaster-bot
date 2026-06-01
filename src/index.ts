@@ -31,7 +31,10 @@ app.use(limiter);
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    // Only store rawBody if webhook secret is configured to avoid memory overhead
+    if (process.env.WEBHOOK_SECRET) {
+      req.rawBody = buf.toString();
+    }
   }
 }));
 
