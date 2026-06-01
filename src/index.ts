@@ -142,3 +142,5 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
+
+export default app;
