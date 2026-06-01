@@ -180,8 +180,20 @@ app.post('/agent', async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    // Log error securely without exposing sensitive information
+    console.error('CopilotClient error:', error instanceof Error ? error.message : 'Unknown error');
+    
+    // Send sanitized error response to client
+    const errorMessage = error instanceof Error && error.message.includes('token')
+      ? 'Authentication failed'
+      : 'The roaster overheated.';
+    
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
   } finally {
     await client.stop();
   }
