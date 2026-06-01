@@ -31,7 +31,14 @@ app.use(limiter);
 
 app.use(express.json());
 
-app.post('/agent', async (req: Request, res: Response) => {
+app.post('/agent', express.json({
+  verify: (req: any, res, buf) => {
+    // Capture rawBody only for /agent webhook signature verification
+    if (process.env.WEBHOOK_SECRET) {
+      req.rawBody = buf.toString();
+    }
+  }
+}), async (req: Request, res: Response) => {
   // Webhook signature verification - strict validation with constant-time comparison
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
