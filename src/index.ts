@@ -24,10 +24,21 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '1mb', // Prevent memory exhaustion from oversized payloads
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+// Middleware to validate token header length
+app.use((req, res, next) => {
+  const token = req.headers['x-github-token'] as string;
+  if (token && token.length > 255) {
+    res.status(400).send('Token header exceeds maximum length');
+    return;
+  }
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send(`
