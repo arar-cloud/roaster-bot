@@ -413,7 +413,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     session.on(backpressureHandler);
 
-    await session.sendAndWait({ prompt });
+    // Queue the API call with maxConcurrency=5 to prevent overwhelming external APIs
+    await apiQueue.add(async () => {
+      await session.sendAndWait({ prompt });
+    });
 
     res.write('data: [DONE]\n\n');
     res.end();
