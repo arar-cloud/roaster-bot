@@ -227,19 +227,33 @@ const httpsAgent = new https.Agent({
   timeout: REQUEST_TIMEOUT_MS
 });
 
-// Token-based rate limiter: use X-GitHub-Token as key instead of IP
-const limiter = rateLimit({
+// Differentiated rate limiters: health checks (lenient), webhooks (moderate), AI calls (strict)
+const healthLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  limit: 1000, // Allow up to 1000 health check requests per minute
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => true // Skip for health checks - no rate limiting
+});
+
+const webhookLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  limit: 100, // 100 webhook requests per 15 minutes
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
     // Use GitHub token as rate limit key; fall back to IP if missing
     return req.get('X-GitHub-Token') || req.ip || 'unknown';
-  },
-  skip: (req) => {
-    // Skip rate limiting for health checks
-    return req.path === '/';
+  }
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 20, // Strict limit for expensive AI calls
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    return req.get('X-GitHub-Token') || req.ip || 'unknown';
   }
 });
 
