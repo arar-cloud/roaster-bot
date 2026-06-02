@@ -157,6 +157,55 @@ class CacheNode {
 
 const clientCache = new ClientCache();
 
+// Promise queue with maxConcurrency to prevent overwhelming external APIs
+// Limits concurrent Copilot/OpenAI calls to prevent event loop saturation
+class PromiseQueue {
+  private queue: Array<() => Promise<any>> = [];
+  private running = 0;
+  private readonly maxConcurrency: number;
+
+  constructor(maxConcurrency: number = 5) {
+    this.maxConcurrency = maxConcurrency;
+  }
+
+  async add<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      });
+      this.process();
+    });
+  }
+
+  private async process(): Promise<void> {
+    if (this.running >= this.maxConcurrency || this.queue.length === 0) {
+      return;
+    }
+
+    this.running++;
+    const fn = this.queue.shift();
+    if (fn) {
+      try {
+        await fn();
+      } finally {
+        this.running--;
+        this.process();
+      }
+    }
+  }
+
+  size(): number {
+    return this.queue.length;
+  }
+}
+
+const apiQueue = new PromiseQueue(5); // Max 5 concurrent API calls
+
 // Configuration for request timeouts
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '15000', 10);
 const COPILOT_TIMEOUT_MS = parseInt(process.env.COPILOT_TIMEOUT_MS || '12000', 10);
