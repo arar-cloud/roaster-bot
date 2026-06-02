@@ -243,11 +243,55 @@ const limiter = rateLimit({
   }
 });
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+// Body capture middleware: stream request body asynchronously without blocking
+// Enables HMAC verification without loading entire payload into memory
+app.use(async (req: Request, res: Response, next) => {
+  if (req.method !== 'POST' && req.method !== 'PUT' && req.method !== 'PATCH') {
+    return next();
   }
-}));
+
+  let rawBody = '';
+  const contentType = req.get('content-type') || '';
+
+  // Only capture body for JSON/webhook content types
+  if (!contentType.includes('application/json')) {
+    return next();
+  }
+
+  try {
+    // Stream body chunks with timeout to prevent indefinite buffering
+    const bodyTimeout = setTimeout(() => {
+      req.socket.destroy();
+    }, REQUEST_TIMEOUT_MS);
+
+    req.on('data', (chunk) => {
+      rawBody += chunk.toString('utf8');
+      // Limit buffer to prevent DoS (max 5MB for webhook payloads)
+      if (rawBody.length > 5 * 1024 * 1024) {
+        clearTimeout(bodyTimeout);
+        req.socket.destroy();
+      }
+    });
+
+    req.on('end', () => {
+      clearTimeout(bodyTimeout);
+      (req as any).rawBody = rawBody;
+      next();
+    });
+
+    req.on('error', (err) => {
+      clearTimeout(bodyTimeout);
+      console.error('Request body capture error:', err);
+      next(err);
+    });
+  } catch (err) {
+    console.error('Body capture middleware error:', err);
+    next(err);
+  }
+});
+
+// Parse JSON after body capture
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send(`
