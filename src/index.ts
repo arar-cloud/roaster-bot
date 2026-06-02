@@ -33,23 +33,34 @@ app.use(compression());
 // CopilotClient cache with TTL and LRU eviction to avoid repeated initialization
 // Uses doubly-linked list for O(1) eviction instead of O(n) linear scan
 class ClientCache {
-  private cache = new Map<string, Node>();
-  private head: Node | null = null; // Most recently used
-  private tail: Node | null = null; // Least recently used
+  private cache = new Map<string, CacheNode>();
+  private head: CacheNode | null = null; // Most recently used
+  private tail: CacheNode | null = null; // Least recently used
   private readonly TTL = 3600000; // 1 hour
   private readonly MAX_SIZE = 50; // Max 50 cached clients
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
-  private class Node {
-    token: string;
-    client: CopilotClient;
-    timestamp: number;
-    prev: Node | null = null;
-    next: Node | null = null;
+  constructor() {
+    // Start periodic batch cleanup every 5 minutes to evict expired entries
+    this.cleanupInterval = setInterval(() => this.batchCleanup(), 5 * 60 * 1000);
+  }
 
-    constructor(token: string, client: CopilotClient, timestamp: number) {
-      this.token = token;
-      this.client = client;
-      this.timestamp = timestamp;
+  private batchCleanup(): void {
+    const now = Date.now();
+    const expiredTokens: string[] = [];
+    
+    for (const [token, node] of this.cache.entries()) {
+      if (now - node.timestamp > this.TTL) {
+        expiredTokens.push(token);
+      }
+    }
+    
+    for (const token of expiredTokens) {
+      const node = this.cache.get(token);
+      if (node) {
+        this.removeNode(node);
+        this.cache.delete(token);
+      }
     }
   }
 
@@ -82,7 +93,7 @@ class ClientCache {
     }
 
     // Create new node - O(1) operation
-    const newNode = new (this as any).Node(token, client, now);
+    const newNode = new CacheNode(token, client, now);
     this.cache.set(token, newNode);
     this.addToHead(newNode);
 
@@ -93,13 +104,20 @@ class ClientCache {
     }
   }
 
-  private moveToHead(node: Node): void {
+  clear(): void {
+    this.cache.clear();
+    this.head = null;
+    this.tail = null;
+    if (this.cleanupInterval) clearInterval(this.cleanupInterval);
+  }
+
+  private moveToHead(node: CacheNode): void {
     if (node === this.head) return;
     this.removeNode(node);
     this.addToHead(node);
   }
 
-  private addToHead(node: Node): void {
+  private addToHead(node: CacheNode): void {
     node.prev = null;
     node.next = this.head;
     if (this.head) this.head.prev = node;
@@ -107,12 +125,27 @@ class ClientCache {
     if (!this.tail) this.tail = node;
   }
 
-  private removeNode(node: Node): void {
+  private removeNode(node: CacheNode): void {
     if (node.prev) node.prev.next = node.next;
     else this.head = node.next;
     
     if (node.next) node.next.prev = node.prev;
     else this.tail = node.prev;
+  }
+}
+
+// Cache node type definition for LRU list
+class CacheNode {
+  token: string;
+  client: CopilotClient;
+  timestamp: number;
+  prev: CacheNode | null = null;
+  next: CacheNode | null = null;
+
+  constructor(token: string, client: CopilotClient, timestamp: number) {
+    this.token = token;
+    this.client = client;
+    this.timestamp = timestamp;
   }
 
   clear(): void {
