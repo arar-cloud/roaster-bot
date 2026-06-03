@@ -4,6 +4,15 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Validate required environment variables at startup
+const requiredEnvVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+for (const envVar of requiredEnvVars) {
+  if (!process.env[envVar]) {
+    console.error(`ERROR: Missing required environment variable: ${envVar}`);
+    process.exit(1);
+  }
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
