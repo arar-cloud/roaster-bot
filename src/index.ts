@@ -63,12 +63,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  if (!token) {
+    return res.status(401).send('Missing or invalid token.');
+  }
+
+  let client;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (error) {
+    console.error('CopilotClient initialization error:', error);
+    return res.status(401).json({ error: 'Invalid or expired token', details: error instanceof Error ? error.message : 'Unknown error' });
+  }
   
   try {
     const systemPrompt = `
