@@ -55,7 +55,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = hmac.update(rawBody).digest('hex');
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+      return res.status(401).send('Invalid webhook signature.');
     }
   }
 
