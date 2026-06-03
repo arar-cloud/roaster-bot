@@ -13,6 +13,12 @@ declare global {
   }
 }
 
+// Validate required environment variables at startup
+if (!process.env.GITHUB_TOKEN && !process.env.COPILOT_TOKEN) {
+  console.error('ERROR: GITHUB_TOKEN or COPILOT_TOKEN environment variable is required.');
+  process.exit(1);
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
