@@ -92,9 +92,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    const userMessages = Array.isArray(req.body.messages) ? req.body.messages : [];
+    if (!Array.isArray(userMessages)) {
+      return res.status(400).send('Invalid request: messages field must be an array.');
+    }
+    const lastMessage = userMessages.filter((m: any) => m && m.role === 'user').pop();
+    if (!lastMessage || !lastMessage.content) {
+      return res.status(400).send('Invalid request: no user message found.');
+    }
+    const prompt = lastMessage.content;
 
     // Create session following SDK docs
     const session = await client.createSession({
