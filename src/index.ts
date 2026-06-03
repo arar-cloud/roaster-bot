@@ -104,21 +104,40 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    if (!lastMessage || !lastMessage.content) {
+      return res.status(400).json({ error: 'No user message content found in userMessages array' });
+    }
+
+    const prompt = lastMessage.content;
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: false,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    let session;
+    try {
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: false,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+    } catch (sessionError) {
+      console.error('Session creation error:', sessionError);
+      return res.status(500).json({ error: 'Failed to create Copilot session. Please try again.' });
+    }
 
-    const response = await session.sendAndWait({ prompt });
+    if (!session) {
+      return res.status(500).json({ error: 'Session creation returned null' });
+    }
+
+    let response;
+    try {
+      response = await session.sendAndWait({ prompt });
+    } catch (apiError) {
+      console.error('API call error:', apiError);
+      return res.status(500).json({ error: 'Failed to get roast from Copilot. The roaster overheated.' });
+    }
     
     return res.status(200).json({
       success: true,
@@ -127,10 +146,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('Unexpected error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'The roaster overheated. An unexpected error occurred.' });
+    }
   } finally {
-    await client.stop();
+    try {
+      if (client) {
+        await client.stop();
+      }
+    } catch (stopError) {
+      console.error('Error stopping client:', stopError);
+    }
   }
 });
 
