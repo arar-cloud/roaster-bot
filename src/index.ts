@@ -31,7 +31,15 @@ const limiter = rateLimit({
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    try {
+      req.rawBody = buf.toString('utf8');
+      if (!req.rawBody) {
+        console.warn('Warning: rawBody is empty after toString conversion.');
+      }
+    } catch (error) {
+      console.error('Error extracting raw body:', error);
+      req.rawBody = undefined;
+    }
   }
 }));
 
