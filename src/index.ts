@@ -22,6 +22,8 @@ if (!process.env.GITHUB_TOKEN && !process.env.COPILOT_TOKEN) {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// NOTE: In-memory rate limiting does not persist across serverless function invocations.
+// For production Vercel deployments, consider using Redis or Vercel KV for distributed rate limiting.
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
