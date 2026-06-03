@@ -54,4 +54,45 @@ describe('POST /agent endpoint', () => {
       req.end(JSON.stringify({}));
     });
   });
+
+  it('should reject requests with invalid userMessages type', async () => {
+    const req = http.request({
+      hostname: 'localhost',
+      port: 3001,
+      path: '/agent',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-GitHub-Token': 'test-token'
+      }
+    });
+    
+    return new Promise((resolve, reject) => {
+      req.on('response', (res) => {
+        assert.equal(res.statusCode, 400);
+        resolve(null);
+      });
+      req.on('error', reject);
+      req.end(JSON.stringify({ userMessages: 'not-an-array' }));
+    });
+  });
+
+  it('should return 200 OK for root GET endpoint with rate limiting applied', async () => {
+    const req = http.request({
+      hostname: 'localhost',
+      port: 3001,
+      path: '/',
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    return new Promise((resolve, reject) => {
+      req.on('response', (res) => {
+        assert.equal(res.statusCode, 200);
+        resolve(null);
+      });
+      req.on('error', reject);
+      req.end();
+    });
+  });
 });
