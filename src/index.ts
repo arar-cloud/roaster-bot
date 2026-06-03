@@ -71,6 +71,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
+  const { userMessages } = req.body;
+  if (!userMessages || !Array.isArray(userMessages)) {
+    return res.status(400).json({ error: 'Missing or invalid userMessages in request body' });
+  }
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
@@ -90,7 +95,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
