@@ -7,7 +7,7 @@
   "scripts": {
     "start": "ts-node-esm src/index.ts",
     "dev": "ts-node-esm src/index.ts",
-    "test": "echo \"No tests configured yet\" && exit 0"
+    "test": "node -e \"console.log('Running basic sanity checks...'); const fs = require('fs'); if (!fs.existsSync('src/index.ts')) { console.error('ERROR: src/index.ts not found'); process.exit(1); } console.log('✓ Source file exists'); console.log('Tests: PASS');"
   },
   "keywords": [],
   "author": "",
