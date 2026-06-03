@@ -102,30 +102,20 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     // Create session following SDK docs
     const session = await client.createSession({
       model: "gpt-4o",
-      streaming: true,
+      streaming: false,
       systemMessage: {
         mode: "replace",
         content: systemPrompt
       }
     });
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
+    const response = await session.sendAndWait({ prompt });
+    
+    return res.status(200).json({
+      success: true,
+      roast: response?.message?.content || 'No response from Copilot',
+      timestamp: new Date().toISOString()
     });
-
-    await session.sendAndWait({ prompt });
-
-    res.write('data: [DONE]\n\n');
-    res.end();
 
   } catch (error) {
     console.error('Error:', error);
