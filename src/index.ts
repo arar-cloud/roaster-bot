@@ -23,6 +23,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Singleton CopilotClient pool - reused across all requests
+let copilotClientPool: CopilotClient | null = null;
+
+function getCopilotClient(): CopilotClient {
+  if (!copilotClientPool) {
+    copilotClientPool = new CopilotClient();
+  }
+  return copilotClientPool;
+}
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
