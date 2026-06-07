@@ -31,6 +31,12 @@ app.use(helmet({
 }));
 app.use(compression());
 
+// Serve static files from public directory with caching
+app.use(express.static('public', {
+  maxAge: '1h',
+  etag: false,
+}));
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
