@@ -79,13 +79,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Use singleton client to reuse authenticated connection across requests
+  const client = getCopilotClient();
   
   try {
     const systemPrompt = `
@@ -134,7 +129,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    // Don't stop singleton client; keep it alive for request reuse
   }
 });
 
