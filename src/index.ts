@@ -29,10 +29,11 @@ function getCopilotClient(): CopilotClient {
 }
 
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  windowMs: 60 * 1000, // 1 minute window for webhook traffic
+  limit: 50, // 50 requests per minute per IP (typical webhook burst is 5-10)
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'GET', // Skip rate limiting for GET requests
 });
 
 // Middleware to capture raw body BEFORE JSON parsing (preserves original Buffer)
