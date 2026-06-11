@@ -16,6 +16,18 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Singleton CopilotClient instance (created once, reused across requests)
+let copilotClient: CopilotClient | null = null;
+
+function getCopilotClient(): CopilotClient {
+  if (!copilotClient) {
+    copilotClient = new CopilotClient({
+      token: process.env.GITHUB_TOKEN || '',
+    });
+  }
+  return copilotClient;
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
