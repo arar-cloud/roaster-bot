@@ -90,7 +90,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Use singleton client to reuse authenticated connection across requests
+  // Track request timing for performance metrics
+  const requestStartTime = Date.now();
   const client = getCopilotClient();
   
   try {
@@ -108,30 +109,41 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    // Create session following SDK docs with nested error handling
+    let session;
+    try {
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+    } catch (sessionError) {
+      console.error('Session creation failed:', sessionError);
+      return res.status(500).send('Failed to create session.');
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
-    });
+    try {
+      session.on((event: any) => {
+        if (event.type === "assistant.message_delta") {
+          const chunk = {
+            choices: [{ delta: { content: event.data.deltaContent } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      });
 
-    await session.sendAndWait({ prompt });
+      await session.sendAndWait({ prompt });
+    } catch (streamError) {
+      console.error('Stream processing failed:', streamError);
+      res.write(`data: ${JSON.stringify({ error: 'Stream error' })}\n\n`);
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
