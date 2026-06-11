@@ -23,11 +23,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+app.use(express.json());
+
+// Middleware to capture raw body after JSON parsing (non-blocking)
+app.use((req: any, res, next) => {
+  if (req.is('application/json') && req.body) {
+    // Defer string conversion to after parsing completes
+    req.rawBody = JSON.stringify(req.body);
   }
-}));
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send(`
