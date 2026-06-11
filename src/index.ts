@@ -50,6 +50,20 @@ app.use((req: any, res, next) => {
 
 app.use(express.json());
 
+// Request timing and logging middleware
+app.use((req: Request, res: Response, next) => {
+  const startTime = Date.now();
+  const originalSend = res.send;
+  
+  res.send = function(data) {
+    const duration = Date.now() - startTime;
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path} - ${res.statusCode} (${duration}ms)`);
+    return originalSend.call(this, data);
+  };
+  
+  next();
+});
+
 // Serve static files from public directory
 app.use(express.static('public'));
 
