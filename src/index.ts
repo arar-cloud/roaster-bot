@@ -35,16 +35,19 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json());
-
-// Middleware to capture raw body after JSON parsing (non-blocking)
+// Middleware to capture raw body BEFORE JSON parsing (preserves original Buffer)
 app.use((req: any, res, next) => {
-  if (req.is('application/json') && req.body) {
-    // Defer string conversion to after parsing completes
-    req.rawBody = JSON.stringify(req.body);
-  }
-  next();
+  let rawData = '';
+  req.on('data', (chunk: Buffer) => {
+    rawData += chunk.toString('utf8');
+  });
+  req.on('end', () => {
+    req.rawBody = rawData;
+    next();
+  });
 });
+
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send(`
