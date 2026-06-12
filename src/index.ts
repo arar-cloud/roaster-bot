@@ -113,9 +113,21 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.write('data: [DONE]\n\n');
     res.end();
 
-  } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+  } catch (error: any) {
+    // Log detailed error server-side only
+    console.error(`[Agent Error] Request failed:`, {
+      timestamp: new Date().toISOString(),
+      path: '/agent',
+      errorName: error?.name,
+      errorMessage: error?.message,
+    });
+    
+    // Return generic error to client to prevent information leakage
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: 'Failed to process request. Please try again.' 
+      });
+    }
   } finally {
     await client.stop();
   }
