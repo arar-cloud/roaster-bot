@@ -17,6 +17,12 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Configure for Vercel serverless environment
+app.set('trust proxy', 1);
+
+// Apply Helmet for security headers
+app.use(helmet());
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
