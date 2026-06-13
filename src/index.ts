@@ -67,6 +67,14 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Apply Helmet security headers
+// Request context middleware
+app.use((req: any, res, next) => {
+  req.correlationId = req.headers['x-correlation-id'] || crypto.randomBytes(8).toString('hex');
+  req.userId = req.headers['x-user-id'] as string || 'anonymous';
+  res.setHeader('X-Correlation-ID', req.correlationId);
+  next;
+});
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
