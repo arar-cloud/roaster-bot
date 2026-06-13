@@ -232,28 +232,57 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   console.info(`[TOKEN_ACCEPTED] Valid token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
 
   // Validate request body structure and constraints
-  if (!req.body || typeof req.body !== 'object') {
-    console.warn(`[REQUEST_INVALID] Request body is not an object from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    console.warn(`[REQUEST_INVALID] Request body is not a valid object from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+    auditLog('REQUEST_VALIDATION_FAILED', { reason: 'invalid_body_structure', ip: req.ip });
     res.status(400).json({ error: 'Invalid request' });
     return;
   }
 
   const messages = req.body.messages;
-  if (messages && (!Array.isArray(messages) || messages.length > 100)) {
-    console.warn(`[REQUEST_INVALID] Messages validation failed (not array or exceeds limit) from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
-    res.status(400).json({ error: 'Invalid request' });
-    return;
-  }
+  if (messages !== undefined) {
+    if (!Array.isArray(messages)) {
+      console.warn(`[REQUEST_INVALID] Messages is not an array from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      auditLog('REQUEST_VALIDATION_FAILED', { reason: 'messages_not_array', ip: req.ip });
+      res.status(400).json({ error: 'Invalid request' });
+      return;
+    }
+    if (messages.length === 0 || messages.length > 100) {
+      console.warn(`[REQUEST_INVALID] Messages array length out of bounds: ${messages.length} from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      auditLog('REQUEST_VALIDATION_FAILED', { reason: 'messages_length_invalid', count: messages.length, ip: req.ip });
+      res.status(400).json({ error: 'Invalid request' });
+      return;
+    }
 
-  // Validate each message object depth and field types
-  if (messages) {
+    // Validate each message object depth and field types
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
-      if (typeof msg !== 'object' || msg === null) continue;
+      if (typeof msg !== 'object' || msg === null || Array.isArray(msg)) {
+        console.warn(`[REQUEST_INVALID] Message at index ${i} is not a valid object from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        auditLog('REQUEST_VALIDATION_FAILED', { reason: 'invalid_message_object', index: i, ip: req.ip });
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+      }
+      
+      // Validate required message fields
+      if (typeof msg.role !== 'string' || !msg.role.match(/^(user|assistant|system)$/)) {
+        console.warn(`[REQUEST_INVALID] Message at index ${i} has invalid role from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        auditLog('REQUEST_VALIDATION_FAILED', { reason: 'invalid_message_role', index: i, ip: req.ip });
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+      }
+      
+      if (typeof msg.content !== 'string') {
+        console.warn(`[REQUEST_INVALID] Message at index ${i} has non-string content from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        auditLog('REQUEST_VALIDATION_FAILED', { reason: 'invalid_message_content', index: i, ip: req.ip });
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+      }
       
       const msgStr = JSON.stringify(msg);
       if (msgStr.length > 10000) {
-        console.warn(`[REQUEST_INVALID] Message exceeds size limit at index ${i} from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        console.warn(`[REQUEST_INVALID] Message at index ${i} exceeds size limit (${msgStr.length} bytes) from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        auditLog('REQUEST_VALIDATION_FAILED', { reason: 'message_size_exceeded', index: i, size: msgStr.length, ip: req.ip });
         res.status(400).json({ error: 'Invalid request' });
         return;
       }
