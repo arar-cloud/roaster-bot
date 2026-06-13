@@ -204,12 +204,26 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
+    const sanitizeContent = (content: any): string => {
+      if (typeof content !== 'string') return '';
+      return content
+        .substring(0, 5000)
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+        .trim();
+    };
+
     const userMessages = (req.body.messages || [])
       .filter((msg: any) => typeof msg === 'object' && msg !== null)
-      .map((msg: any) => ({
-        ...msg,
-        content: typeof msg.content === 'string' ? msg.content.substring(0, 5000).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') : msg.content
-      }));
+      .map((msg: any) => {
+        const sanitized: any = { ...msg };
+        if (msg.content) {
+          sanitized.content = sanitizeContent(msg.content);
+        }
+        if (msg.role && typeof msg.role === 'string') {
+          sanitized.role = msg.role.substring(0, 50).replace(/[^a-z]/gi, '');
+        }
+        return sanitized;
+      });
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
