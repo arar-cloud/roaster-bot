@@ -84,8 +84,9 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
     if (!rawBody) {
-      console.error('Security: Missing request body for signature validation');
-      return res.status(400).send('Invalid request.');
+      console.warn(`[WEBHOOK_VALIDATION_FAIL] Missing request body for signature validation from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      res.status(400).json({ error: 'Invalid request' });
+      return;
     }
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
