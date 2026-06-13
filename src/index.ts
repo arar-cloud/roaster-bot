@@ -60,6 +60,12 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) => {
+  // CORS origin validation
+  const origin = req.header('origin');
+  if (origin && !origin.includes('github.com')) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
