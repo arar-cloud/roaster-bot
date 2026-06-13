@@ -88,8 +88,17 @@ app.use(helmet({
   },
   noSniff: true,
   xssFilter: true,
-  referrerPolicy: { policy: 'strict-origin-when-cross-origin' }
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  crossOriginEmbedderPolicy: true,
+  crossOriginOpenerPolicy: true,
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
+
+// Set SameSite cookie policy to prevent CSRF attacks
+app.use((req: Request, res: Response, next) => {
+  res.setHeader('Set-Cookie', 'Path=/; SameSite=Strict; HttpOnly; Secure');
+  next();
+});
 
 // Request logging middleware
 app.use((req: Request, res: Response, next) => {
