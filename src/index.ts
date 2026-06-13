@@ -45,6 +45,26 @@ app.use(express.urlencoded({
   extended: true
 }));
 
+// CSRF token generation and validation middleware
+const csrfTokens = new Map<string, { token: string; expires: number }>();
+const CSRF_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
+
+app.use((req: Request, res: Response, next) => {
+  const tokenHeader = req.get('X-CSRF-Token');
+  if (tokenHeader) {
+    const stored = csrfTokens.get(tokenHeader);
+    if (stored && stored.expires > Date.now()) {
+      req.csrfToken = tokenHeader;
+      next();
+    } else {
+      csrfTokens.delete(tokenHeader);
+      next();
+    }
+  } else {
+    next();
+  }
+});
+
 app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
