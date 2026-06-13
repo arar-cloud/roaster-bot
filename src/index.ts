@@ -195,8 +195,17 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
 
     session.on((event: any) => {
       if (event.type === "assistant.message_delta") {
+        // Validate and sanitize response content
+        let content = event.data.deltaContent;
+        if (typeof content !== 'string') {
+          console.warn(`[RESPONSE_INVALID] Non-string content from Copilot API, type: ${typeof content}`);
+          content = '';
+        }
+        // Remove control characters and limit length per chunk
+        content = content.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').substring(0, 10000);
+        
         const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
+          choices: [{ delta: { content: content } }]
         };
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
       }
