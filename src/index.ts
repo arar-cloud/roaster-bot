@@ -34,6 +34,28 @@ declare global {
   }
 }
 
+// Validate and mask sensitive environment variables at startup
+const requiredSensitiveVars = ['WEBHOOK_SECRET'];
+const optionalSensitiveVars = ['GITHUB_TOKEN', 'OPENAI_API_KEY'];
+const allSensitiveVars = [...requiredSensitiveVars, ...optionalSensitiveVars];
+
+const startupValidation = () => {
+  const missingRequired = requiredSensitiveVars.filter(v => !process.env[v]);
+  const configuredSensitive = allSensitiveVars.filter(v => !!process.env[v]).map(v => `${v}:configured`);
+  
+  if (missingRequired.length > 0) {
+    console.error(`[STARTUP_VALIDATION_FAILED] Missing required environment variables: ${missingRequired.join(', ')}`);
+    return false;
+  }
+  
+  console.info(`[STARTUP_VALIDATION_SUCCESS] Sensitive environment variables configured: ${configuredSensitive.join(', ')}`);
+  return true;
+};
+
+if (!startupValidation()) {
+  process.exit(1);
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
