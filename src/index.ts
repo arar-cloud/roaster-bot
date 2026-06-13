@@ -123,6 +123,35 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
   console.info(`[TOKEN_ACCEPTED] Valid token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
 
+  // Validate request body structure and constraints
+  if (!req.body || typeof req.body !== 'object') {
+    console.warn(`[REQUEST_INVALID] Request body is not an object from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+    res.status(400).json({ error: 'Invalid request' });
+    return;
+  }
+
+  const messages = req.body.messages;
+  if (messages && (!Array.isArray(messages) || messages.length > 100)) {
+    console.warn(`[REQUEST_INVALID] Messages validation failed (not array or exceeds limit) from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+    res.status(400).json({ error: 'Invalid request' });
+    return;
+  }
+
+  // Validate each message object depth and field types
+  if (messages) {
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      if (typeof msg !== 'object' || msg === null) continue;
+      
+      const msgStr = JSON.stringify(msg);
+      if (msgStr.length > 10000) {
+        console.warn(`[REQUEST_INVALID] Message exceeds size limit at index ${i} from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        res.status(400).json({ error: 'Invalid request' });
+        return;
+      }
+    }
+  }
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
