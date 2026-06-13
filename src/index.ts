@@ -105,6 +105,18 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Content-Type enforcement middleware
+app.use((req: Request, res: Response, next) => {
+  if (['POST', 'PUT', 'PATCH'].includes(req.method)) {
+    const contentType = req.get('Content-Type');
+    if (!contentType || !contentType.includes('application/json')) {
+      console.warn(`[CONTENT_TYPE_INVALID] Invalid or missing Content-Type for ${req.method} from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      return res.status(400).json({ error: 'Content-Type must be application/json' });
+    }
+  }
+  next();
+});
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
