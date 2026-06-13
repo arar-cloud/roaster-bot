@@ -32,6 +32,17 @@ app.use(express.json({
   }
 }));
 
+// Apply helmet security headers with CORS policy
+app.use(helmet({
+  crossOriginResourcePolicy: false
+}));
+
+// Configure secure cookie handling for CSRF protection
+app.use(express.urlencoded({ 
+  limit: '1mb',
+  extended: true 
+}));
+
 app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
