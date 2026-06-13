@@ -28,6 +28,14 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+const tokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 50,
+  keyGenerator: (req) => req.header('X-GitHub-Token') || req.ip || 'unknown',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
