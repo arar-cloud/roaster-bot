@@ -81,6 +81,24 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // CSRF token validation
+  const csrfToken = req.headers['x-csrf-token'] as string;
+  const sessionId = req.headers['x-session-id'] as string;
+
+  if (!csrfToken || !sessionId) {
+    res.status(403).json({ error: 'Missing CSRF token or session ID' });
+    return;
+  }
+
+  const storedTokenData = csrfTokens.get(sessionId);
+  if (!storedTokenData || storedTokenData.expires < Date.now() || storedTokenData.token !== csrfToken) {
+    res.status(403).json({ error: 'Invalid or expired CSRF token' });
+    return;
+  }
+
+  // Invalidate token after use
+  csrfTokens.delete(sessionId);
+
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -162,6 +180,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Set-Cookie', 'sessionId=' + sessionId + '; SameSite=Strict; HttpOnly; Secure');
 
     session.on((event: any) => {
       if (event.type === "assistant.message_delta") {
