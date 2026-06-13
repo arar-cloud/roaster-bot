@@ -273,12 +273,14 @@ app.use((req: Request, res: Response, next) => {
   // Validate CSRF token for state-changing requests (POST, PUT, DELETE, PATCH)
   const tokenHeader = req.get('X-CSRF-Token');
   if (!tokenHeader) {
+    auditLogger.log('CSRF_MISSING', { method: req.method, path: req.path, ip: req.ip });
     return res.status(403).json({ error: 'Forbidden: CSRF token required for state-changing request' });
   }
   
   const stored = csrfTokens.get(tokenHeader);
   if (!stored || stored.expires <= Date.now()) {
     csrfTokens.delete(tokenHeader);
+    auditLogger.log('CSRF_INVALID_OR_EXPIRED', { method: req.method, path: req.path, ip: req.ip, tokenAge: stored ? Date.now() - (stored.expires - CSRF_TOKEN_EXPIRY) : 'unknown' });
     return res.status(403).json({ error: 'Forbidden: CSRF token expired or invalid' });
   }
   
@@ -356,27 +358,30 @@ function authenticationMiddleware(req: Request, res: Response, next: Function) {
   }
   
   if (!token) {
-    console.warn(`[${Date.now()}] Auth failed: missing token for ${req.method} ${req.path}`);
+    auditLogger.log('AUTH_MISSING_TOKEN', { method: req.method, path: req.path, ip: req.ip });
     return res.status(401).json({ error: 'Unauthorized: missing X-GitHub-Token' });
   }
   
+  // Hash token for audit logging
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex').substring(0, 8);
+  
   // Validate token format and length
   if (token.length < 40 || token.length > 255) {
-    console.warn(`[${Date.now()}] Auth failed: invalid token length for ${req.method} ${req.path}`);
+    auditLogger.log('AUTH_INVALID_TOKEN_LENGTH', { method: req.method, path: req.path, ip: req.ip, length: token.length });
     return res.status(400).json({ error: 'Bad request: invalid GitHub token format' });
   }
   
   // Validate token format (GitHub tokens start with specific prefixes)
   const tokenRegex = /^(ghu_|ghp_|ghs_|gho_)[a-zA-Z0-9_]{36,255}$/;
   if (!tokenRegex.test(token)) {
-    console.warn(`[${Date.now()}] Auth failed: malformed token for ${req.method} ${req.path}`);
+    auditLogger.log('AUTH_MALFORMED_TOKEN', { method: req.method, path: req.path, ip: req.ip, tokenHash });
     return res.status(400).json({ error: 'Bad request: invalid GitHub token format' });
   }
   
   // Check token blacklist
   const tokenBlacklist = (process.env.TOKEN_BLACKLIST || '').split(',').filter(Boolean);
   if (tokenBlacklist.includes(token)) {
-    console.warn(`[${Date.now()}] Auth failed: blacklisted token for ${req.method} ${req.path}`);
+    auditLogger.log('AUTH_BLACKLISTED_TOKEN', { method: req.method, path: req.path, ip: req.ip, tokenHash });
     return res.status(401).json({ error: 'Unauthorized: token is blacklisted' });
   }
   
@@ -485,7 +490,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const rateLimitCheck = checkTokenRateLimit(token);
   if (!rateLimitCheck.allowed) {
     const tokenHash = crypto.createHash('sha256').update(token).digest('hex').substring(0, 8);
-    console.warn(`[SECURITY] Rate limit exceeded for token ${tokenHash}, retry-after: ${rateLimitCheck.retryAfter}s`);
+    auditLogger.log('RATE_LIMIT_EXCEEDED', { tokenHash, retryAfter: rateLimitCheck.retryAfter, ip: req.ip });
     res.set('Retry-After', String(rateLimitCheck.retryAfter));
     return res.status(429).json({ error: 'Too many requests for this token' });
   }
@@ -493,7 +498,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Validate input fields before processing
   const inputValidation = validateInputFields(req.body);
   if (!inputValidation.valid) {
-    console.warn(`[SECURITY] Input validation failed: ${inputValidation.error}`);
+    auditLogger.log('INPUT_VALIDATION_FAILED', { error: inputValidation.error, tokenHash: tokenHash, ip: req.ip });
     return res.status(400).json({ error: `Bad request: ${inputValidation.error}` });
   }
 
@@ -501,7 +506,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (req.body.messages && Array.isArray(req.body.messages)) {
     const roleValidation = validateMessageRoles(req.body.messages);
     if (!roleValidation.valid) {
-      console.warn(`[SECURITY] Message role validation failed: ${roleValidation.error}`);
+      auditLogger.log('MESSAGE_ROLE_VALIDATION_FAILED', { error: roleValidation.error, tokenHash: tokenHash, ip: req.ip });
       return res.status(400).json({ error: `Bad request: ${roleValidation.error}` });
     }
   }
@@ -510,7 +515,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (req.body.prompt) {
     const sanitization = sanitizePromptInput(req.body.prompt, req.body.code || '');
     if (!sanitization.safe) {
-      console.warn('[SECURITY] Prompt injection attack detected');
+      auditLogger.log('PROMPT_INJECTION_DETECTED', { tokenHash: tokenHash, ip: req.ip });
       return res.status(400).json({ error: 'Bad request: prompt contains invalid patterns' });
     }
     // Use sanitized prompt
