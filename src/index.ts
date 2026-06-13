@@ -19,6 +19,35 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Security audit logger
+class SecurityAuditLogger {
+  private logBuffer: any[] = [];
+  private maxBufferSize = 1000;
+  
+  log(eventType: string, details: any): void {
+    const entry = {
+      timestamp: new Date().toISOString(),
+      eventType,
+      ...details
+    };
+    
+    // Console output for immediate visibility
+    console.log(`[SECURITY_AUDIT] ${eventType}:`, JSON.stringify(entry));
+    
+    // Buffer for potential external logging
+    this.logBuffer.push(entry);
+    if (this.logBuffer.length > this.maxBufferSize) {
+      this.logBuffer.shift();
+    }
+  }
+  
+  getRecentLogs(count: number = 100): any[] {
+    return this.logBuffer.slice(-count);
+  }
+}
+
+const auditLogger = new SecurityAuditLogger();
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
