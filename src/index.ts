@@ -13,6 +13,11 @@ declare global {
     }
   }
 }
+  if (!signature.startsWith('sha256=')) {
+    res.status(401).json({ error: 'Invalid webhook signature format' });
+    return;
+  }
+
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -91,7 +96,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     // Sanitize system prompt to prevent injection attacks
     const MAX_PROMPT_LENGTH = 1000;
@@ -104,7 +109,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -114,7 +119,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     let prompt = lastMessage ? lastMessage.content : "Roast me.";
-    
+
     // Validate and sanitize user prompt input
     if (typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Invalid prompt: must be a string' });
