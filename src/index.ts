@@ -121,9 +121,8 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
-  const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
+  if (WEBHOOK_SECRET && signature) {
     const rawBody = req.rawBody;
     if (!rawBody) {
       console.warn(`[WEBHOOK_VALIDATION_FAIL] Missing request body for signature validation from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
