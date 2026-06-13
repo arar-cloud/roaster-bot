@@ -89,6 +89,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
+  // Validate token format: GitHub tokens start with 'ghp_' or 'ghu_'
+  if (typeof token !== 'string' || !/^(ghp_|ghu_)[a-zA-Z0-9_]{36,255}$/.test(token)) {
+    return res.status(401).json({ error: 'Invalid token format' });
+  }
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
