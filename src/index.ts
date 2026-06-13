@@ -91,16 +91,19 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     }
 
     if (!isValid) {
+      console.warn(`[AUTH_FAIL] Webhook signature verification failed from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
+    console.info(`[AUTH_SUCCESS] Webhook validated from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
   }
 
   const token = req.get('X-GitHub-Token');
   if (!token) {
-    console.error('Security: Missing authentication token');
+    console.warn(`[TOKEN_AUTH_FAIL] Missing authentication token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
     return res.status(401).send('Unauthorized');
   }
+  console.info(`[TOKEN_AUTH_SUCCESS] Token provided from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
   if (typeof token !== 'string' || token.length < 36 || token.length > 255 || !/^[a-zA-Z0-9_-]+$/.test(token)) {
     console.warn('Security: Invalid token format received');
     res.status(400).json({ error: 'Invalid request' });
