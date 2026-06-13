@@ -5,8 +5,10 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
-// Sanitize sensitive environment variable keys
-const sensitiveKeys = ['token', 'secret', 'password', 'api_key', 'key', 'authorization'];
+// Comprehensive list of sensitive environment variable keys to redact
+const sensitiveKeys = ['webhook_secret', 'github_token', 'openai_api_key', 'token', 'secret', 'password', 'api_key', 'key', 'authorization'];
+
+// Sanitize sensitive environment variable keys - check if key contains any sensitive pattern
 const sanitizeEnv = (key: string): boolean => sensitiveKeys.some(k => key.toLowerCase().includes(k));
 
 // Audit logging middleware
@@ -41,12 +43,6 @@ if (!WEBHOOK_SECRET) {
   console.error('FATAL: WEBHOOK_SECRET environment variable must be set');
   process.exit(1);
 }
-
-// Ensure sensitive env vars are never logged
-const sanitizeEnv = (key: string): boolean => {
-  const sensitiveKeys = ['WEBHOOK_SECRET', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'TOKEN'];
-  return sensitiveKeys.some(k => key.toUpperCase().includes(k));
-};
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
