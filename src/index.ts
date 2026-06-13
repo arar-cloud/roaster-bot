@@ -60,11 +60,22 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) => {
-  // CORS origin validation
+  // CORS origin validation with strict hostname matching
   const origin = req.header('origin');
-  if (origin && !origin.includes('github.com')) {
-    res.status(403).json({ error: 'Forbidden' });
-    return;
+  if (origin) {
+    try {
+      const originUrl = new URL(origin);
+      const allowedHosts = ['github.com', 'www.github.com'];
+      if (!allowedHosts.includes(originUrl.hostname)) {
+        console.warn(`[CORS_FAIL] Invalid origin hostname: ${originUrl.hostname} from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        res.status(403).json({ error: 'Forbidden' });
+        return;
+      }
+    } catch (e) {
+      console.warn(`[CORS_FAIL] Malformed origin URL from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
   }
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
