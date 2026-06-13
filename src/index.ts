@@ -26,6 +26,32 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Per-token rate limiting store
+const tokenRateLimitStore = new Map<string, { count: number; resetTime: number }>();
+const TOKEN_RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const TOKEN_RATE_LIMIT = 10; // 10 requests per minute per token
+
+function checkTokenRateLimit(token: string): { allowed: boolean; retryAfter?: number } {
+  const now = Date.now();
+  const record = tokenRateLimitStore.get(token);
+  
+  if (!record || record.resetTime < now) {
+    tokenRateLimitStore.set(token, { count: 1, resetTime: now + TOKEN_RATE_LIMIT_WINDOW });
+    return { allowed: true };
+  }
+  
+  if (record.count >= TOKEN_RATE_LIMIT) {
+    return { allowed: false, retryAfter: Math.ceil((record.resetTime - now) / 1000) };
+  }
+  
+  record.count++;
+  return { allowed: true };
+}
+
+// Session context storage for request isolation
+const sessionContexts = new Map<string, { token: string; startTime: number; requestId: string }>();
+const SESSION_TIMEOUT = 30 * 1000; // 30 seconds
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
