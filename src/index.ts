@@ -260,6 +260,44 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   console.info(`[TOKEN_ACCEPTED] Valid token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
   auditLog('TOKEN_ACCEPTED', { ip: req.ip });
 
+  // Validate per-token session isolation - ensure token context is consistent
+  const userAgent = req.get('User-Agent') || 'unknown';
+  const tokenContext = `${token}:${userAgent}:${req.ip}`;
+  const tokenContextHash = crypto.createHash('sha256').update(tokenContext).digest('hex');
+  
+  // Store and validate token context consistency (in production, use Redis or session store)
+  if (!req.app.locals.tokenContexts) {
+    req.app.locals.tokenContexts = new Map();
+  }
+  const contextMap = req.app.locals.tokenContexts as Map<string, { hash: string; timestamp: number; count: number }>;
+  const lastContext = contextMap.get(token);
+  
+  if (lastContext) {
+    // Check if token is being used from different context (potential hijacking)
+    if (lastContext.hash !== tokenContextHash) {
+      console.warn(`[SESSION_ISOLATION_VIOLATION] Token reused in different context from IP: ${req.ip}, user-agent: ${userAgent}, timestamp: ${new Date().toISOString()}`);
+      auditLog('SESSION_CONTEXT_MISMATCH', { ip: req.ip, previous_ip: 'redacted', user_agent_changed: true });
+    }
+    lastContext.count++;
+    if (lastContext.count > 1000) {
+      // Too many requests in short time from same token
+      console.warn(`[RATE_LIMIT_TOKEN_EXCEEDED] Token request count exceeded from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      auditLog('TOKEN_RATE_LIMIT_EXCEEDED', { ip: req.ip });
+      return res.status(429).json({ error: 'Too many requests' });
+    }
+    lastContext.timestamp = Date.now();
+  } else {
+    contextMap.set(token, { hash: tokenContextHash, timestamp: Date.now(), count: 1 });
+  }
+  
+  // Cleanup old token contexts (older than 1 hour)
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  for (const [key, value] of contextMap.entries()) {
+    if (value.timestamp < oneHourAgo) {
+      contextMap.delete(key);
+    }
+  }
+
   // Validate request body structure and constraints
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
     console.warn(`[REQUEST_INVALID] Request body is not a valid object from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
