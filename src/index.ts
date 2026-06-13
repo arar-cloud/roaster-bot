@@ -66,7 +66,40 @@ app.use(helmet({
 }));
 
 // CORS configuration with explicit origin whitelist
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map(o => o.trim());
+function validateAllowedOrigins(): string[] {
+  const originsEnv = process.env.ALLOWED_ORIGINS || 'http://localhost:3000';
+  const origins = originsEnv.split(',').map(o => o.trim()).filter(Boolean);
+  
+  if (origins.length === 0) {
+    throw new Error('ALLOWED_ORIGINS must contain at least one valid origin');
+  }
+  
+  // Validate origin format (must be valid URL or localhost)
+  const validatedOrigins = origins.map(origin => {
+    if (origin === '*') {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('ALLOWED_ORIGINS wildcard (*) not permitted in production');
+      }
+      return origin;
+    }
+    try {
+      new URL(origin);
+      return origin;
+    } catch (e) {
+      throw new Error(`Invalid origin format: ${origin}. Must be valid URL or wildcard.`);
+    }
+  });
+  
+  return validatedOrigins;
+}
+
+let allowedOrigins: string[];
+try {
+  allowedOrigins = validateAllowedOrigins();
+} catch (error) {
+  console.error('Fatal: ALLOWED_ORIGINS validation failed:', error instanceof Error ? error.message : error);
+  process.exit(1);
+}
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (e.g., curl, mobile apps, Postman)
