@@ -105,10 +105,11 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
   console.info(`[TOKEN_AUTH_SUCCESS] Token provided from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
   if (typeof token !== 'string' || token.length < 36 || token.length > 255 || !/^[a-zA-Z0-9_-]+$/.test(token)) {
-    console.warn('Security: Invalid token format received');
+    console.warn(`[TOKEN_INVALID] Invalid token format from IP: ${req.ip}, token_length: ${token?.length}, timestamp: ${new Date().toISOString()}`);
     res.status(400).json({ error: 'Invalid request' });
     return;
   }
+  console.info(`[TOKEN_ACCEPTED] Valid token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
 
   // Initialize client with the user's token
   const client = new CopilotClient({
