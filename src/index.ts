@@ -56,6 +56,17 @@ app.use(express.json({
   }
 }));
 
+// CSRF token map: store per-session (in production, use Redis or similar)
+const csrfTokens = new Map<string, { token: string; expires: number }>();
+
+// Generate CSRF token endpoint
+app.get('/csrf-token', (req, res) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  csrfTokens.set(sessionId, { token, expires: Date.now() + 3600000 }); // 1 hour expiry
+  res.json({ csrfToken: token, sessionId });
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
