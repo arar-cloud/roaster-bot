@@ -220,7 +220,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   // Create isolated session context for this request
   const requestId = crypto.randomUUID();
-  const sessionContext = { token: token.substring(0, 10) + '...', startTime: Date.now(), requestId };
+  // Store only token hash, never raw token or partial token in session
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex').substring(0, 16);
+  const sessionContext = { token: tokenHash, startTime: Date.now(), requestId };
   sessionContexts.set(requestId, sessionContext);
   (req as any).requestId = requestId;
 
