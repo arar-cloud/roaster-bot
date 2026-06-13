@@ -62,8 +62,46 @@ app.use(express.json({
 
 // Apply helmet security headers with CORS policy
 app.use(helmet({
-  crossOriginResourcePolicy: false
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
 }));
+
+// CORS configuration with explicit origin whitelist
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map(o => o.trim());
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (e.g., curl, mobile apps, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Validate origin against whitelist
+    if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  credentials: true,
+  maxAge: 3600,
+  optionsSuccessStatus: 200
+};
+
+app.use((req, res, next) => {
+  const origin = req.get('origin');
+  if (origin && (allowedOrigins.includes(origin) || allowedOrigins.includes('*'))) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Access-Control-Allow-Credentials', 'true');
+  }
+  
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token, X-CSRF-Token, X-Hub-Signature-256');
+    res.set('Access-Control-Max-Age', '3600');
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 // Configure secure cookie handling for CSRF protection
 app.use(express.urlencoded({
