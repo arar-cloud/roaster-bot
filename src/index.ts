@@ -72,7 +72,7 @@ app.use((req: any, res, next) => {
   req.correlationId = req.headers['x-correlation-id'] || crypto.randomBytes(8).toString('hex');
   req.userId = req.headers['x-user-id'] as string || 'anonymous';
   res.setHeader('X-Correlation-ID', req.correlationId);
-  next;
+  next();
 });
 
 app.use(helmet({
