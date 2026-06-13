@@ -80,12 +80,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) return res.status(401).json({ error: 'Unauthorized: missing X-GitHub-Token' });
 
-  // Validate token format and length
-  const tokenRegex = /^(ghu_|ghp_)[a-zA-Z0-9_]{36,255}$/;
+  // Validate token format and length against GitHub token patterns
+  const tokenRegex = /^(ghu_|ghp_|ghs_|gho_)[a-zA-Z0-9_]{36,255}$/;
   if (!tokenRegex.test(token)) {
-    return res.status(400).json({ error: 'Bad request: invalid token format' });
+    return res.status(400).json({ error: 'Bad request: invalid GitHub token format or length' });
+  }
+
+  // Validate token is not in blacklist or compromised tokens list
+  const tokenBlacklist = (process.env.TOKEN_BLACKLIST || '').split(',').filter(Boolean);
+  if (tokenBlacklist.includes(token)) {
+    return res.status(401).json({ error: 'Unauthorized: token is blacklisted' });
   }
 
   // Initialize client with the user's token
