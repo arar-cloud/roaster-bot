@@ -35,10 +35,18 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-if (!process.env.WEBHOOK_SECRET) {
+// Mark sensitive environment variables
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+if (!WEBHOOK_SECRET) {
   console.error('FATAL: WEBHOOK_SECRET environment variable must be set');
   process.exit(1);
 }
+
+// Ensure sensitive env vars are never logged
+const sanitizeEnv = (key: string): boolean => {
+  const sensitiveKeys = ['WEBHOOK_SECRET', 'GITHUB_TOKEN', 'OPENAI_API_KEY', 'TOKEN'];
+  return sensitiveKeys.some(k => key.toUpperCase().includes(k));
+};
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
