@@ -268,6 +268,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Apply per-token rate limiting
   const rateLimitCheck = checkTokenRateLimit(token);
   if (!rateLimitCheck.allowed) {
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex').substring(0, 8);
+    console.warn(`[SECURITY] Rate limit exceeded for token ${tokenHash}, retry-after: ${rateLimitCheck.retryAfter}s`);
     res.set('Retry-After', String(rateLimitCheck.retryAfter));
     return res.status(429).json({ error: 'Too many requests for this token' });
   }
