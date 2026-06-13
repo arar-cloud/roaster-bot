@@ -226,10 +226,30 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    // Sanitize error response to prevent environment variable leakage
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    // Never expose stack traces, file paths, or environment details
+    console.error(`[${requestId}] Request error - type: ${typeof error}, sanitized`);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'The roaster overheated. Please try again.' });
+    }
   } finally {
-    await client.stop();
+    // Clean up session context
+    if (requestId) {
+      sessionContexts.delete(requestId);
+    }
+    // Clean up stale session contexts
+    const now = Date.now();
+    for (const [id, ctx] of sessionContexts.entries()) {
+      if (now - ctx.startTime > SESSION_TIMEOUT) {
+        sessionContexts.delete(id);
+      }
+    }
+    try {
+      await client.stop();
+    } catch (stopError) {
+      // Silently fail on client cleanup errors
+    }
   }
 });
 
