@@ -140,6 +140,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized: token is blacklisted' });
   }
 
+  // Apply per-token rate limiting
+  const rateLimitCheck = checkTokenRateLimit(token);
+  if (!rateLimitCheck.allowed) {
+    res.set('Retry-After', String(rateLimitCheck.retryAfter));
+    return res.status(429).json({ error: 'Too many requests for this token' });
+  }
+
+  // Create isolated session context for this request
+  const requestId = crypto.randomUUID();
+  const sessionContext = { token: token.substring(0, 10) + '...', startTime: Date.now(), requestId };
+  sessionContexts.set(requestId, sessionContext);
+  (req as any).requestId = requestId;
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
