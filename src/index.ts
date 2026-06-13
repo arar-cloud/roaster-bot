@@ -5,6 +5,24 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Sanitize sensitive environment variable keys
+const sensitiveKeys = ['token', 'secret', 'password', 'api_key', 'key', 'authorization'];
+const sanitizeEnv = (key: string): boolean => sensitiveKeys.some(k => key.toLowerCase().includes(k));
+
+// Audit logging middleware
+const auditLog = (event: string, details: any) => {
+  const sanitizeDetails = (obj: any): any => {
+    const sanitized = { ...obj };
+    Object.keys(sanitized).forEach(key => {
+      if (sanitizeEnv(key)) {
+        sanitized[key] = '[REDACTED]';
+      }
+    });
+    return sanitized;
+  };
+  console.info(`[AUDIT] event=${event}, details=${JSON.stringify(sanitizeDetails(details))}, timestamp=${new Date().toISOString()}`);
+};
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -38,6 +56,22 @@ const tokenLimiter = rateLimit({
 });
 
 app.use(helmet());
+
+// Request logging middleware
+app.use((req: Request, res: Response, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    auditLog('REQUEST_COMPLETE', {
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      ip: req.ip,
+      duration
+    });
+  });
+  next();
+});
 
 app.use(express.json({
   limit: '1mb',
