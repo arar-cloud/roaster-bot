@@ -37,6 +37,8 @@ const tokenLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(helmet());
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
