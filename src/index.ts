@@ -357,11 +357,26 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token
+  let client: CopilotClient;
+  try {
+    if (!token || typeof token !== 'string') {
+      throw new Error('Invalid token provided to CopilotClient');
     }
-  });
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token
+      }
+    });
+    // Verify client is properly initialized
+    if (!client) {
+      throw new Error('CopilotClient initialization failed');
+    }
+    auditLog('CLIENT_INITIALIZED', { ip: req.ip });
+  } catch (initError) {
+    console.error(`[CLIENT_INIT_FAILED] CopilotClient initialization failed: ${initError instanceof Error ? initError.message : 'unknown'}, from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+    auditLog('CLIENT_INITIALIZATION_ERROR', { reason: 'init_failed', ip: req.ip });
+    return res.status(500).json({ error: 'Service unavailable' });
+  }
   
   try {
     const systemPrompt = `
