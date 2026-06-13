@@ -170,7 +170,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[AGENT_ERROR] Request failed from IP: ${req.ip}, error: ${errorMessage}, timestamp: ${new Date().toISOString()}`);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   } finally {
     await client.stop();
   }
