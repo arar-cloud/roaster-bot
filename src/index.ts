@@ -70,11 +70,29 @@ app.use(helmet({
   xssFilter: true,
 }));
 
-const limiter = rateLimit({
+// Global rate limiter for webhook endpoint
+const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  limit: 50,
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+// Per-token rate limiter for /agent endpoint
+const tokenRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30, // Per-token limit
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any, res) => {
+    // Use X-GitHub-Token as the rate limit key
+    const token = req.headers['x-github-token'] as string;
+    return token || req.ip || 'unknown';
+  },
+  skip: (req, res) => {
+    // Skip rate limiting if no token provided (will be rejected by auth anyway)
+    return !req.headers['x-github-token'];
+  },
 });
 
 app.use(express.json({
