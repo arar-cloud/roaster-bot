@@ -162,12 +162,14 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     });
 
     await session.sendAndWait({ prompt });
+    console.info(`[AGENT_SUCCESS] Request completed for token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
 
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[AGENT_ERROR] Request failed from IP: ${req.ip}, error: ${errorMessage}, timestamp: ${new Date().toISOString()}`);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
