@@ -180,7 +180,6 @@ app.post('/agent', tokenRateLimiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) {
     logAuditEvent({
-      timestamp: new Date().toISOString(),
       eventType: 'auth_failed',
       endpoint: '/agent',
       statusCode: 401,
@@ -192,7 +191,6 @@ app.post('/agent', tokenRateLimiter, async (req: Request, res: Response) => {
   // Validate token format: GitHub tokens start with 'ghp_' or 'ghu_'
   if (typeof token !== 'string' || !/^(ghp_|ghu_)[a-zA-Z0-9_]{36,255}$/.test(token)) {
     logAuditEvent({
-      timestamp: new Date().toISOString(),
       eventType: 'auth_failed',
       endpoint: '/agent',
       statusCode: 401,
@@ -203,7 +201,6 @@ app.post('/agent', tokenRateLimiter, async (req: Request, res: Response) => {
   }
 
   logAuditEvent({
-    timestamp: new Date().toISOString(),
     eventType: 'auth_success',
     endpoint: '/agent',
     statusCode: 200,
