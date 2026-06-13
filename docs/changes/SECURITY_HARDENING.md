@@ -3,6 +3,51 @@
 ## Overview
 This document outlines the security controls implemented in roaster-bot and operational procedures for maintaining security posture.
 
+## Vercel Serverless Deployment Considerations
+
+### Session State Management
+- **No persistent state across invocations**: Rate limit records, session contexts, and CSRF tokens are stored in memory and will be lost when a serverless container is recycled or a new instance is created
+- **Cold-start behavior**: Each new container starts with empty session/rate-limit state. This is intentional for security isolation
+- **Rate limiting scope**: Per-token rate limiting is per-instance. High-volume deployments may need external rate limit service (Redis) for distributed rate limiting across containers
+- **Recommendation**: For production with multiple concurrent requests, migrate `tokenRateLimitStore` and `sessionContexts` to external distributed store (Redis/Memcached)
+
+### Security Isolation
+- **Container isolation**: Each serverless function invocation runs in isolated container; environment variables are loaded fresh per invocation
+- **Token storage**: GitHub tokens are never persisted to disk or shared between invocations
+- **Memory cleanup**: Expired sessions and rate-limit records are automatically cleaned up; garbage collection runs every 5-10 seconds
+- **No cross-invocation data leakage**: Stale session state cannot leak between different user requests across containers
+
+### Production Deployment Checklist
+1. Set `NODE_ENV=production` to enforce strict CORS origin validation
+2. Configure `ALLOWED_ORIGINS` with explicit production domain (no wildcard)
+3. Set `WEBHOOK_SECRET` for GitHub webhook signature verification
+4. Consider migrating rate limiting to Redis for multi-instance deployments
+5. Enable monitoring/logging integration (CloudWatch, Datadog, etc.) for audit trail
+6. Rotate `TOKEN_BLACKLIST` regularly and revoke compromised tokens immediately
+
+## Security Event Logging
+
+### Audit Trail
+The application maintains real-time security event logging for:
+- **AUTH_MISSING_TOKEN**: Missing GitHub token header
+- **AUTH_MALFORMED_TOKEN**: Token format validation failure
+- **AUTH_INVALID_TOKEN_LENGTH**: Token length outside allowed range
+- **AUTH_BLACKLISTED_TOKEN**: Token appears in blacklist
+- **CSRF_MISSING**: State-changing request without CSRF token
+- **CSRF_INVALID_OR_EXPIRED**: CSRF token validation failure
+- **RATE_LIMIT_EXCEEDED**: Per-token rate limit exceeded
+- **INPUT_VALIDATION_FAILED**: Request body validation failure
+- **MESSAGE_ROLE_VALIDATION_FAILED**: Invalid message role in array
+- **PROMPT_INJECTION_DETECTED**: Suspicious prompt patterns detected
+
+All events logged with timestamp, request IP, and tokenized identifiers (no raw tokens).
+
+### Accessing Logs
+Security events are output to stdout with `[SECURITY_AUDIT]` prefix. In production:
+- Integrate with CloudWatch, DataDog, or ELK for centralized logging
+- Set up alerts for repeated AUTH failures or RATE_LIMIT_EXCEEDED events
+- Retain logs for minimum 30 days for forensic investigation
+
 ## Authentication & Authorization
 
 ### GitHub Token Management
