@@ -55,9 +55,11 @@ const tokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 50,
   keyGenerator: (req) => {
-    const token = req.header('X-GitHub-Token') || '';
-    const userAgent = req.header('User-Agent') || '';
-    const combinedKey = `${token}:${userAgent}:${req.ip}`;
+    const token = req.header('X-GitHub-Token') || 'unauthenticated';
+    const userAgent = req.header('User-Agent') || 'unknown';
+    const ip = req.ip || 'unknown';
+    // Use constant-time hash for all requests, including those with missing tokens
+    const combinedKey = `${token}:${userAgent}:${ip}`;
     return crypto.createHash('sha256').update(combinedKey).digest('hex').substring(0, 16);
   },
   standardHeaders: true,
