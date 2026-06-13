@@ -63,7 +63,10 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+    if (!rawBody) {
+      console.error('Security: Missing request body for signature validation');
+      return res.status(400).send('Invalid request.');
+    }
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
@@ -75,9 +78,13 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) {
+    console.error('Security: Missing authentication token');
+    return res.status(401).send('Unauthorized');
+  }
   if (typeof token !== 'string' || token.length < 36 || token.length > 255 || !/^[a-zA-Z0-9_-]+$/.test(token)) {
-    res.status(400).json({ error: 'Invalid token format' });
+    console.warn('Security: Invalid token format received');
+    res.status(400).json({ error: 'Invalid request' });
     return;
   }
 
