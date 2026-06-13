@@ -177,11 +177,13 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
       const allowedHosts = ['github.com', 'www.github.com'];
       if (!allowedHosts.includes(originUrl.hostname)) {
         console.warn(`[CORS_FAIL] Invalid origin hostname: ${originUrl.hostname} from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+        auditLog('CORS_VALIDATION_FAILED', { reason: 'invalid_hostname', hostname: originUrl.hostname, ip: req.ip });
         res.status(403).json({ error: 'Forbidden' });
         return;
       }
     } catch (e) {
       console.warn(`[CORS_FAIL] Malformed origin URL from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      auditLog('CORS_VALIDATION_FAILED', { reason: 'malformed_url', ip: req.ip });
       res.status(403).json({ error: 'Forbidden' });
       return;
     }
@@ -212,24 +214,29 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
 
     if (!isValid) {
       console.warn(`[AUTH_FAIL] Webhook signature verification failed from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+      auditLog('WEBHOOK_SIGNATURE_FAILED', { reason: 'invalid_signature', ip: req.ip });
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
     console.info(`[AUTH_SUCCESS] Webhook validated from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+    auditLog('WEBHOOK_SIGNATURE_VERIFIED', { ip: req.ip });
   }
 
   const token = req.get('X-GitHub-Token');
   if (!token) {
     console.warn(`[TOKEN_AUTH_FAIL] Missing authentication token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+    auditLog('TOKEN_AUTH_FAILED', { reason: 'missing_token', ip: req.ip });
     return res.status(401).send('Unauthorized');
   }
   console.info(`[TOKEN_AUTH_SUCCESS] Token provided from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
   if (typeof token !== 'string' || token.length < 36 || token.length > 255 || !/^[a-zA-Z0-9_-]+$/.test(token)) {
     console.warn(`[TOKEN_INVALID] Invalid token format from IP: ${req.ip}, token_length: ${token?.length}, timestamp: ${new Date().toISOString()}`);
+    auditLog('TOKEN_INVALID', { reason: 'invalid_format', token_length: token?.length, ip: req.ip });
     res.status(400).json({ error: 'Invalid request' });
     return;
   }
   console.info(`[TOKEN_ACCEPTED] Valid token from IP: ${req.ip}, timestamp: ${new Date().toISOString()}`);
+  auditLog('TOKEN_ACCEPTED', { ip: req.ip });
 
   // Validate request body structure and constraints
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
