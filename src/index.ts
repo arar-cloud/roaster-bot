@@ -242,8 +242,20 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    // Log detailed error server-side with unique identifier
+    const errorId = crypto.randomBytes(8).toString('hex');
+    console.error(`[ERROR-${errorId}] Copilot session failed:`, error instanceof Error ? error.message : String(error));
+
+    // Return generic error to client, preventing information disclosure
+    if (!res.headersSent) {
+      if (error instanceof Error && error.message.includes('token')) {
+        res.status(401).json({ error: 'Authentication failed', errorId });
+      } else if (error instanceof Error && error.message.includes('rate')) {
+        res.status(429).json({ error: 'Rate limit exceeded', errorId });
+      } else {
+        res.status(500).json({ error: 'Internal server error', errorId });
+      }
+    }
   } finally {
     await client.stop();
   }
