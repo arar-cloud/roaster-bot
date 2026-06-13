@@ -146,20 +146,37 @@ app.use(express.urlencoded({
 const csrfTokens = new Map<string, { token: string; expires: number }>();
 const CSRF_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
 
+function generateCsrfToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
 app.use((req: Request, res: Response, next) => {
-  const tokenHeader = req.get('X-CSRF-Token');
-  if (tokenHeader) {
-    const stored = csrfTokens.get(tokenHeader);
-    if (stored && stored.expires > Date.now()) {
-      req.csrfToken = tokenHeader;
-      next();
-    } else {
-      csrfTokens.delete(tokenHeader);
-      next();
-    }
-  } else {
-    next();
+  // Generate new CSRF token for GET requests
+  if (req.method === 'GET' || req.method === 'OPTIONS') {
+    const newToken = generateCsrfToken();
+    const expiryTime = Date.now() + CSRF_TOKEN_EXPIRY;
+    csrfTokens.set(newToken, { token: newToken, expires: expiryTime });
+    res.set('X-CSRF-Token', newToken);
+    req.csrfToken = newToken;
+    return next();
   }
+  
+  // Validate CSRF token for state-changing requests (POST, PUT, DELETE, PATCH)
+  const tokenHeader = req.get('X-CSRF-Token');
+  if (!tokenHeader) {
+    return res.status(403).json({ error: 'Forbidden: CSRF token required for state-changing request' });
+  }
+  
+  const stored = csrfTokens.get(tokenHeader);
+  if (!stored || stored.expires <= Date.now()) {
+    csrfTokens.delete(tokenHeader);
+    return res.status(403).json({ error: 'Forbidden: CSRF token expired or invalid' });
+  }
+  
+  req.csrfToken = tokenHeader;
+  // Invalidate token after use (single-use)
+  csrfTokens.delete(tokenHeader);
+  next();
 });
 
 app.get('/', limiter, (req, res) => {
