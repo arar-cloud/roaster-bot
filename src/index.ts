@@ -326,6 +326,66 @@ app.get('/', limiter, (req, res) => {
   `);
 });
 
+// Sanitize prompt and prevent system injection attacks
+function sanitizePromptInput(prompt: string, code: string): { sanitized: string; safe: boolean } {
+  if (!prompt || typeof prompt !== 'string') {
+    return { sanitized: '', safe: false };
+  }
+  
+  // Reject prompts containing suspicious patterns that attempt role injection
+  const injectionPatterns = [
+    /system\s*:/i,
+    /ignore\s+previous\s+instructions/i,
+    /pretend\s+you\s+are/i,
+    /act\s+as\s+if/i,
+    /forget\s+the\s+rules/i,
+    /<<SYS>>/,
+    /\[SYSTEM\]/,
+    /\{system\}/
+  ];
+  
+  for (const pattern of injectionPatterns) {
+    if (pattern.test(prompt)) {
+      console.warn(`[SECURITY] Prompt injection attempt detected: pattern ${pattern.source}`);
+      return { sanitized: '', safe: false };
+    }
+  }
+  
+  // Reject code field from being injected into prompt context
+  if (code && prompt.toLowerCase().includes(code.toLowerCase())) {
+    // This is suspicious - code appearing in prompt might indicate injection attempt
+    console.warn('[SECURITY] Code appears in prompt - possible injection attack');
+  }
+  
+  // Limit prompt length after sanitization
+  const sanitized = prompt.substring(0, 10000).trim();
+  return { sanitized, safe: sanitized.length > 0 };
+}
+
+// Enforce role separation in messages to prevent system prompt injection
+function validateMessageRoles(messages: any[]): { valid: boolean; error?: string } {
+  const allowedRoles = ['user', 'assistant'];
+  
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    
+    // Only allow user and assistant roles
+    if (!allowedRoles.includes(msg.role)) {
+      return { valid: false, error: `Invalid role at message ${i}: ${msg.role}. Only 'user' and 'assistant' allowed.` };
+    }
+    
+    // Ensure role sequence is valid (user -> assistant -> user pattern expected)
+    if (i > 0) {
+      const prevRole = messages[i - 1].role;
+      if (msg.role === prevRole && msg.role === 'system') {
+        return { valid: false, error: 'System role is not permitted in message sequence' };
+      }
+    }
+  }
+  
+  return { valid: true };
+}
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification with constant-time comparison
   const signature = req.get('X-Hub-Signature-256');
