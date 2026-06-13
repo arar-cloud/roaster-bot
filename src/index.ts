@@ -71,6 +71,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
   
   try {
+    // Sanitize system prompt to prevent injection attacks
+    const MAX_PROMPT_LENGTH = 1000;
+    const sanitizeInput = (input: string): string => {
+      return input
+        .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F]/g, ' ')
+        .substring(0, MAX_PROMPT_LENGTH);
+    };
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -83,7 +91,13 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    let prompt = lastMessage ? lastMessage.content : "Roast me.";
+    
+    // Validate and sanitize user prompt input
+    if (typeof prompt !== 'string') {
+      return res.status(400).json({ error: 'Invalid prompt: must be a string' });
+    }
+    prompt = sanitizeInput(prompt);
 
     // Create session following SDK docs
     const session = await client.createSession({
