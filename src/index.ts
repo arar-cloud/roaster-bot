@@ -85,7 +85,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     
     let isValid = false;
     try {
-      isValid = crypto.timingSafeEqual(signatureBuffer, digestBuffer);
+      isValid = signatureBuffer.length === digestBuffer.length && crypto.timingSafeEqual(signatureBuffer, digestBuffer);
     } catch (e) {
       isValid = false;
     }
