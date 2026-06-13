@@ -52,6 +52,26 @@ function checkTokenRateLimit(token: string): { allowed: boolean; retryAfter?: nu
 const sessionContexts = new Map<string, { token: string; startTime: number; requestId: string }>();
 const SESSION_TIMEOUT = 30 * 1000; // 30 seconds
 
+// Active session cleanup with garbage collection
+function cleanupExpiredSessions(): void {
+  const now = Date.now();
+  const expiredSessions: string[] = [];
+  
+  for (const [requestId, context] of sessionContexts.entries()) {
+    if (now - context.startTime > SESSION_TIMEOUT) {
+      expiredSessions.push(requestId);
+    }
+  }
+  
+  expiredSessions.forEach(id => sessionContexts.delete(id));
+  if (expiredSessions.length > 0) {
+    console.log(`[SECURITY] Cleaned up ${expiredSessions.length} expired session contexts`);
+  }
+}
+
+// Start periodic cleanup every 10 seconds
+setInterval(cleanupExpiredSessions, 10 * 1000);
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
@@ -281,6 +301,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const sessionContext = { token: tokenHash, startTime: Date.now(), requestId };
   sessionContexts.set(requestId, sessionContext);
   (req as any).requestId = requestId;
+  
+  // Cleanup expired sessions before creating new one
+  cleanupExpiredSessions();
 
   // Initialize client with the user's token
   const client = new CopilotClient({
