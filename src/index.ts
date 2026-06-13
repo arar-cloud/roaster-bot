@@ -58,9 +58,18 @@ const limiter = rateLimit({
 const tokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 50,
-  keyGenerator: (req) => req.header('X-GitHub-Token') || req.ip || 'unknown',
+  keyGenerator: (req) => {
+    const token = req.header('X-GitHub-Token') || '';
+    const userAgent = req.header('User-Agent') || '';
+    const combinedKey = `${token}:${userAgent}:${req.ip}`;
+    return crypto.createHash('sha256').update(combinedKey).digest('hex').substring(0, 16);
+  },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Do not skip any requests - apply rate limiting to all
+    return false;
+  }
 });
 
 app.use(helmet({
