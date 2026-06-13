@@ -40,11 +40,28 @@ function validateEnvironment() {
 }
 
 validateEnvironment();
-  if (!signature.startsWith('sha256=')) {
-    res.status(401).json({ error: 'Invalid webhook signature format' });
-    return;
-  }
 
+// Audit logging utility
+interface AuditLog {
+  timestamp: string;
+  eventType: 'auth_success' | 'auth_failed' | 'api_call' | 'rate_limit_exceeded' | 'webhook_received' | 'webhook_failed';
+  tokenHash?: string;
+  endpoint: string;
+  statusCode?: number;
+  details?: string;
+}
+
+function logAuditEvent(event: AuditLog) {
+  const logEntry = {
+    ...event,
+    timestamp: new Date().toISOString(),
+  };
+  console.log(`[AUDIT] ${JSON.stringify(logEntry)}`);
+}
+
+function getTokenHash(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex').substring(0, 16);
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -161,12 +178,37 @@ app.post('/agent', tokenRateLimiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) {
+    logAuditEvent({
+      timestamp: new Date().toISOString(),
+      eventType: 'auth_failed',
+      endpoint: '/agent',
+      statusCode: 401,
+      details: 'Missing X-GitHub-Token'
+    });
+    return res.status(401).send('Missing X-GitHub-Token.');
+  }
 
   // Validate token format: GitHub tokens start with 'ghp_' or 'ghu_'
   if (typeof token !== 'string' || !/^(ghp_|ghu_)[a-zA-Z0-9_]{36,255}$/.test(token)) {
+    logAuditEvent({
+      timestamp: new Date().toISOString(),
+      eventType: 'auth_failed',
+      endpoint: '/agent',
+      statusCode: 401,
+      details: 'Invalid token format',
+      tokenHash: getTokenHash(token)
+    });
     return res.status(401).json({ error: 'Invalid token format' });
   }
+
+  logAuditEvent({
+    timestamp: new Date().toISOString(),
+    eventType: 'auth_success',
+    endpoint: '/agent',
+    statusCode: 200,
+    tokenHash: getTokenHash(token)
+  });
 
   // Initialize client with the user's token
   const client = new CopilotClient({
