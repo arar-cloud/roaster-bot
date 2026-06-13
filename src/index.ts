@@ -251,11 +251,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   });
 
-  // CSRF token required for POST requests
-  if (!req.csrfToken) {
-    return res.status(403).json({ error: 'Forbidden: CSRF token required' });
-  }
-
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
