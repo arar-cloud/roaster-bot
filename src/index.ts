@@ -74,7 +74,17 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
+    const signatureBuffer = Buffer.from(signature || '', 'utf8');
+    const digestBuffer = Buffer.from(digest, 'utf8');
+    
+    let isValid = false;
+    try {
+      isValid = crypto.timingSafeEqual(signatureBuffer, digestBuffer);
+    } catch (e) {
+      isValid = false;
+    }
+
+    if (!isValid) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
