@@ -10,9 +10,9 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    res.status(401).json({
-      error: 'Unauthorized: invalid webhook signature' });
-    return}
+      csrfToken?: string;
+      tokenUsage?: { count: number; timestamp: number }[];
+    }
   }
 }
 
