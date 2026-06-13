@@ -10,7 +10,8 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    res.status(401).json({ error: 'Unauthorized: invalid webhook signature' });
+    res.status(401).json({
+      error: 'Unauthorized: invalid webhook signature' });
     return}
   }
 }
@@ -39,9 +40,9 @@ app.use(helmet({
 }));
 
 // Configure secure cookie handling for CSRF protection
-app.use(express.urlencoded({ 
+app.use(express.urlencoded({
   limit: '1mb',
-  extended: true 
+  extended: true
 }));
 
 app.get('/', limiter, (req, res) => {
@@ -105,15 +106,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     // Validate and sanitize user input with strict role separation
     const userInput = req.body.message || "Roast me.";
-    
+
     if (typeof userInput !== 'string') {
       return res.status(400).json({ error: 'Bad request: message must be a string' });
     }
-    
+
     if (userInput.length === 0 || userInput.length > 5000) {
       return res.status(413).json({ error: 'Request entity too large: message must be between 1 and 5000 characters' });
     }
-    
+
     // Sanitize user input by removing control characters and potential injection patterns
     const sanitizedInput = userInput.replace(/[\x00-\x1F\x7F]/g, '').trim();
     const prompt = sanitizedInput;
