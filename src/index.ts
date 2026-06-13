@@ -216,6 +216,64 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Input validation schema with per-field limits
+function validateInputFields(body: any): { valid: boolean; error?: string } {
+  if (!body || typeof body !== 'object') {
+    return { valid: false, error: 'Request body must be valid JSON object' };
+  }
+  
+  // Validate code field if present
+  if (body.code !== undefined) {
+    if (typeof body.code !== 'string') {
+      return { valid: false, error: 'code must be a string' };
+    }
+    if (body.code.length > 50000) {
+      return { valid: false, error: 'code field exceeds maximum length (50KB)' };
+    }
+  }
+  
+  // Validate prompt field if present
+  if (body.prompt !== undefined) {
+    if (typeof body.prompt !== 'string') {
+      return { valid: false, error: 'prompt must be a string' };
+    }
+    if (body.prompt.length > 10000) {
+      return { valid: false, error: 'prompt field exceeds maximum length (10KB)' };
+    }
+  }
+  
+  // Validate language field if present
+  if (body.language !== undefined) {
+    if (typeof body.language !== 'string') {
+      return { valid: false, error: 'language must be a string' };
+    }
+    const validLanguages = ['javascript', 'typescript', 'python', 'java', 'go', 'rust', 'c', 'cpp'];
+    if (!validLanguages.includes(body.language.toLowerCase())) {
+      return { valid: false, error: 'language not supported' };
+    }
+  }
+  
+  // Validate messages array if present
+  if (body.messages !== undefined) {
+    if (!Array.isArray(body.messages)) {
+      return { valid: false, error: 'messages must be an array' };
+    }
+    if (body.messages.length > 100) {
+      return { valid: false, error: 'messages array exceeds maximum length (100 items)' };
+    }
+    for (const msg of body.messages) {
+      if (!msg.role || !msg.content || typeof msg.role !== 'string' || typeof msg.content !== 'string') {
+        return { valid: false, error: 'each message must have role and content strings' };
+      }
+      if (msg.content.length > 10000) {
+        return { valid: false, error: 'message content exceeds maximum length' };
+      }
+    }
+  }
+  
+  return { valid: true };
+}
+
 // Authentication middleware: verify GitHub token present and valid format
 function authenticationMiddleware(req: Request, res: Response, next: Function) {
   const token = req.get('X-GitHub-Token');
@@ -230,7 +288,13 @@ function authenticationMiddleware(req: Request, res: Response, next: Function) {
     return res.status(401).json({ error: 'Unauthorized: missing X-GitHub-Token' });
   }
   
-  // Validate token format
+  // Validate token format and length
+  if (token.length < 40 || token.length > 255) {
+    console.warn(`[${Date.now()}] Auth failed: invalid token length for ${req.method} ${req.path}`);
+    return res.status(400).json({ error: 'Bad request: invalid GitHub token format' });
+  }
+  
+  // Validate token format (GitHub tokens start with specific prefixes)
   const tokenRegex = /^(ghu_|ghp_|ghs_|gho_)[a-zA-Z0-9_]{36,255}$/;
   if (!tokenRegex.test(token)) {
     console.warn(`[${Date.now()}] Auth failed: malformed token for ${req.method} ${req.path}`);
