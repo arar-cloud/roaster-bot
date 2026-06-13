@@ -125,7 +125,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', tokenRateLimiter, async (req: Request, res: Response) => {
   // CSRF token validation
   const csrfToken = req.headers['x-csrf-token'] as string;
   const sessionId = req.headers['x-session-id'] as string;
