@@ -125,9 +125,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     let prompt = lastMessage ? lastMessage.content : "Roast me.";
 
+    // Input validation schema with length limits
+    const MAX_CODE_LENGTH = 50000;
+    const MAX_DIRECTIVE_LENGTH = 1000;
+
     // Validate and sanitize user prompt input
     if (typeof prompt !== 'string') {
       return res.status(400).json({ error: 'Invalid prompt: must be a string' });
+    }
+    if (prompt.length > MAX_DIRECTIVE_LENGTH) {
+      return res.status(400).json({ error: `Prompt exceeds maximum length of ${MAX_DIRECTIVE_LENGTH}` });
     }
     prompt = sanitizeInput(prompt);
 
