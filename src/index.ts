@@ -10,9 +10,36 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      userId?: string;
     }
   }
 }
+
+// Utility function to mask secrets in logs
+function maskSecret(secret: string | undefined): string {
+  if (!secret) return '[UNDEFINED]';
+  if (secret.length <= 4) return '****';
+  return secret.substring(0, 2) + '***' + secret.substring(secret.length - 2);
+}
+
+// Validate required environment variables at startup
+function validateEnvironment() {
+  const requiredVars = ['GITHUB_TOKEN', 'WEBHOOK_SECRET'];
+  const missing = requiredVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+  }
+  const githubToken = process.env.GITHUB_TOKEN;
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (githubToken && githubToken.length < 20) {
+    throw new Error('GITHUB_TOKEN must be at least 20 characters');
+  }
+  if (webhookSecret && webhookSecret.length < 16) {
+    throw new Error('WEBHOOK_SECRET must be at least 16 characters');
+  }
+}
+
+validateEnvironment();
   if (!signature.startsWith('sha256=')) {
     res.status(401).json({ error: 'Invalid webhook signature format' });
     return;
