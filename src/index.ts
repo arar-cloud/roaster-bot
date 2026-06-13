@@ -130,7 +130,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
       return;
     }
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
+    const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     const signatureBuffer = Buffer.from(signature || '', 'utf8');
