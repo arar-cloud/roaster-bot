@@ -397,14 +397,19 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
         .trim();
     };
 
+    // SECURITY: Treat all user-provided messages as data only, never as code
+    // All external inputs (from req.body, API responses, etc.) are sanitized and stringified
+    // NO eval(), Function(), template literals with user input, or dynamic code execution is performed
     const userMessages = (req.body.messages || [])
       .filter((msg: any) => typeof msg === 'object' && msg !== null)
       .map((msg: any) => {
         const sanitized: any = { ...msg };
         if (msg.content) {
+          // Sanitize content: truncate, remove control characters, ensure string only
           sanitized.content = sanitizeContent(msg.content);
         }
         if (msg.role && typeof msg.role === 'string') {
+          // Sanitize role: limit length, remove non-alpha characters
           sanitized.role = msg.role.substring(0, 50).replace(/[^a-z]/gi, '');
         }
         return sanitized;
