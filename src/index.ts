@@ -26,25 +26,68 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-// Per-token rate limiting store
-const tokenRateLimitStore = new Map<string, { count: number; resetTime: number }>();
+// Per-token rate limiting store with sliding window
+const tokenRateLimitStore = new Map<string, { count: number; resetTime: number; tokens: number[] }>();
 const TOKEN_RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
 const TOKEN_RATE_LIMIT = 10; // 10 requests per minute per token
+const RATE_LIMIT_STORE_MAX_SIZE = 10000; // Prevent unbounded memory growth
+
+// Cleanup stale rate limit records periodically
+function cleanupStaleRateLimitRecords(): void {
+  const now = Date.now();
+  let cleaned = 0;
+  
+  for (const [tokenHash, record] of tokenRateLimitStore.entries()) {
+    if (record.resetTime < now) {
+      tokenRateLimitStore.delete(tokenHash);
+      cleaned++;
+    }
+  }
+  
+  // Enforce maximum store size by removing oldest entries
+  if (tokenRateLimitStore.size > RATE_LIMIT_STORE_MAX_SIZE) {
+    const entriesToRemove = tokenRateLimitStore.size - RATE_LIMIT_STORE_MAX_SIZE;
+    let removed = 0;
+    for (const [key] of tokenRateLimitStore.entries()) {
+      if (removed >= entriesToRemove) break;
+      tokenRateLimitStore.delete(key);
+      removed++;
+    }
+    console.log(`[SECURITY] Rate limit store evicted ${removed} entries to prevent memory exhaustion`);
+  }
+  
+  if (cleaned > 0) {
+    console.log(`[SECURITY] Cleaned up ${cleaned} stale rate limit records`);
+  }
+}
+
+// Start periodic cleanup every 5 minutes
+setInterval(cleanupStaleRateLimitRecords, 5 * 60 * 1000);
 
 function checkTokenRateLimit(token: string): { allowed: boolean; retryAfter?: number } {
   const now = Date.now();
-  const record = tokenRateLimitStore.get(token);
+  // Hash token to avoid storing raw credentials
+  const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  const record = tokenRateLimitStore.get(tokenHash);
   
   if (!record || record.resetTime < now) {
-    tokenRateLimitStore.set(token, { count: 1, resetTime: now + TOKEN_RATE_LIMIT_WINDOW });
+    // Start new window
+    tokenRateLimitStore.set(tokenHash, { count: 1, resetTime: now + TOKEN_RATE_LIMIT_WINDOW, tokens: [now] });
     return { allowed: true };
   }
   
-  if (record.count >= TOKEN_RATE_LIMIT) {
-    return { allowed: false, retryAfter: Math.ceil((record.resetTime - now) / 1000) };
+  // Remove old tokens outside current window
+  const windowStart = now - TOKEN_RATE_LIMIT_WINDOW;
+  record.tokens = record.tokens.filter(t => t > windowStart);
+  
+  if (record.tokens.length >= TOKEN_RATE_LIMIT) {
+    const oldestToken = Math.min(...record.tokens);
+    const retryAfter = Math.ceil((oldestToken + TOKEN_RATE_LIMIT_WINDOW - now) / 1000);
+    return { allowed: false, retryAfter };
   }
   
-  record.count++;
+  record.tokens.push(now);
+  record.count = record.tokens.length;
   return { allowed: true };
 }
 
