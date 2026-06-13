@@ -418,6 +418,33 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(429).json({ error: 'Too many requests for this token' });
   }
 
+  // Validate input fields before processing
+  const inputValidation = validateInputFields(req.body);
+  if (!inputValidation.valid) {
+    console.warn(`[SECURITY] Input validation failed: ${inputValidation.error}`);
+    return res.status(400).json({ error: `Bad request: ${inputValidation.error}` });
+  }
+
+  // Validate message roles if messages array provided
+  if (req.body.messages && Array.isArray(req.body.messages)) {
+    const roleValidation = validateMessageRoles(req.body.messages);
+    if (!roleValidation.valid) {
+      console.warn(`[SECURITY] Message role validation failed: ${roleValidation.error}`);
+      return res.status(400).json({ error: `Bad request: ${roleValidation.error}` });
+    }
+  }
+
+  // Sanitize prompt input and check for injection attacks
+  if (req.body.prompt) {
+    const sanitization = sanitizePromptInput(req.body.prompt, req.body.code || '');
+    if (!sanitization.safe) {
+      console.warn('[SECURITY] Prompt injection attack detected');
+      return res.status(400).json({ error: 'Bad request: prompt contains invalid patterns' });
+    }
+    // Use sanitized prompt
+    req.body.prompt = sanitization.sanitized;
+  }
+
   // Create isolated session context for this request
   const requestId = crypto.randomUUID();
   // Store only token hash, never raw token or partial token in session
