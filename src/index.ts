@@ -259,6 +259,25 @@ app.post('/agent', tokenRateLimiter, async (req: Request, res: Response) => {
     }
     prompt = sanitizeInput(prompt);
 
+    // Detect prompt injection patterns
+    const injectionPatterns = [
+      /ignore.*previous/i,
+      /system.*prompt/i,
+      /pretend.*you.*are/i,
+      /forget.*instruction/i,
+      /override.*security/i,
+    ];
+
+    if (injectionPatterns.some(pattern => pattern.test(prompt))) {
+      logAuditEvent({
+        eventType: 'auth_failed',
+        endpoint: '/agent',
+        statusCode: 400,
+        details: 'Suspected prompt injection attempt',
+      });
+      return res.status(400).json({ error: 'Invalid input detected' });
+    }
+
     // Create session following SDK docs
     const session = await client.createSession({
       model: "gpt-4o",
