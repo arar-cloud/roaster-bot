@@ -179,6 +179,39 @@ app.use((req: Request, res: Response, next) => {
   next();
 });
 
+// Authentication middleware: verify GitHub token present and valid format
+function authenticationMiddleware(req: Request, res: Response, next: Function) {
+  const token = req.get('X-GitHub-Token');
+  
+  // Allow GET / without auth for health check
+  if (req.method === 'GET' && req.path === '/') {
+    return next();
+  }
+  
+  if (!token) {
+    console.warn(`[${Date.now()}] Auth failed: missing token for ${req.method} ${req.path}`);
+    return res.status(401).json({ error: 'Unauthorized: missing X-GitHub-Token' });
+  }
+  
+  // Validate token format
+  const tokenRegex = /^(ghu_|ghp_|ghs_|gho_)[a-zA-Z0-9_]{36,255}$/;
+  if (!tokenRegex.test(token)) {
+    console.warn(`[${Date.now()}] Auth failed: malformed token for ${req.method} ${req.path}`);
+    return res.status(400).json({ error: 'Bad request: invalid GitHub token format' });
+  }
+  
+  // Check token blacklist
+  const tokenBlacklist = (process.env.TOKEN_BLACKLIST || '').split(',').filter(Boolean);
+  if (tokenBlacklist.includes(token)) {
+    console.warn(`[${Date.now()}] Auth failed: blacklisted token for ${req.method} ${req.path}`);
+    return res.status(401).json({ error: 'Unauthorized: token is blacklisted' });
+  }
+  
+  next();
+}
+
+app.use(authenticationMiddleware);
+
 app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
