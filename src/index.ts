@@ -92,7 +92,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+    const userMessages = (req.body.messages || [])
+      .filter((msg: any) => typeof msg === 'object' && msg !== null)
+      .map((msg: any) => ({
+        ...msg,
+        content: typeof msg.content === 'string' ? msg.content.substring(0, 5000).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '') : msg.content
+      }));
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
