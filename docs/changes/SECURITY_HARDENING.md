@@ -48,6 +48,151 @@ Security events are output to stdout with `[SECURITY_AUDIT]` prefix. In producti
 - Set up alerts for repeated AUTH failures or RATE_LIMIT_EXCEEDED events
 - Retain logs for minimum 30 days for forensic investigation
 
+## Security Controls Implemented
+
+### Input Validation
+
+#### Per-Field Size Limits
+- **code field**: Maximum 50 KB
+- **prompt field**: Maximum 10 KB
+- **message content**: Maximum 10 KB per message
+- **messages array**: Maximum 100 items
+- **JSON body**: Maximum 1 MB (global)
+
+#### Field Type Validation
+- `code`: Must be string
+- `prompt`: Must be string
+- `language`: Must be string from whitelist (javascript, typescript, python, java, go, rust, c, cpp)
+- `messages`: Must be array of objects with `role` and `content` (both strings)
+
+#### Validation Function
+All inputs validated via `validateInputFields()` before processing. Returns early with sanitized 400 error if validation fails.
+
+### Prompt Injection Protection
+
+#### Injection Pattern Detection
+Prompts are scanned for suspicious patterns indicating injection attempts:
+- `system:` prefix
+- `ignore previous instructions`
+- `pretend you are` / `act as if`
+- `forget the rules`
+- `<<SYS>>` / `[SYSTEM]` / `{system}` markers
+
+Matching prompts are rejected with 400 error and logged as `PROMPT_INJECTION_DETECTED`.
+
+#### Role Separation
+Message `role` field strictly validated to only allow:
+- `user`
+- `assistant`
+
+System role injection attempts rejected immediately.
+
+#### Sanitization Function
+`sanitizePromptInput()` function:
+1. Validates prompt is non-empty string
+2. Scans for injection patterns
+3. Cross-checks prompt doesn't contain user's code (suspicious)
+4. Truncates to 10 KB maximum
+5. Returns safe flag and sanitized content
+
+### Error Handling & Information Leakage Prevention
+
+#### Sensitive Pattern Filtering
+Error messages are scanned for patterns that leak sensitive information:
+- API key references
+- Token references
+- Password references
+- Secret references
+- Database connection strings
+- File paths
+- Process/environment references
+
+Matching errors are replaced with generic "Internal server error" message.
+
+#### Error Message Length Limit
+Error messages truncated to 200 characters maximum to prevent side-channel information leakage.
+
+#### Internal Logging
+Full error details (including stack traces) logged server-side only via console.error. Client never receives internal error details.
+
+### Session Management & Cleanup
+
+#### Session Storage
+- Each request gets unique `requestId` (UUID)
+- Session stores: token hash (SHA256, first 16 chars), start time, request ID
+- Raw tokens never stored
+- Session contexts isolated per request
+
+#### Active Cleanup
+- Sessions expire after 30 seconds inactivity
+- `cleanupExpiredSessions()` runs every 10 seconds
+- Expired sessions forcefully deleted (not lazy-deleted)
+- Session deleted immediately after request completes
+
+#### Memory Isolation
+- No session state persists between requests
+- No token reuse possible (stored hashed only)
+- Vercel serverless isolation enforced via container boundaries
+
+### Rate Limiting
+
+#### Global Rate Limit
+- **GET /** endpoint: 100 requests per 15 minutes per IP
+- Implemented via `express-rate-limit` middleware
+
+#### Per-Token Rate Limit
+- **POST /agent**: 10 requests per minute per token
+- Sliding window counter implementation
+- Token hash used (not raw token)
+- Store auto-cleanup removes expired entries
+- Maximum store size: 10,000 entries (prevents memory exhaustion)
+
+#### Rate Limit Store Eviction
+- Stale records cleaned every 5 minutes via `cleanupStaleRateLimitRecords()`
+- Old entries removed if store exceeds 10,000 entries
+- No bypass possible via token rotation (each token tracked separately)
+
+#### Rate Limit Headers
+- `Retry-After` header returned on 429 response
+- Header value = seconds until token can retry
+
+### Security Headers (Helmet)
+
+#### Content Security Policy (CSP)
+```
+defaultSrc: ["'self"]
+scriptSrc: ["'self"]
+styleSrc: ["'self", "'unsafe-inline"]
+imgSrc: ["'self", "data:", "https:"]
+connectSrc: ["'self"]
+fontSrc: ["'self"]
+objectSrc: ["'none"]
+mediaSrc: ["'self"]
+frameSrc: ["'none"]
+```
+
+#### Additional Headers
+- **HSTS**: maxAge 31536000 (1 year), includeSubDomains, preload
+- **X-Content-Type-Options**: nosniff
+- **X-XSS-Protection**: 1; mode=block
+- **X-Frame-Options**: DENY (via CSP frameSrc)
+- **Referrer-Policy**: strict-origin-when-cross-origin
+- **Cross-Origin-Resource-Policy**: cross-origin
+
+### Webhook Security
+
+#### Signature Verification
+- Webhook signature extracted from `X-Hub-Signature-256` header
+- `WEBHOOK_SECRET` environment variable required
+- HMAC-SHA256 verification using constant-time comparison
+- Prevents timing attacks via `crypto.timingSafeEqual()`
+- Rejects request with 401 if signature invalid
+
+#### Raw Body Preservation
+- `express.json()` configured with custom `verify` callback
+- Raw request body stored in `req.rawBody` for signature verification
+- Ensures signature computed over exact bytes received
+
 ## Authentication & Authorization
 
 ### GitHub Token Management
@@ -57,8 +202,8 @@ Security events are output to stdout with `[SECURITY_AUDIT]` prefix. In producti
 - **Token Storage**: Tokens are never stored in memory; only hashed values are retained for audit purposes
 
 ### CSRF Protection
-- **Token Generation**: CSRF tokens generated on every GET request
-- **Expiry**: Tokens expire after 1 hour
+- **Token Generation**: CSRF tokens generated on every GET request via `generateCsrfToken()`, returned in `X-CSRF-Token` response header
+- **Expiry**: Tokens expire after 1 hour (3,600 seconds)
 - **Single-Use**: Tokens are invalidated after use
 - **Header**: Submit CSRF token via `X-CSRF-Token` header
 
