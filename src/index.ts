@@ -47,8 +47,13 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    // Validate buffer size before string conversion to prevent memory exhaustion
+    if (buf.length > 1024 * 1024) {
+      throw new Error('Request body exceeds maximum size limit (1MB)');
+    }
+    req.rawBody = buf.toString('utf-8');
   }
 }));
 
