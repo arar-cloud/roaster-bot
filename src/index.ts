@@ -27,6 +27,39 @@ const sanitizePrompt = (input: string): string => {
   return sanitized;
 };
 
+const validatePromptContent = (input: string): boolean => {
+  // Reject messages with control characters or null bytes
+  if (/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/.test(input)) {
+    return false;
+  }
+  
+  // Detect prompt injection patterns: role-switching or instruction overrides
+  const injectionPatterns = [
+    /forget[\s\w]*instruction/i,
+    /ignore[\s\w]*prompt/i,
+    /system[\s\w]*override/i,
+    /you[\s\w]*are[\s\w]*now/i,
+    /pretend[\s\w]*you/i,
+    /act[\s\w]*as[\s\w]*(admin|user|system)/i,
+    /"system"\s*:/i,
+    /\[SYSTEM\]/i,
+  ];
+  
+  for (const pattern of injectionPatterns) {
+    if (pattern.test(input)) {
+      return false;
+    }
+  }
+  
+  // Reject if input contains excess non-ASCII that might evade filters
+  const nonAsciiRatio = (input.match(/[^\x20-\x7E\n\r\t]/g) || []).length / input.length;
+  if (nonAsciiRatio > 0.3) {
+    return false;
+  }
+  
+  return true;
+};
+
 const validateUserMessages = (messages: unknown): string[] => {
   if (!Array.isArray(messages)) {
     throw new Error('userMessages must be an array');
