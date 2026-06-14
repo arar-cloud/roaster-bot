@@ -62,6 +62,40 @@ function logInfo(context: string, message: string, metadata?: Record<string, any
   }));
 }
 
+// Retry logic with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  baseDelayMs: number = 100,
+  context: string = 'api-call'
+): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const isTransient = error?.status === 429 || error?.code === 'ECONNRESET' || 
+                         error?.code === 'ETIMEDOUT' || error?.code === 'ENOTFOUND';
+      const isLastAttempt = attempt === maxRetries - 1;
+      
+      if (!isTransient || isLastAttempt) {
+        throw error;
+      }
+      
+      const delayMs = baseDelayMs * Math.pow(2, attempt);
+      logInfo(context, `Transient error, retrying after ${delayMs}ms`, {
+        attempt: attempt + 1,
+        maxRetries,
+        error: error?.message || String(error)
+      });
+      
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
