@@ -36,11 +36,22 @@ app.use(helmet({
   }
 }));
 
-const limiter = rateLimit({
+// Per-token rate limiter: keyed by GitHub token for per-user quota enforcement
+const tokenLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
+  limit: 20, // reduced per-token limit from global 100
+  keyGenerator: (req: any) => {
+    // Extract token from header for per-token rate limiting
+    const token = req.headers['x-github-token'];
+    if (!token) {
+      return req.ip || 'unknown'; // fallback to IP if no token
+    }
+    // Hash token to avoid exposing it in rate limit headers
+    return crypto.createHash('sha256').update(String(token)).digest('hex');
+  },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path !== '/agent' // only rate limit the sensitive endpoint
 });
 
 app.use(express.json({
