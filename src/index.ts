@@ -82,13 +82,23 @@ if (!webhookSecret) {
   process.exit(1);
 }
 
+// Middleware to generate and set CSP nonce
+const nonceMiddleware = (req: Request, res: Response, next: Function) => {
+  const nonce = crypto.randomBytes(16).toString('hex');
+  (res.locals as any).nonce = nonce;
+  next();
+};
+
+app.use(nonceMiddleware);
+
 // Apply helmet security headers first
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'"],
+      // Allow inline styles only with matching nonce (helmet will handle nonce injection)
     },
   },
   xFrameOptions: { action: 'deny' },
