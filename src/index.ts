@@ -105,11 +105,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Missing signature or body' });
   }
 
-  // Compute expected digest using constant-time comparison
-  const digest = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(req.rawBody).digest('hex');
-  
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
-    return res.status(401).json({ error: 'Invalid webhook signature' });
+  // Validate signature format before processing
+  if (!signature.startsWith('sha256=') || signature.length !== 71) {
+    return res.status(401).json({ error: 'Invalid signature format' });
+  }
+
+  try {
+    // Compute expected digest using constant-time comparison
+    const digest = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(req.rawBody).digest('hex');
+    
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
+  } catch (err) {
+    // Prevent secret exposure in error logs
+    console.error('Signature verification failed');
+    return res.status(401).json({ error: 'Signature verification failed' });
   }
 
   const token = req.get('X-GitHub-Token');
