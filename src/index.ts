@@ -10,7 +10,15 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string;
+      // Create isolated CopilotClient instance for this request (session isolation)
+    // Token is stored on request object, NOT injected into process.env
+    const copilot = new CopilotClient({
+      token: token,
+    });
+
+    const { userMessages } = req.body;
+
+    // Reconstruct messages with immutable system prompt (prevent injection)rawBody?: string;
       githubToken?: string;
       clientId?: string;
     }
@@ -77,7 +85,7 @@ app.use(express.json({
 const validateAgentInput = (req: Request, res: Response, next: any) => {
   if (req.path === '/agent' && req.method === 'POST') {
     const clientId = (req as any).clientId || 'unknown';
-    
+
     // Validate Content-Type
     const contentType = req.headers['content-type'];
     if (!contentType || !contentType.includes('application/json')) {
