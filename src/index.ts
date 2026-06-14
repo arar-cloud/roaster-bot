@@ -270,6 +270,33 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on ${port}`);
+const server = app.listen(port, () => {
+  logInfo('startup', `Server running on port ${port}`);
+});
+
+// Graceful shutdown handlers
+process.on('SIGTERM', () => {
+  logInfo('shutdown', 'SIGTERM received, draining connections');
+  server.close(() => {
+    logInfo('shutdown', 'Server closed gracefully');
+    process.exit(0);
+  });
+  // Force exit after 30 seconds
+  setTimeout(() => {
+    logError('shutdown', 'Forced shutdown after 30s timeout');
+    process.exit(1);
+  }, 30000);
+});
+
+process.on('SIGINT', () => {
+  logInfo('shutdown', 'SIGINT received, draining connections');
+  server.close(() => {
+    logInfo('shutdown', 'Server closed gracefully');
+    process.exit(0);
+  });
+  // Force exit after 30 seconds
+  setTimeout(() => {
+    logError('shutdown', 'Forced shutdown after 30s timeout');
+    process.exit(1);
+  }, 30000);
 });
