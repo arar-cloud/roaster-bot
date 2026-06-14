@@ -62,12 +62,27 @@ function logInfo(context: string, message: string, metadata?: Record<string, any
   }));
 }
 
+// Timeout wrapper for API calls
+function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  context: string = 'api-call'
+): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout after ${timeoutMs}ms in ${context}`)), timeoutMs)
+    )
+  ]);
+}
+
 // Retry logic with exponential backoff
 async function retryWithBackoff<T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
   baseDelayMs: number = 100,
-  context: string = 'api-call'
+  context: string = 'api-call',
+  timeoutMs: number = 30000
 ): Promise<T> {
   let lastError: any;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
