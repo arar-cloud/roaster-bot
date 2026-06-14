@@ -115,7 +115,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    let prompt = lastMessage ? lastMessage.content : "Roast me.";
+    
+    // Validate prompt is a string
+    if (typeof prompt !== 'string') {
+      console.warn('Prompt must be a string');
+      return res.status(400).json({ error: 'Bad request' });
+    }
+    
+    // Enforce maximum message length (prevent DoS via huge prompts)
+    const MAX_MESSAGE_LENGTH = 10000;
+    if (prompt.length > MAX_MESSAGE_LENGTH) {
+      console.warn(`Prompt exceeds maximum length of ${MAX_MESSAGE_LENGTH}`);
+      return res.status(400).json({ error: 'Bad request' });
+    }
+    
+    // Sanitize: trim whitespace and remove null bytes
+    prompt = prompt.trim().replace(/\0/g, '');
+    
+    // Ensure prompt is not empty after sanitization
+    if (prompt.length === 0) {
+      console.warn('Prompt is empty after sanitization');
+      return res.status(400).json({ error: 'Bad request' });
+    }
 
     // Create session following SDK docs
     const session = await client.createSession({
