@@ -10,9 +10,34 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      validatedToken?: string;
     }
   }
 }
+
+// Input validation helpers
+const validateGitHubToken = (token: string): boolean => {
+  // GitHub tokens start with 'ghp_', 'ghu_', 'ghs_', or 'gho_'
+  return /^(ghp_|ghu_|ghs_|gho_)[a-zA-Z0-9_]{36,255}$/.test(token);
+};
+
+const sanitizePrompt = (input: string): string => {
+  // Remove excessive whitespace and limit length
+  const sanitized = input.trim().slice(0, 2000);
+  return sanitized;
+};
+
+const validateUserMessages = (messages: unknown): string[] => {
+  if (!Array.isArray(messages)) {
+    throw new Error('userMessages must be an array');
+  }
+  return messages.map(msg => {
+    if (typeof msg !== 'string') {
+      throw new Error('Each message must be a string');
+    }
+    return sanitizePrompt(msg);
+  }).slice(0, 10); // Limit to 10 messages
+};
 
 const app = express();
 const port = process.env.PORT || 3000;
