@@ -87,20 +87,35 @@ app.use(express.json({
 // Input validation middleware
 const validateAgentInput = (req: Request, res: Response, next: any) => {
   if (req.path === '/agent' && req.method === 'POST') {
+    const clientId = (req as any).clientId || 'unknown';
+    
     // Validate Content-Type
     const contentType = req.headers['content-type'];
     if (!contentType || !contentType.includes('application/json')) {
+      logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+        reason: 'invalid_content_type',
+        contentType: contentType || 'missing',
+        clientId
+      });
       return res.status(400).json({ error: 'Content-Type must be application/json' });
     }
 
     // Validate request body structure
     const body = req.body;
     if (!body || typeof body !== 'object') {
+      logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+        reason: 'invalid_body_structure',
+        clientId
+      });
       return res.status(400).json({ error: 'Invalid request body' });
     }
 
     // Validate userMessages array
     if (!Array.isArray(body.userMessages)) {
+      logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+        reason: 'messages_not_array',
+        clientId
+      });
       return res.status(400).json({ error: 'userMessages must be an array' });
     }
 
@@ -108,17 +123,38 @@ const validateAgentInput = (req: Request, res: Response, next: any) => {
     const MAX_MESSAGE_LENGTH = 2000;
     const MAX_MESSAGES = 50;
     if (body.userMessages.length > MAX_MESSAGES) {
+      logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+        reason: 'too_many_messages',
+        count: body.userMessages.length,
+        max: MAX_MESSAGES,
+        clientId
+      });
       return res.status(400).json({ error: `Maximum ${MAX_MESSAGES} messages allowed` });
     }
 
     for (const msg of body.userMessages) {
       if (!msg || typeof msg !== 'object') {
+        logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+          reason: 'invalid_message_structure',
+          clientId
+        });
         return res.status(400).json({ error: 'Each message must be an object' });
       }
       if (typeof msg.content !== 'string' || msg.content.length > MAX_MESSAGE_LENGTH) {
+        logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+          reason: 'invalid_message_content',
+          contentLength: msg.content?.length || 0,
+          max: MAX_MESSAGE_LENGTH,
+          clientId
+        });
         return res.status(400).json({ error: `Message content must be string and under ${MAX_MESSAGE_LENGTH} chars` });
       }
       if (!['user', 'assistant', 'system'].includes(msg.role)) {
+        logSecurityEvent('INPUT_VALIDATION_FAILURE', {
+          reason: 'invalid_message_role',
+          role: msg.role,
+          clientId
+        });
         return res.status(400).json({ error: 'Invalid message role' });
       }
     }
