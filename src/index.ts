@@ -87,7 +87,7 @@ async function retryWithBackoff<T>(
   let lastError: any;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      return await fn();
+      return await withTimeout(fn(), timeoutMs, `${context}-attempt-${attempt + 1}`);
     } catch (error: any) {
       lastError = error;
       const isTransient = error?.status === 429 || error?.code === 'ECONNRESET' || 
