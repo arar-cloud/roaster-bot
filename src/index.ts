@@ -95,6 +95,10 @@ function verifyWebhookSignature(req: any, res: Response, next: Function) {
 
 app.use(verifyWebhookSignature);
 
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
