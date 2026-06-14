@@ -104,7 +104,11 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.path === '/health' // Skip health checks
 });
+
+// Apply rate limiting to all endpoints
+app.use(limiter);
 
 app.use(express.json({
   limit: '1mb',
