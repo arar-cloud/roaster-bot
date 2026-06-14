@@ -331,10 +331,18 @@ app.post('/agent', limiter, agentLimiter, requireTokenAuth, verifyTokenOrigin, a
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
+    // Log error details without exposing secrets
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    // Ensure we never log the webhook secret
+    const safeLog = errorMsg.replace(new RegExp(webhookSecret, 'g'), '***');
+    console.error('Roaster error:', safeLog);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (stopErr) {
+      console.error('Error stopping client');
+    }
   }
 });
 
