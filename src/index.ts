@@ -108,6 +108,27 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // Validate nonce to prevent replay attacks
+  const clientNonce = req.get('X-Nonce');
+  if (!clientNonce) {
+    console.warn('Missing nonce header for session validation');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  const nonceData = nonceStore.get(clientNonce);
+  if (!nonceData) {
+    console.warn('Invalid or expired nonce provided');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  if (nonceData.used) {
+    console.warn('Nonce already used - replay attack detected');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  // Mark nonce as used
+  nonceData.used = true;
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
