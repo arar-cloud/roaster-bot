@@ -23,9 +23,19 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Payload size limit to prevent DoS
+const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
+
 app.use(express.json({
+  limit: MAX_PAYLOAD_SIZE,
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    // Enforce payload size limit
+    if (buf.length > MAX_PAYLOAD_SIZE) {
+      const err = new Error('Payload too large');
+      (err as any).status = 413;
+      throw err;
+    }
+    req.rawBody = buf.toString('utf8');
   }
 }));
 
