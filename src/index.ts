@@ -55,6 +55,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Apply rate limiter to all routes
+app.use(limiter);
+
 // Payload size limit to prevent DoS
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
