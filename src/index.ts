@@ -57,6 +57,44 @@ app.use(express.json({
   }
 }));
 
+// Webhook signature verification middleware
+function verifyWebhookSignature(req: any, res: Response, next: Function) {
+  // Enforce webhook signature verification for all POST requests
+  if (req.method === 'POST' && req.path !== '/health') {
+    const signature = req.headers['x-hub-signature-256'];
+    const rawBody = req.rawBody;
+    
+    if (!signature || !rawBody) {
+      logError('webhook-verification', 'Missing signature or body', {
+        hasSignature: !!signature,
+        hasBody: !!rawBody,
+        ip: req.ip,
+        path: req.path
+      });
+      return res.status(401).json({ error: 'Unauthorized: Invalid webhook signature' });
+    }
+    
+    const webhookSecret = process.env.WEBHOOK_SECRET as string;
+    const expectedSignature = 'sha256=' + 
+      crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+    
+    // Constant-time comparison to prevent timing attacks
+    if (!crypto.timingSafeEqual(signature.toString(), expectedSignature)) {
+      logError('webhook-verification', 'Signature mismatch', {
+        ip: req.ip,
+        path: req.path,
+        received: signature.toString().substring(0, 16) + '...'
+      });
+      return res.status(401).json({ error: 'Unauthorized: Invalid webhook signature' });
+    }
+    
+    logInfo('webhook-verification', 'Signature valid', { ip: req.ip });
+  }
+  next();
+}
+
+app.use(verifyWebhookSignature);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
