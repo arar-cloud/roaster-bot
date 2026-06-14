@@ -300,11 +300,28 @@ app.post('/agent', limiter, agentLimiter, requireTokenAuth, verifyTokenOrigin, a
     res.setHeader('Connection', 'keep-alive');
 
     session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      try {
+        if (!event || typeof event !== 'object') {
+          console.error('Invalid event structure received');
+          return;
+        }
+        
+        if (event.type === "assistant.message_delta") {
+          // Validate response data structure
+          if (!event.data || typeof event.data.deltaContent !== 'string') {
+            console.error('Invalid response data structure');
+            return;
+          }
+          
+          // Sanitize response content before streaming
+          const content = event.data.deltaContent.slice(0, 5000); // Limit response chunk size
+          const chunk = {
+            choices: [{ delta: { content } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      } catch (err) {
+        console.error('Error processing session event:', err instanceof Error ? err.message : 'Unknown error');
       }
     });
 
