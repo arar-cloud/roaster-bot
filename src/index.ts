@@ -113,6 +113,34 @@ const validateAgentInput = (req: Request, res: Response, next: any) => {
 
 app.use(validateAgentInput);
 
+// CORS configuration with explicit origin validation
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Whitelist specific origins in production
+    const allowedOrigins = process.env.ALLOWED_ORIGINS
+      ? process.env.ALLOWED_ORIGINS.split(',')
+      : ['http://localhost:3000', 'http://localhost:5173'];
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error(`[SECURITY] CORS origin blocked: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['POST', 'GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-GitHub-Token'],
+  maxAge: 86400
+};
+
+app.use(cors(corsOptions));
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
