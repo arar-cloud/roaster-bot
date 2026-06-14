@@ -13,6 +13,29 @@ declare global {
   }
 }
 
+// Validate environment variables at startup
+function validateEnvironment() {
+  const requiredVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN', 'OPENAI_API_KEY'];
+  const missing = requiredVars.filter(v => !process.env[v]);
+  
+  if (missing.length > 0) {
+    console.error(`FATAL: Missing required environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+  
+  if (typeof process.env.WEBHOOK_SECRET !== 'string' || process.env.WEBHOOK_SECRET.length === 0) {
+    console.error('FATAL: WEBHOOK_SECRET must be a non-empty string');
+    process.exit(1);
+  }
+  
+  if (typeof process.env.GITHUB_TOKEN !== 'string' || process.env.GITHUB_TOKEN.length === 0) {
+    console.error('FATAL: GITHUB_TOKEN must be a non-empty string');
+    process.exit(1);
+  }
+}
+
+validateEnvironment();
+
 const app = express();
 const port = process.env.PORT || 3000;
 
