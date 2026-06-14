@@ -135,6 +135,35 @@ app.use(express.json({
   }
 }));
 
+// CSRF protection middleware
+const csrfProtection = (req: Request, res: Response, next: Function) => {
+  // Generate CSRF token for GET requests
+  if (req.method === 'GET') {
+    const token = crypto.randomBytes(32).toString('hex');
+    res.cookie('_csrf', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 3600000
+    });
+    return next();
+  }
+  
+  // Validate CSRF token for state-changing requests
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    const headerToken = req.get('X-CSRF-Token');
+    const cookieToken = req.get('Cookie')?.split('_csrf=')[1]?.split(';')[0];
+    
+    if (!headerToken || !cookieToken || headerToken !== cookieToken) {
+      return res.status(403).json({ error: 'CSRF validation failed' });
+    }
+  }
+  
+  next();
+};
+
+app.use(csrfProtection);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
