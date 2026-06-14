@@ -110,6 +110,16 @@ const limiter = rateLimit({
   keyGenerator,
 });
 
+// Stricter rate limiter for AI endpoint to prevent cost abuse
+const agentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 20, // Much stricter for AI operations
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator,
+  skip: (req: Request) => req.method !== 'POST', // Only for POST requests
+});
+
 // Origin verification middleware for token-bearing requests
 const verifyTokenOrigin = (req: Request, res: Response, next: Function) => {
   const token = req.get('X-GitHub-Token');
