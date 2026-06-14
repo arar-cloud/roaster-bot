@@ -265,12 +265,24 @@ app.post('/agent', limiter, agentLimiter, requireTokenAuth, verifyTokenOrigin, a
       if (typeof m !== 'object' || !m.role || !m.content) {
         return false;
       }
-      return m.role === 'user';
+      if (m.role !== 'user') {
+        return false;
+      }
+      // Validate message content against injection patterns
+      if (!validatePromptContent(m.content)) {
+        throw new Error('Message content contains invalid patterns');
+      }
+      return true;
     }).pop();
     
     const prompt = lastMessage ? sanitizePrompt(lastMessage.content) : "Roast me.";
     if (typeof prompt !== 'string' || prompt.length === 0) {
       return res.status(400).json({ error: 'Invalid prompt content' });
+    }
+    
+    // Validate prompt again after sanitization
+    if (!validatePromptContent(prompt)) {
+      return res.status(400).json({ error: 'Prompt contains invalid patterns' });
     }
 
     // Create session following SDK docs
