@@ -220,14 +220,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    let session;
+    try {
+      session = await retryWithBackoff(
+        () => client.createSession({
+          model: "gpt-4o",
+          streaming: true,
+          systemMessage: {
+            mode: "replace",
+            content: systemPrompt
+          }
+        }),
+        3,
+        100,
+        'copilot-createSession',
+        30000
+      );
+    } catch (apiError: any) {
+      logError('post-agent', apiError, {
+        context: 'CopilotClient.createSession',
+        ip: req.ip
+      });
+      return res.status(503).json({ error: 'External API call failed after retries' });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
