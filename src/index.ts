@@ -36,6 +36,32 @@ function validateEnvironment() {
 
 validateEnvironment();
 
+// Logging utility for observability
+function logError(context: string, error: any, metadata?: Record<string, any>) {
+  const timestamp = new Date().toISOString();
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorStack = error instanceof Error ? error.stack : undefined;
+  console.error(JSON.stringify({
+    timestamp,
+    level: 'ERROR',
+    context,
+    message: errorMessage,
+    stack: errorStack,
+    ...metadata
+  }));
+}
+
+function logInfo(context: string, message: string, metadata?: Record<string, any>) {
+  const timestamp = new Date().toISOString();
+  console.log(JSON.stringify({
+    timestamp,
+    level: 'INFO',
+    context,
+    message,
+    ...metadata
+  }));
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
