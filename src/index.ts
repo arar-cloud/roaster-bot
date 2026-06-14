@@ -9,19 +9,8 @@ import { CopilotClient } from '@github/copilot-sdk';
 // Extend Express Request type properly
 declare global {
   namespace Express {
-    interface RequeUse timing-safe comparison to prevent timing attacks
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedDigest)
-    );
-
-    if (!isValid) {
-      logSecurityEvent('WEBHOOK_SIGNATURE_MISMATCH', {
-        ip: req.ip,
-        path: req.path
-      });
-      console.error('[SECURITY] Webhook signature mismatch');
-        rawBody?: string;
+    interface Request {
+      rawBody?: string;
       githubToken?: string;
       clientId?: string;
     }
@@ -210,20 +199,56 @@ app.post('/agent', tokenLimiter, async (req: Request, res: Response) => {
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
+  // GitHub token extraction and validation middleware
+  const clientId = crypto.randomBytes(8).toString('hex');
+  const token = req.get('X-GitHub-Token');
+
+  if (!token) {
+    logSecurityEvent('AUTH_FAILURE', {
+      reason: 'missing_token',
+      clientId
+    });
+    return res.status(401).send('Missing X-GitHub-Token.');
+  }
+
+  if (typeof token !== 'string') {
+    logSecurityEvent('AUTH_FAILURE', {
+      reason: 'invalid_token_type',
+      tokenType: typeof token,
+      clientId
+    });
+    return res.status(400).send('Invalid token format');
+  }
+
+  // Basic token format validation: GitHub tokens typically start with 'ghp_' or 'ghu_'
+  if (!token.match(/^(ghp_|ghu_|ghs_|ghr_)[A-Za-z0-9_]+$/)) {
+    logSecurityEvent('AUTH_FAILURE', {
+      reason: 'invalid_token_format',
+      clientId
+    });
+    return res.status(400).send('Invalid token format');
+  }
+
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(digest)
+    );
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    if (!isValid) {
+      logSecurityEvent('WEBHOOK_SIGNATURE_MISMATCH', {
+        ip: req.ip,
+        path: req.path,
+        clientId
+      });
+      return res.status(401).send('Webhook signature mismatch');
     }
   }
-
-  const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
   const client = new CopilotClient({
