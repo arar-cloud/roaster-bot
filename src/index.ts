@@ -43,20 +43,30 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
-  // Webhook signature verification
+  // Webhook signature verification - MANDATORY validation
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+  if (!webhookSecret) {
+    console.error('WEBHOOK_SECRET not configured');
+    return res.status(500).json({ error: 'Webhook security not configured' });
+  }
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  if (!signature) {
+    console.warn('Missing webhook signature');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).send('Missing raw body.');
+
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  const expectedSignature = `sha256=${digest}`;
+
+  if (signature !== expectedSignature) {
+    console.warn('Webhook signature verification failed');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const token = req.get('X-GitHub-Token');
