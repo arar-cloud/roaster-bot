@@ -120,6 +120,21 @@ const agentLimiter = rateLimit({
   skip: (req: Request) => req.method !== 'POST', // Only for POST requests
 });
 
+// Token authentication middleware - validates token is present and valid format
+const requireTokenAuth = (req: Request, res: Response, next: Function) => {
+  const token = req.get('X-GitHub-Token');
+  if (!token) {
+    return res.status(401).json({ error: 'Missing X-GitHub-Token header' });
+  }
+  
+  if (!validateGitHubToken(token)) {
+    return res.status(401).json({ error: 'Invalid GitHub token format' });
+  }
+  
+  (req as any).validatedToken = token;
+  next();
+};
+
 // Origin verification middleware for token-bearing requests
 const verifyTokenOrigin = (req: Request, res: Response, next: Function) => {
   const token = req.get('X-GitHub-Token');
