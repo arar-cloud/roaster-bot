@@ -114,6 +114,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  
+  // Validate GitHub token format
+  if (!validateGitHubToken(token)) {
+    return res.status(400).json({ error: 'Invalid GitHub token format' });
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
@@ -134,9 +139,23 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
+    // Validate and sanitize user messages
     const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    if (!Array.isArray(userMessages)) {
+      return res.status(400).json({ error: 'messages must be an array' });
+    }
+    
+    const lastMessage = userMessages.filter((m: any) => {
+      if (typeof m !== 'object' || !m.role || !m.content) {
+        return false;
+      }
+      return m.role === 'user';
+    }).pop();
+    
+    const prompt = lastMessage ? sanitizePrompt(lastMessage.content) : "Roast me.";
+    if (typeof prompt !== 'string' || prompt.length === 0) {
+      return res.status(400).json({ error: 'Invalid prompt content' });
+    }
 
     // Create session following SDK docs
     const session = await client.createSession({
