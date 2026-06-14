@@ -16,6 +16,10 @@ declare global {
     );
 
     if (!isValid) {
+      logSecurityEvent('WEBHOOK_SIGNATURE_MISMATCH', {
+        ip: req.ip,
+        path: req.path
+      });
       console.error('[SECURITY] Webhook signature mismatch');
         rawBody?: string;
       githubToken?: string;
@@ -26,6 +30,17 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Security event logger for audit trail
+const logSecurityEvent = (eventType: string, details: Record<string, any>) => {
+  const timestamp = new Date().toISOString();
+  const logEntry = {
+    timestamp,
+    eventType,
+    ...details,
+  };
+  console.log(`[SECURITY_AUDIT] ${JSON.stringify(logEntry)}`);
+};
 
 // Security middleware: enforce HTTPS and headers
 app.use(helmet({
