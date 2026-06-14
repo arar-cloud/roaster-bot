@@ -277,9 +277,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.write('data: [DONE]\n\n');
     res.end();
 
-  } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+  } catch (error: any) {
+    logError('post-agent', error, {
+      ip: req.ip,
+      context: 'Unhandled exception in POST /agent',
+      errorMessage: error?.message || String(error)
+    });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   } finally {
     await client.stop();
   }
