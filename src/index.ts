@@ -103,7 +103,10 @@ app.post('/agent', async (req: Request, res: Response) => {
   }
 
   const rawBody = req.rawBody;
-  if (!rawBody) return res.status(400).send('Missing raw body.');
+  if (!rawBody) {
+    console.error('Missing raw body in webhook request');
+    return res.status(400).json({ error: 'Bad request' });
+  }
 
   const hmac = crypto.createHmac('sha256', webhookSecret);
   const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
@@ -237,8 +240,8 @@ app.post('/agent', async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('Error processing request:', error);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   } finally {
     await client.stop();
   }
