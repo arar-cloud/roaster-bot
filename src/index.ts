@@ -231,22 +231,37 @@ app.post('/agent', tokenLimiter, async (req: Request, res: Response) => {
 
   if (webhookSecret && signature) {
     const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+    if (!rawBody) {
+      logSecurityEvent('WEBHOOK_VERIFICATION_FAILURE', {
+        reason: 'missing_raw_body',
+        clientId
+      });
+      return res.status(400).send('Missing raw body.');
+    }
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(digest)
-    );
+    try {
+      const isValid = crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(digest)
+      );
 
-    if (!isValid) {
-      logSecurityEvent('WEBHOOK_SIGNATURE_MISMATCH', {
-        ip: req.ip,
-        path: req.path,
+      if (!isValid) {
+        logSecurityEvent('WEBHOOK_SIGNATURE_MISMATCH', {
+          ip: req.ip,
+          path: req.path,
+          clientId
+        });
+        return res.status(401).send('Webhook signature mismatch');
+      }
+    } catch (err) {
+      logSecurityEvent('WEBHOOK_VERIFICATION_FAILURE', {
+        reason: 'signature_comparison_error',
+        error: (err as Error).message,
         clientId
       });
-      return res.status(401).send('Webhook signature mismatch');
+      return res.status(401).send('Webhook signature verification failed');
     }
   }
 
