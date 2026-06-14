@@ -9,8 +9,15 @@ import { CopilotClient } from '@github/copilot-sdk';
 // Extend Express Request type properly
 declare global {
   namespace Express {
-    interface Request {
-      rawBody?: string;
+    interface RequeUse timing-safe comparison to prevent timing attacks
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(signature),
+      Buffer.from(expectedDigest)
+    );
+
+    if (!isValid) {
+      console.error('[SECURITY] Webhook signature mismatch');
+        rawBody?: string;
       githubToken?: string;
       clientId?: string;
     }
@@ -146,12 +153,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
