@@ -54,11 +54,57 @@ const tokenLimiter = rateLimit({
   skip: (req) => req.path !== '/agent' // only rate limit the sensitive endpoint
 });
 
+// Strict JSON parser with size limits
 app.use(express.json({
+  limit: '10kb', // Limit request payload to prevent DoS
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+// Input validation middleware
+const validateAgentInput = (req: Request, res: Response, next: any) => {
+  if (req.path === '/agent' && req.method === 'POST') {
+    // Validate Content-Type
+    const contentType = req.headers['content-type'];
+    if (!contentType || !contentType.includes('application/json')) {
+      return res.status(400).json({ error: 'Content-Type must be application/json' });
+    }
+
+    // Validate request body structure
+    const body = req.body;
+    if (!body || typeof body !== 'object') {
+      return res.status(400).json({ error: 'Invalid request body' });
+    }
+
+    // Validate userMessages array
+    if (!Array.isArray(body.userMessages)) {
+      return res.status(400).json({ error: 'userMessages must be an array' });
+    }
+
+    // Validate message schema and length
+    const MAX_MESSAGE_LENGTH = 2000;
+    const MAX_MESSAGES = 50;
+    if (body.userMessages.length > MAX_MESSAGES) {
+      return res.status(400).json({ error: `Maximum ${MAX_MESSAGES} messages allowed` });
+    }
+
+    for (const msg of body.userMessages) {
+      if (!msg || typeof msg !== 'object') {
+        return res.status(400).json({ error: 'Each message must be an object' });
+      }
+      if (typeof msg.content !== 'string' || msg.content.length > MAX_MESSAGE_LENGTH) {
+        return res.status(400).json({ error: `Message content must be string and under ${MAX_MESSAGE_LENGTH} chars` });
+      }
+      if (!['user', 'assistant', 'system'].includes(msg.role)) {
+        return res.status(400).json({ error: 'Invalid message role' });
+      }
+    }
+  }
+  next();
+};
+
+app.use(validateAgentInput);
 
 app.get('/', (req, res) => {
   res.send(`
