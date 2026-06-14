@@ -17,6 +17,20 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Simple in-memory nonce storage (in production, use Redis with TTL)
+const nonceStore = new Map<string, { timestamp: number; used: boolean }>();
+
+// Clean up expired nonces every minute
+setInterval(() => {
+  const now = Date.now();
+  const NONCE_TTL = 5 * 60 * 1000; // 5 minutes
+  for (const [nonce, data] of nonceStore.entries()) {
+    if (now - data.timestamp > NONCE_TTL) {
+      nonceStore.delete(nonce);
+    }
+  }
+}, 60000);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
