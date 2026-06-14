@@ -324,6 +324,34 @@ app.post('/agent', tokenLimiter, async (req: Request, res: Response) => {
   }
 });
 
+// Global error handler middleware for uncaught exceptions and security logging
+app.use((err: any, req: Request, res: Response, next: any) => {
+  const clientId = (req as any).clientId || 'unknown';
+  const errorMessage = err?.message || 'Unknown error';
+  const stack = err?.stack || '';
+
+  // Log full error details internally for security monitoring
+  logSecurityEvent('UNHANDLED_ERROR', {
+    message: errorMessage,
+    path: req.path,
+    method: req.method,
+    clientId,
+    stack: stack.substring(0, 500) // Limit stack trace in logs
+  });
+
+  // Sanitize error response to prevent sensitive data leakage
+  const sanitizedError = errorMessage
+    .replace(/token/gi, '[REDACTED]')
+    .replace(/secret/gi, '[REDACTED]')
+    .replace(/key/gi, '[REDACTED]')
+    .replace(/password/gi, '[REDACTED]')
+    .substring(0, 200);
+
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
