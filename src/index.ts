@@ -356,6 +356,8 @@ app.post('/agent', limiter, agentLimiter, requireTokenAuth, verifyTokenOrigin, a
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on ${port}`);
+// Bind to localhost by default for security; allow override via environment variable
+const bindAddress = process.env.BIND_ADDRESS || '127.0.0.1';
+app.listen(port, bindAddress, () => {
+  console.log(`Server running on http://${bindAddress}:${port}`);
 });
