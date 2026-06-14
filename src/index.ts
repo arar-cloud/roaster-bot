@@ -37,11 +37,19 @@ app.use(helmet({
   xContentTypeOptions: { nosniff: true },
 }));
 
+// Create key generator for per-token rate limiting
+const keyGenerator = (req: Request) => {
+  // Use GitHub token if provided, otherwise use IP address
+  const token = req.headers['x-github-token'] as string;
+  return token || req.ip || 'unknown';
+};
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator,
 });
 
 app.use(express.json({
