@@ -108,6 +108,20 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  // Validate CSRF token to prevent cross-site request forgery
+  const csrfToken = req.get('X-CSRF-Token');
+  if (!csrfToken) {
+    console.warn('Missing CSRF token header');
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  
+  // CSRF token must be at least 32 bytes hex-encoded (64 chars) or similar secure format
+  const csrfTokenRegex = /^[a-f0-9]{64}$/i;
+  if (!csrfTokenRegex.test(csrfToken)) {
+    console.warn('Invalid CSRF token format');
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
   // Validate nonce to prevent replay attacks
   const clientNonce = req.get('X-Nonce');
   if (!clientNonce) {
