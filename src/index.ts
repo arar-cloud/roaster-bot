@@ -110,6 +110,24 @@ const limiter = rateLimit({
   keyGenerator,
 });
 
+// Origin verification middleware for token-bearing requests
+const verifyTokenOrigin = (req: Request, res: Response, next: Function) => {
+  const token = req.get('X-GitHub-Token');
+  if (!token) {
+    return next(); // No token provided, skip origin check
+  }
+  
+  // If token is present, verify request origin
+  const origin = req.get('Origin') || req.get('Referer');
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://github.com').split(',');
+  
+  if (!origin || !allowedOrigins.some(allowed => origin.includes(allowed))) {
+    return res.status(403).json({ error: 'Request origin not verified' });
+  }
+  
+  next();
+};
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: Request, res, buf) => {
