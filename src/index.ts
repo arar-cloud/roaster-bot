@@ -17,6 +17,13 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate webhook secret is configured
+const webhookSecret = process.env.WEBHOOK_SECRET;
+if (!webhookSecret) {
+  console.error('WEBHOOK_SECRET environment variable is required for security');
+  process.exit(1);
+}
+
 // Apply helmet security headers first
 app.use(helmet({
   contentSecurityPolicy: {
