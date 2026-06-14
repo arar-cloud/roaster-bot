@@ -153,6 +153,39 @@ const validateAgentInput = (req: Request, res: Response, next: any) => {
 
 app.use(validateAgentInput);
 
+// GitHub token extraction and validation middleware
+const validateGitHubToken = (req: Request, res: Response, next: any) => {
+  if (req.path === '/agent' && req.method === 'POST') {
+    const token = req.headers['x-github-token'];
+
+    // Token must be provided
+    if (!token) {
+      console.error('[SECURITY] Missing GitHub token');
+      return res.status(401).json({ error: 'Missing GitHub token' });
+    }
+
+    // Token must be a string
+    if (typeof token !== 'string') {
+      console.error('[SECURITY] Invalid GitHub token format');
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    // Basic token format validation: GitHub tokens typically start with 'ghp_' or 'ghu_'
+    if (!token.match(/^(ghp_|ghu_|ghs_|ghr_)[A-Za-z0-9_]+$/)) {
+      console.error('[SECURITY] Invalid GitHub token format');
+      return res.status(400).json({ error: 'Invalid token format' });
+    }
+
+    // Store sanitized token reference on request (not in env)
+    (req as any).githubToken = token;
+    // Generate client ID for tracking
+    (req as any).clientId = crypto.randomBytes(8).toString('hex');
+  }
+  next();
+};
+
+app.use(validateGitHubToken);
+
 // CORS configuration with explicit origin validation
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
