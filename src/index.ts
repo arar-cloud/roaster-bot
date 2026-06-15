@@ -107,14 +107,30 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(400).json({ error: `Maximum ${MAX_MESSAGES} messages allowed` });
   }
 
-  for (const msg of messages) {
+  // Sanitize messages to prevent injection attacks
+  const sanitizedMessages = messages.map((msg: any) => {
     if (typeof msg.content !== 'string') {
       return res.status(400).json({ error: 'Message content must be a string' });
     }
     if (msg.content.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({ error: `Message content exceeds ${MAX_MESSAGE_LENGTH} character limit` });
     }
-  }
+
+    // Escape dangerous patterns to prevent prompt injection
+    let sanitized = msg.content
+      .replace(/Ignore (above|previous|instructions)/gi, '')
+      .replace(/Now you are/gi, '')
+      .replace(/From now on/gi, '')
+      .trim();
+
+    // Add clear delimiter to separate user message from system prompt
+    sanitized = `[USER MESSAGE]\n${sanitized}\n[END USER MESSAGE]`;
+
+    return {
+      ...msg,
+      content: sanitized
+    };
+  });
 
   // Initialize client with the user's token
   const client = new CopilotClient({
