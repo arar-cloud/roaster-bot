@@ -57,6 +57,19 @@ const validateAgentRequest = (req: Request & { rawBody?: string }, res: Response
   next();
 };
 
+// Secure webhook signature verification with constant-time comparison
+const verifyWebhookSignature = (signature: string, payload: string, secret: string): boolean => {
+  if (!secret) {
+    return false;
+  }
+  const digest = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
+  } catch {
+    return false;
+  }
+};
+
 // Apply helmet for security headers
 app.use(helmet());
 
