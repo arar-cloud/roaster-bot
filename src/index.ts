@@ -28,6 +28,14 @@ validateEnvironment();
 
 const app = express();
 const port = process.env.PORT || 3000;
+const requestIdMap = new Map<string, { token: string; timestamp: number }>();
+
+// Generate request ID for audit logging
+app.use((req, res, next) => {
+  const requestId = crypto.randomUUID();
+  (req as any).id = requestId;
+  next();
+});
 
 // Apply Helmet for security headers
 app.use(helmet());
@@ -162,6 +170,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Too many messages' });
     }
 
+    // Log request for audit trail
+    const requestId = (req as any).id;
+    requestIdMap.set(requestId, { token: token.substring(0, 10) + '***', timestamp: Date.now() });
+
     // Sanitize each message
     const sanitizedMessages = userMessages.map((msg: any) => {
       if (typeof msg !== 'object' || !msg || !('role' in msg) || !('content' in msg)) {
@@ -215,8 +227,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error(`[${(req as any).id}] Error:`, error);
+    if (!res.headersSent) res.status(500).json({ error: 'Server error' });
   } finally {
     await client.stop();
   }
