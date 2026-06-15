@@ -23,6 +23,22 @@ if (process.env.NODE_ENV === 'production' && !process.env.WEBHOOK_SECRET) {
   process.exit(1);
 }
 
+// Apply security headers
+app.use(helmet());
+
+// Configure CORS
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', process.env.ALLOWED_ORIGIN || 'https://github.com');
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token');
+  res.header('X-Content-Type-Options', 'nosniff');
+  res.header('X-Frame-Options', 'DENY');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
