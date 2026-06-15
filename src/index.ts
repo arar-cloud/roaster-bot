@@ -70,6 +70,16 @@ const verifyWebhookSignature = (signature: string, payload: string, secret: stri
   }
 };
 
+// Validate and sanitize GitHub token format
+const isValidGitHubToken = (token: string): boolean => {
+  if (typeof token !== 'string') {
+    return false;
+  }
+  // GitHub tokens should be alphanumeric and underscore only, 20-255 chars
+  const tokenRegex = /^[a-zA-Z0-9_]{20,255}$/;
+  return tokenRegex.test(token);
+};
+
 // Apply helmet for security headers
 app.use(helmet());
 
