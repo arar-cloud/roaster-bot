@@ -166,9 +166,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.write('data: [DONE]\n\n');
     res.end();
 
-  } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+  } catch (error: any) {
+    // Sanitize error response - don't expose internal details
+    const errorMessage = error?.message || 'Unknown error';
+    console.error('Error (sanitized):', typeof error === 'string' ? error : error?.message);
+    
+    if (!res.headersSent) {
+      // Don't expose API keys, paths, or internal stack traces
+      res.status(500).send("The roaster overheated.");
+    }
   } finally {
     await client.stop();
   }
