@@ -74,7 +74,32 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) return res.status(401).json({ error: 'Missing X-GitHub-Token' });
+
+  // Validate token format (basic checks)
+  if (typeof token !== 'string' || token.length < 20 || token.length > 300 || !/^[a-zA-Z0-9_-]+$/.test(token)) {
+    return res.status(400).json({ error: 'Invalid token format' });
+  }
+
+  // Create per-token rate limiter
+  const tokenLimiter = rateLimit({
+    keyGenerator: () => token,
+    windowMs: 15 * 60 * 1000,
+    limit: 50,
+    skip: false,
+    handler: (req, res) => res.status(429).json({ error: 'Rate limit exceeded' })
+  });
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      tokenLimiter(req, res, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  } catch (err) {
+    return res.status(429).json({ error: 'Rate limit exceeded' });
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
