@@ -21,6 +21,14 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req: any) => {
+    // Use X-GitHub-Token as rate limit key for per-user bucketing
+    return req.headers['x-github-token'] as string || req.ip || 'anonymous';
+  },
+  skip: (req: any) => {
+    // Skip rate limiting for non-agent endpoints
+    return !req.path.includes('/agent');
+  }
 });
 
 app.use(express.json({
