@@ -120,8 +120,39 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
+    // Validate and sanitize userMessages
+    let userMessages = req.body.messages;
+    if (!Array.isArray(userMessages)) {
+      userMessages = [];
+    }
+
+    // Enforce maximum message count
+    if (userMessages.length > 50) {
+      return res.status(400).json({ error: 'Too many messages' });
+    }
+
+    // Sanitize each message
+    const sanitizedMessages = userMessages.map((msg: any) => {
+      if (typeof msg !== 'object' || !msg || !('role' in msg) || !('content' in msg)) {
+        throw new Error('Invalid message format');
+      }
+      const role = String(msg.role).toLowerCase();
+      const content = String(msg.content);
+
+      // Validate role
+      if (!['user', 'assistant', 'system'].includes(role)) {
+        throw new Error('Invalid message role');
+      }
+
+      // Enforce content length limit (5000 chars per message)
+      if (content.length > 5000) {
+        throw new Error('Message content too long');
+      }
+
+      return { role, content };
+    });
+
+    const lastMessage = sanitizedMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
