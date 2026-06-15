@@ -218,6 +218,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     session.on((event: any) => {
       if (event.type === "assistant.message_delta") {
+        // Validate response chunk structure
+        if (!event.data || typeof event.data.deltaContent !== 'string') {
+          console.error(`[${(req as any).id}] Invalid event structure:`, event);
+          return;
+        }
+        
+        // Enforce content length limit per chunk
+        if (event.data.deltaContent.length > 2000) {
+          console.error(`[${(req as any).id}] Chunk exceeds max length`);
+          return;
+        }
+        
         const chunk = {
           choices: [{ delta: { content: event.data.deltaContent } }]
         };
