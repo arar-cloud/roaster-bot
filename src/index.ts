@@ -80,6 +80,23 @@ const isValidGitHubToken = (token: string): boolean => {
   return tokenRegex.test(token);
 };
 
+// Sanitize user messages to prevent prompt injection
+const sanitizeUserMessage = (message: string): string => {
+  // Remove system command patterns that could inject instructions
+  let sanitized = message
+    .replace(/\[.*?\]/g, '') // Remove bracketed content
+    .replace(/\{.*?\}/g, '') // Remove braced content
+    .replace(/<!--.*?-->/g, '') // Remove HTML comments
+    .trim();
+  
+  // Limit length after sanitization
+  if (sanitized.length > 4000) {
+    sanitized = sanitized.substring(0, 4000);
+  }
+  
+  return sanitized;
+};
+
 // Apply helmet for security headers
 app.use(helmet());
 
