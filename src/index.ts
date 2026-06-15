@@ -62,13 +62,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Apply rate limiter globally
+app.use(limiter);
+
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
 
-app.get('/', (req, res) => {
+app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
