@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -15,6 +16,24 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Apply Helmet for security headers
+app.use(helmet());
+
+// CORS configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000'];
+app.use((req, res, next) => {
+  const origin = req.headers.origin as string;
+  if (allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token, X-GitHub-Signature-256');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
