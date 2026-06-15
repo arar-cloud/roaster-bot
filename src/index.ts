@@ -77,6 +77,28 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
+  // Validate input messages
+  const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: 'messages must be a non-empty array' });
+  }
+
+  const MAX_MESSAGE_LENGTH = 10000;
+  const MAX_MESSAGES = 50;
+
+  if (messages.length > MAX_MESSAGES) {
+    return res.status(400).json({ error: `Maximum ${MAX_MESSAGES} messages allowed` });
+  }
+
+  for (const msg of messages) {
+    if (typeof msg.content !== 'string') {
+      return res.status(400).json({ error: 'Message content must be a string' });
+    }
+    if (msg.content.length > MAX_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `Message content exceeds ${MAX_MESSAGE_LENGTH} character limit` });
+    }
+  }
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
