@@ -16,6 +16,12 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Enforce webhook secret in production
+if (process.env.NODE_ENV === 'production' && !process.env.WEBHOOK_SECRET) {
+  console.error('WEBHOOK_SECRET environment variable is required in production');
+  process.exit(1);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
