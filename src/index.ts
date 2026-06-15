@@ -161,7 +161,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       systemMessage: {
         mode: "replace",
         content: systemPrompt
-      }
+      },
+      messages: sanitizedMessages
     });
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -177,7 +178,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    await session.sendAndWait({ prompt });
+    await session.sendAndWait({ prompt: prompt });
 
     res.write('data: [DONE]\n\n');
     res.end();
