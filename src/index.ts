@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -23,8 +24,12 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Apply helmet for security headers
+app.use(helmet());
+
 app.use(express.json({
-  verify: (req: any, res, buf) => {
+  limit: '1mb',
+  verify: (req: Request & { rawBody?: string }, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
