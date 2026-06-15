@@ -24,6 +24,39 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation middleware
+const validateAgentRequest = (req: Request & { rawBody?: string }, res: Response, next: Function) => {
+  const body = req.body as Record<string, unknown>;
+  
+  // Validate userMessages is an array
+  if (!Array.isArray(body.userMessages)) {
+    return res.status(400).json({ error: 'userMessages must be an array' });
+  }
+  
+  // Validate array length (max 50 messages)
+  if (body.userMessages.length > 50) {
+    return res.status(400).json({ error: 'userMessages exceeds maximum length' });
+  }
+  
+  // Validate each message
+  for (const msg of body.userMessages) {
+    if (typeof msg !== 'object' || msg === null) {
+      return res.status(400).json({ error: 'Invalid message format' });
+    }
+    const message = msg as Record<string, unknown>;
+    if (typeof message.content !== 'string' || message.content.length > 4096) {
+      return res.status(400).json({ error: 'Message content must be a string under 4096 characters' });
+    }
+  }
+  
+  // Validate optional idempotencyKey if present
+  if (body.idempotencyKey && typeof body.idempotencyKey !== 'string') {
+    return res.status(400).json({ error: 'idempotencyKey must be a string' });
+  }
+  
+  next();
+};
+
 // Apply helmet for security headers
 app.use(helmet());
 
