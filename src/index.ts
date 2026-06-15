@@ -14,6 +14,18 @@ declare global {
   }
 }
 
+// Validate environment variables at startup
+function validateEnvironment() {
+  const requiredVars = ['WEBHOOK_SECRET'];
+  const missing = requiredVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    console.error(`Fatal: Missing required environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
+validateEnvironment();
+
 const app = express();
 const port = process.env.PORT || 3000;
 
