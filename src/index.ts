@@ -9,6 +9,7 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      return res.status(401).json({ error: 'Unauthorized' });
     }
   }
 }
@@ -69,12 +70,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
