@@ -89,25 +89,40 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    let session;
+    try {
+      // Create session following SDK docs
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+    } catch (sessionError) {
+      console.error('Session creation failed:', sessionError);
+      if (!res.headersSent) res.status(500).send('Failed to create session.');
+      return;
+    }
 
-    const response = await session.sendAndWait({ prompt });
-
-    res.json({ message: response });
+    try {
+      const response = await session.sendAndWait({ prompt });
+      if (!res.headersSent) res.json({ message: response });
+    } catch (apiError) {
+      console.error('API call failed:', apiError);
+      if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    }
 
   } catch (error) {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (stopError) {
+      console.error('Client stop failed:', stopError);
+    }
   }
 });
 
