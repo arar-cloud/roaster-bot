@@ -74,8 +74,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   try {
     client = new CopilotClient({
       env: {
-        GITHUB_TOKEN: token,
-        ...process.env
+        GITHUB_TOKEN: token
       }
     });
   } catch (initError) {
