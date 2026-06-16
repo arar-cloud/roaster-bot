@@ -7,7 +7,7 @@
   "scripts": {
     "start": "ts-node-esm src/index.ts",
     "dev": "ts-node-esm src/index.ts",
-    "test": "node --check src/index.ts && node --check api/index.ts"
+    "test": "tsc --noEmit && node --check src/index.ts && node --check api/index.ts"
   },
   "keywords": [],
   "author": "",
