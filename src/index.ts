@@ -15,7 +15,6 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-      return res.status(401).json({ error: 'Unauthorized' });
     }
   }
 }
