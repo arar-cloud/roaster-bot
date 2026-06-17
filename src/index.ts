@@ -85,6 +85,27 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!pull_request) {
     return res.status(400).json({ error: 'No pull request in payload' });
   }
+
+  try {
+    const prTitle = pull_request.title || 'Untitled PR';
+    const prBody = pull_request.body || 'No description';
+    const prChanges = `Title: ${prTitle}\nDescription: ${prBody}`;
+
+    const roastPrompt = `Generate a witty, funny code roast for this GitHub PR: ${prChanges}. Keep it short and entertaining.`;
+    
+    const roast = await copilot.getCompletions({
+      messages: [...userMessages, { role: 'user', content: roastPrompt }],
+    });
+
+    return res.status(200).json({
+      success: true,
+      roast: roast,
+      pr: pull_request.html_url,
+    });
+  } catch (error) {
+    console.error('Roast generation failed:', error);
+    return res.status(500).json({ error: 'Failed to generate roast', details: String(error) });
+  }
   
   try {
     const systemPrompt = `
