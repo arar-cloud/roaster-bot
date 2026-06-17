@@ -69,6 +69,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       ...process.env
     }
   });
+
+  if (!client) {
+    return res.status(500).json({ error: 'Failed to initialize Copilot client' });
+  }
   
   try {
     const systemPrompt = `
