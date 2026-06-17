@@ -73,6 +73,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!client) {
     return res.status(500).json({ error: 'Failed to initialize Copilot client' });
   }
+
+  let payload;
+  try {
+    payload = JSON.parse(req.rawBody || '{}');
+  } catch (e) {
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+
+  const { action, pull_request } = payload;
+  if (!pull_request) {
+    return res.status(400).json({ error: 'No pull request in payload' });
+  }
   
   try {
     const systemPrompt = `
@@ -86,7 +98,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
-  const rawBody = req.rawBody || '';.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
