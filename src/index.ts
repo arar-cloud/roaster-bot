@@ -83,6 +83,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
   
   try {
+    const payload = req.body;
+    if (!payload || (!payload.issue && !payload.pull_request)) {
+      return res.status(400).send('Invalid webhook payload.');
+    }
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -93,7 +98,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
+    const userMessages = [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
