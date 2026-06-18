@@ -7,15 +7,30 @@ import { CopilotClient } from '@github/copilot-sdk';
 // Timeout wrapper for external API calls
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> => {
   let timeoutHandle: NodeJS.Timeout;
+  let isSettled = false;
+  
   const timeoutPromise = new Promise<T>((_, reject) => {
     timeoutHandle = setTimeout(() => {
+      isSettled = true;
       const err = new Error(`${operation} timeout after ${timeoutMs}ms`);
       (err as any).code = 'ETIMEDOUT';
       reject(err);
     }, timeoutMs);
   });
   
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
+  return Promise.race([promise, timeoutPromise])
+    .then(
+      result => {
+        isSettled = true;
+        clearTimeout(timeoutHandle);
+        return result;
+      },
+      error => {
+        isSettled = true;
+        clearTimeout(timeoutHandle);
+        throw error;
+      }
+    );
 };
 
 // Exponential backoff retry logic for transient failures
