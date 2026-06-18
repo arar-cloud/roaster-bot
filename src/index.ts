@@ -140,10 +140,36 @@ app.use(express.json({
   }
 }));
 
+// Async route wrapper to ensure errors propagate to error middleware
+const asyncHandler = (fn: (req: Request, res: Response, next?: any) => Promise<any>) => 
+  (req: Request, res: Response, next: any) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+
+// Request tracking middleware
+app.use((req: Request, res: Response, next: any) => {
+  activeRequests.add(req);
+  res.on('finish', () => activeRequests.delete(req));
+  res.on('close', () => activeRequests.delete(req));
+  next();
+});
+
+// Error logging middleware (positioned after routes to catch async errors)
 app.use((err: any, req: Request, res: Response, next: any) => {
   console.error(`[ERROR] ${new Date().toISOString()} - ${req.method} ${req.url} - ${err.message}`, err.stack);
+  activeRequests.delete(req);
+  const cleanup = resourceCleanup.get(req);
+  if (cleanup) {
+    try { cleanup(); } catch (cleanupErr) { console.error('Cleanup error:', cleanupErr); }
+  }
   if (!res.headersSent) {
-    res.status(500).json({ error: 'Internal server error' });
+    if (err.code === 'ETIMEDOUT' || err.status === 503) {
+      res.status(503).json({ error: 'Service temporarily unavailable' });
+    } else if (err.status === 401) {
+      res.status(401).json({ error: 'Unauthorized' });
+    } else {
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
   next();
 });
