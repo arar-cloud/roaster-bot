@@ -23,9 +23,10 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Middleware to capture rawBody for webhook signature verification
 app.use(express.json({
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    req.rawBody = buf.toString('utf8');
   }
 }));
 
