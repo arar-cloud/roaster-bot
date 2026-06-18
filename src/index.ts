@@ -133,5 +133,5 @@ app.post('/agent', async (req: Request, res: Response) => {
 });
 
 app.listen(port, () => {
-  console.log(`Server running on ${port}`);
+  console.log(`Server is listening on port ${port}`);
 });
