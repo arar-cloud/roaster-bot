@@ -69,21 +69,35 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', async (req: Request, res: Response) => {
-  // Webhook signature verification
+  // Webhook signature verification with early exit
   const signature = req.get('X-Hub-Signature-256') as string | undefined;
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (!signature) {
+    logError(
+      new AuthenticationError('Missing webhook signature'),
+      { path: req.path, method: req.method }
+    );
     return res.status(401).json({ error: 'Unauthorized: missing signature' });
   }
 
   if (webhookSecret) {
     const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+    if (!rawBody) {
+      logError(
+        new ValidationError('Missing raw body'),
+        { path: req.path, method: req.method }
+      );
+      return res.status(400).send('Missing raw body.');
+    }
 
     const expectedSignature = 'sha256=' + crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
 
     if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+      logError(
+        new AuthenticationError('Invalid webhook signature'),
+        { path: req.path, method: req.method }
+      );
       return res.status(401).json({ error: 'Unauthorized: invalid signature' });
     }
   }
