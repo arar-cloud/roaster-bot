@@ -67,7 +67,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest))) {
-      return res.status(401).send('Invalid webhook signature.');
+      res.status(401).json({ error: 'Invalid signature' });
+      return;
     }
   }
 
@@ -123,7 +124,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     await session.sendAndWait({ prompt });
 
     res.write('data: [DONE]\n\n');
-    res.end();
+    res.json({
+      success: true,
+      message: 'Roast completed'
+    });
 
   } catch (error) {
     console.error('Error:', error);
