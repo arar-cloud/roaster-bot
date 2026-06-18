@@ -153,12 +153,30 @@ if (missingEnvVars.length > 0) {
   process.exit(1);
 }
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+// Rate limiter with optional Redis store for multi-instance deployments
+const createLimiter = () => {
+  const config: any = {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: any) => req.method !== 'POST' || req.path !== '/agent',
+  };
+  
+  // Try to use Redis store if available, otherwise use in-memory
+  if (process.env.REDIS_URL) {
+    try {
+      // Note: Requires separate RedisStore package. For now, document limitation.
+      console.warn('[RATE LIMIT] Redis URL configured but RedisStore not installed. Using in-memory store. Rate limits will not be shared across instances.');
+    } catch (e) {
+      console.warn('[RATE LIMIT] Failed to initialize Redis store:', e);
+    }
+  }
+  
+  return rateLimit(config);
+};
+
+const limiter = createLimiter();
 
 // Signature verification middleware - executes BEFORE body parsing to prevent resource exhaustion
 app.use((req: Request, res: Response, next: any) => {
