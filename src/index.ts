@@ -134,7 +134,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     await session.sendAndWait({ prompt });
 
     res.write('data: [DONE]\n\n');
-    res.end();
+    return res.end();
 
   } catch (error) {
     console.error('Error:', error);
