@@ -62,6 +62,30 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
+  // Extract event type and user messages from GitHub webhook
+  const eventType = req.get('X-GitHub-Event') as string;
+  let userMessages: string[] = [];
+  const body = req.body;
+
+  if (eventType === 'pull_request') {
+    userMessages.push(`Pull Request ${body.action}: ${body.pull_request?.title || 'N/A'}`);
+    if (body.pull_request?.body) {
+      userMessages.push(body.pull_request.body);
+    }
+  } else if (eventType === 'issues') {
+    userMessages.push(`Issue ${body.action}: ${body.issue?.title || 'N/A'}`);
+    if (body.issue?.body) {
+      userMessages.push(body.issue.body);
+    }
+  } else if (eventType === 'issue_comment') {
+    userMessages.push(`Comment on issue: ${body.issue?.title || 'N/A'}`);
+    if (body.comment?.body) {
+      userMessages.push(body.comment.body);
+    }
+  } else {
+    userMessages = req.body.messages || [];
+  }
+
   // Initialize client with the user's token
   const client = new CopilotClient({
     env: {
@@ -81,9 +105,8 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    const lastMessage = userMessages.filter((m: any) => m.role === 'user' || typeof m === 'string').pop();
+    const prompt = (typeof lastMessage === 'string') ? lastMessage : (lastMessage ? lastMessage.content : "Roast me.");
 
     // Create session following SDK docs
     const session = await client.createSession({
