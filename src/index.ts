@@ -29,6 +29,9 @@ app.use(express.json({
   }
 }));
 
+// Apply rate limiting globally
+app.use(limiter);
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
