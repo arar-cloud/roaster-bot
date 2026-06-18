@@ -68,13 +68,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    token: process.env.GITHUB_TOKEN,
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  let client;
+  try {
+    client = new CopilotClient({
+      token: process.env.GITHUB_TOKEN,
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (initError) {
+    console.error('CopilotClient initialization failed:', initError);
+    return res.status(500).send('Failed to initialize Copilot client.');
+  }
   
   try {
     const systemPrompt = `
@@ -120,6 +126,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
+    if (error instanceof Error && error.message.includes('CopilotClient')) {
+      console.error('CopilotClient API error:', error);
+      if (!res.headersSent) res.status(500).send('Copilot API error occurred.');
+      return;
+    }
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
