@@ -46,6 +46,24 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   next();
 });
 
+app.use((req: Request, res: Response, next: any) => {
+  const originalSend = res.send;
+  res.send = function(data: any) {
+    res.send = originalSend;
+    const result = res.send(data);
+    res.on('finish', () => {
+      if ((req as any).copilotClient) {
+        delete (req as any).copilotClient;
+      }
+      if ((req as any).rawBody) {
+        delete (req as any).rawBody;
+      }
+    });
+    return result;
+  };
+  next();
+});
+
 app.get('/', (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
