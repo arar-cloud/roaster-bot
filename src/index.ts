@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -12,6 +13,18 @@ declare global {
     }
   }
 }
+
+// Validate critical environment variables at startup
+function validateEnvironment(): void {
+  const requiredVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN', 'OPENAI_API_KEY'];
+  const missing = requiredVars.filter(v => !process.env[v]);
+  if (missing.length > 0) {
+    console.error(`Fatal: Missing required environment variables: ${missing.join(', ')}`);
+    process.exit(1);
+  }
+}
+
+validateEnvironment();
 
 const app = express();
 const port = process.env.PORT || 3000;
