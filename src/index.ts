@@ -75,10 +75,10 @@ const circuitBreaker = {
   },
   
   recordSuccess() {
-    this.failureCount = 0;
+    this.failureCount = 0;  // Reset counter on successful recovery
     if (this.state !== 'closed') {
       this.state = 'closed';
-      console.info('[CIRCUIT BREAKER] Closed - service recovered');
+      console.info('[CIRCUIT BREAKER] Recovered - transitioned to closed');
     }
   },
   
