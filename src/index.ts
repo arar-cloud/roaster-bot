@@ -37,6 +37,24 @@ app.use(express.json({
   }
 }));
 
+function validateWebhookPayload(
+  payload: any
+): { valid: boolean; error?: string } {
+  if (!payload.action) {
+    return { valid: false, error: 'Missing action field' };
+  }
+  if (!payload.issue && !payload.pull_request) {
+    return {
+      valid: false,
+      error: 'Missing issue or pull_request field',
+    };
+  }
+  if (!payload.repository) {
+    return { valid: false, error: 'Missing repository field' };
+  }
+  return { valid: true };
+}
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
