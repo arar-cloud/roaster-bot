@@ -98,7 +98,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = [];
+    const userMessages = [
+      {
+        role: 'user',
+        content: payload.issue?.body || payload.pull_request?.body || 'Please review this.'
+      }
+    ];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
@@ -126,6 +131,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     });
 
     await session.sendAndWait({ prompt });
+
+    const response = await client.getCompletion({ messages: userMessages });
+    if (!res.headersSent) res.status(200).json({ roasted: response });
 
     res.write('data: [DONE]\n\n');
     res.end();
