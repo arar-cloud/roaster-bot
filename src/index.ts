@@ -16,6 +16,14 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Validate required environment variables at startup
+const requiredEnvVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+  console.error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+  process.exit(1);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
