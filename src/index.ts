@@ -57,6 +57,42 @@ declare global {
   }
 }
 
+// Circuit breaker state for external service failures
+const circuitBreaker = {
+  failureCount: 0,
+  lastFailureTime: 0,
+  state: 'closed' as 'closed' | 'open' | 'half-open',
+  threshold: 5,
+  timeout: 30000, // 30 seconds
+  
+  recordFailure() {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.threshold) {
+      this.state = 'open';
+      console.error(`[CIRCUIT BREAKER] Open - too many failures (${this.failureCount})`);
+    }
+  },
+  
+  recordSuccess() {
+    this.failureCount = 0;
+    if (this.state !== 'closed') {
+      this.state = 'closed';
+      console.info('[CIRCUIT BREAKER] Closed - service recovered');
+    }
+  },
+  
+  canAttempt(): boolean {
+    if (this.state === 'closed') return true;
+    if (this.state === 'open' && Date.now() - this.lastFailureTime > this.timeout) {
+      this.state = 'half-open';
+      console.info('[CIRCUIT BREAKER] Half-open - attempting recovery');
+      return true;
+    }
+    return this.state === 'half-open';
+  }
+};
+
 const app = express();
 const port = process.env.PORT || 3000;
 
