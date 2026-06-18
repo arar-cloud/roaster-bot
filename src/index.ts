@@ -14,7 +14,7 @@ declare global {
 }
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = parseInt(process.env.PORT || '3000', 10);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
