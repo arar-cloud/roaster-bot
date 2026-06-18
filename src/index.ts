@@ -341,13 +341,27 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Initialize client with the user's token
   let client: CopilotClient;
   try {
-    client = new CopilotClient({
-      env: {
-        GITHUB_TOKEN: token,
-        ...process.env
-      }
-    });
+    client = await withRetry(
+      async () => {
+        return await withTimeout(
+          Promise.resolve(new CopilotClient({
+            env: {
+              GITHUB_TOKEN: token,
+              ...process.env
+            }
+          })),
+          5000,
+          'CopilotClient init'
+        );
+      },
+      'CopilotClient initialization',
+      2,
+      100
+    );
+    (req as any).copilotClient = client;
+    circuitBreaker.recordSuccess();
   } catch (initError) {
+    circuitBreaker.recordFailure();
     console.error('CopilotClient initialization failed:', initError);
     if (!res.headersSent) {
       res.status(500).json({ error: 'Failed to initialize Copilot client' });
