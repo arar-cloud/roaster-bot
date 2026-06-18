@@ -103,6 +103,25 @@ let isShuttingDown = false;
 // Resource cleanup finalizer for request-scoped resources
 const resourceCleanup = new WeakMap<Request, () => void>();
 
+// Idempotency key tracking for deduplication (keyed by hash, auto-expires after 1 hour)
+const idempotencyCache = new Map<string, { timestamp: number; response: any }>();
+const IDEMPOTENCY_WINDOW = 60 * 60 * 1000; // 1 hour
+
+const recordIdempotentRequest = (key: string, response: any) => {
+  idempotencyCache.set(key, { timestamp: Date.now(), response });
+};
+
+const getIdempotentResponse = (key: string): any | null => {
+  const cached = idempotencyCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.timestamp > IDEMPOTENCY_WINDOW) {
+    idempotencyCache.delete(key);
+    return null;
+  }
+  console.info(`[IDEMPOTENCY] Cache hit for key ${key.substring(0, 8)}...`);
+  return cached.response;
+};
+
 // Validate required environment variables at startup
 const requiredEnvVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
