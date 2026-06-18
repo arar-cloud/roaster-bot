@@ -69,6 +69,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   // Initialize client with the user's token
   const client = new CopilotClient({
+    token: process.env.GITHUB_TOKEN,
     env: {
       GITHUB_TOKEN: token,
       ...process.env
