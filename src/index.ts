@@ -23,11 +23,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json({
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+// Capture raw body before parsing for HMAC verification
+app.use(express.raw({ type: 'application/json' }));
+app.use((req: any, res, next) => {
+  if (Buffer.isBuffer(req.body)) {
+    req.rawBody = req.body.toString();
+    req.body = JSON.parse(req.rawBody);
   }
-}));
+  next();
+});
+app.use(express.json());
 
 app.get('/', (req, res) => {
   res.send(`
