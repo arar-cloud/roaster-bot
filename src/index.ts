@@ -22,7 +22,6 @@ declare global {
 }
 
 const app = express();
-const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -31,6 +30,7 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
