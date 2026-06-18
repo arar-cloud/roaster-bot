@@ -201,7 +201,34 @@ app.use((req: Request, res: Response, next: any) => {
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  // Validate runtime environment and dependencies
+  const missingEnvVars = requiredEnvVars.filter(v => !process.env[v]);
+  const uptime = process.uptime();
+  const memoryUsage = process.memoryUsage();
+  
+  if (missingEnvVars.length > 0) {
+    console.error(`[HEALTH] Missing runtime env vars: ${missingEnvVars.join(', ')}`);
+    return res.status(503).json({
+      status: 'degraded',
+      timestamp: new Date().toISOString(),
+      missingEnvVars,
+      uptime,
+      circuitBreakerState: circuitBreaker.state
+    });
+  }
+  
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime,
+    memoryUsage: {
+      heapUsed: Math.round(memoryUsage.heapUsed / 1024 / 1024),
+      heapTotal: Math.round(memoryUsage.heapTotal / 1024 / 1024),
+      external: Math.round(memoryUsage.external / 1024 / 1024)
+    },
+    circuitBreakerState: circuitBreaker.state,
+    activeRequests: activeRequests.size
+  });
 });
 
 app.get('/', (req, res) => {
