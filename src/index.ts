@@ -365,6 +365,49 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
+});
+
+// Graceful shutdown handler
+const gracefulShutdown = async (signal: string) => {
+  console.log(`\n[SHUTDOWN] Received ${signal}, starting graceful shutdown...`);
+  isShuttingDown = true;
+  
+  // Stop accepting new requests
+  server.close(() => {
+    console.log('[SHUTDOWN] HTTP server closed');
+  });
+  
+  // Give active requests up to 10 seconds to complete
+  const shutdownTimeout = 10000;
+  const startTime = Date.now();
+  
+  const checkActiveRequests = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    if (activeRequests.size === 0) {
+      clearInterval(checkActiveRequests);
+      console.log('[SHUTDOWN] All requests completed, exiting');
+      process.exit(0);
+    } else if (elapsed > shutdownTimeout) {
+      clearInterval(checkActiveRequests);
+      console.warn(`[SHUTDOWN] Timeout reached with ${activeRequests.size} active requests, forcing exit`);
+      process.exit(1);
+    }
+  }, 500);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled rejection at', promise, 'reason:', reason);
+  process.exit(1);
 });
