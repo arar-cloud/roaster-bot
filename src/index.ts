@@ -128,15 +128,33 @@ app.post('/agent', async (req: Request, res: Response) => {
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
-    // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    // Create session with retry logic and timeout
+    let session;
+    try {
+      session = await retryWithBackoff(
+        async () => {
+          return await client.createSession({
+            model: "gpt-4o",
+            streaming: true,
+            systemMessage: {
+              mode: "replace",
+              content: systemPrompt
+            }
+          });
+        },
+        {
+          maxAttempts: 3,
+          delayMs: 500,
+          backoffMultiplier: 2,
+          timeoutMs: 5000,
+        },
+        { path: req.path, method: req.method }
+      );
+    } catch (sessionError) {
+      const err = sessionError as Error;
+      logError(new ExternalServiceError(err.message, true, { path: req.path, method: req.method }), { path: req.path, method: req.method });
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
