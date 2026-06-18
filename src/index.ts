@@ -29,12 +29,24 @@ validateEnvironment();
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Configure timeouts
+const REQUEST_TIMEOUT = 60000; // 60 seconds
+const RESPONSE_TIMEOUT = 120000; // 120 seconds
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+app.use((req, res, next) => {
+  req.setTimeout(REQUEST_TIMEOUT);
+  res.setTimeout(RESPONSE_TIMEOUT);
+  next();
+});
+
+app.use(helmet());
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
