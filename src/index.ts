@@ -45,7 +45,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', async (req: Request, res: Response) => {
   try {
     // Webhook signature verification
     const signature = req.get('X-Hub-Signature-256');
