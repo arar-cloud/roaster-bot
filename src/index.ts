@@ -38,7 +38,18 @@ app.use(express.json({
   }
 }));
 
+app.use((err: any, req: Request, res: Response, next: any) => {
+  console.error(`[ERROR] ${new Date().toISOString()} - ${req.method} ${req.url} - ${err.message}`, err.stack);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+  next();
+});
+
 app.get('/', (req, res) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'");
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
