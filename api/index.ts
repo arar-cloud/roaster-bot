@@ -3,6 +3,12 @@ let loadAttempts = 0;
 const MAX_LOAD_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
 
+// Global unhandled rejection handler for async initialization
+process.on('unhandledRejection', (reason: any) => {
+  console.error('[API] Unhandled promise rejection during initialization:', reason);
+  process.exit(1);
+});
+
 const loadApp = async (): Promise<any> => {
   while (loadAttempts < MAX_LOAD_ATTEMPTS) {
     try {
