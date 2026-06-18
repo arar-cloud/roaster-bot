@@ -40,6 +40,14 @@ const withRetry = async <T>(
   maxRetries: number = 2,
   baseDelayMs: number = 100
 ): Promise<T> => {
+  // Validate retry parameters to prevent infinite loops and stack overflow
+  if (maxRetries < 0 || maxRetries > 10) {
+    throw new Error(`Invalid maxRetries: ${maxRetries}. Must be between 0 and 10.`);
+  }
+  if (baseDelayMs < 0 || baseDelayMs > 10000) {
+    throw new Error(`Invalid baseDelayMs: ${baseDelayMs}. Must be between 0 and 10000.`);
+  }
+  
   let lastError: Error = new Error(`${operation} failed after all retries`);
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
