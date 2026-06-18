@@ -103,6 +103,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
+    
+    if (!Array.isArray(userMessages)) {
+      return res.status(400).json({ error: 'Invalid request: messages must be an array' });
+    }
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
