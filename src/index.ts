@@ -3,6 +3,14 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
+import { config } from './config.js';
+import {
+  logError,
+  AuthenticationError,
+  ValidationError,
+  ExternalServiceError,
+  retryWithBackoff,
+} from './errors.js';
 
 // Extend Express Request type properly
 declare global {
