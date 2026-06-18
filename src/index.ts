@@ -43,6 +43,8 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // Initialize rate limiter context
+  res.locals.rateLimitFailed = false;
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -60,9 +62,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   try {
     const isValidSignature = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(digest));
     if (!isValidSignature) {
+      res.locals.rateLimitFailed = true;
       return res.status(401).json({ error: 'Unauthorized' });
     }
   } catch {
+    res.locals.rateLimitFailed = true;
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
