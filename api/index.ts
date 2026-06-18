@@ -37,20 +37,38 @@ const loadApp = async (): Promise<any> => {
         return app;
       } catch (err: any) {
         const isRetryable = err.retryable !== false && (err.code === 'ENOENT' || err.code === 'ENOTFOUND' || err.message?.includes('Cannot find module'));
+        const logEntry = {
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          component: 'api.loadApp',
+          attempt: loadAttempts,
+          maxAttempts: MAX_LOAD_ATTEMPTS,
+          isRetryable,
+          errorCode: err.code,
+          errorMessage: err.message
+        };
         
         if (!isRetryable) {
-          console.error(`[API] Non-retryable error on attempt ${loadAttempts}, failing fast:`, err.message);
+          logEntry.level = 'error';
+          console.error(JSON.stringify(logEntry), '(non-retryable, failing fast)');
           throw err;
         }
         
-        console.error(`[API] Load attempt ${loadAttempts} failed (retryable):`, err.message);
+        console.error(JSON.stringify(logEntry));
         
         if (loadAttempts < MAX_LOAD_ATTEMPTS) {
           const delay = RETRY_DELAY_MS * Math.pow(2, loadAttempts - 1);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
           // Graceful fallback: return minimal app on final failure
-          console.error('[API] All load attempts failed, returning fallback app');
+          const fallbackLog = {
+            timestamp: new Date().toISOString(),
+            level: 'warn',
+            component: 'api.loadApp',
+            message: 'All load attempts exhausted, activating fallback',
+            attempts: loadAttempts
+          };
+          console.error(JSON.stringify(fallbackLog));
           const express = await import('express');
           const fallbackApp = express.default?.();
           if (fallbackApp) {
