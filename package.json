@@ -7,7 +7,7 @@
   "scripts": {
     "start": "ts-node-esm src/index.ts",
     "dev": "ts-node-esm src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --input-type=module --eval \"console.log('Basic validation: roaster-bot can be imported'); import('./api/index.js').then(() => console.log('✓ api/index.js exports correctly')).catch(e => { console.error('✗ Module import failed:', e.message); process.exit(1); })\""
   },
   "keywords": [],
   "author": "",
