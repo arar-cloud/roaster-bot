@@ -48,6 +48,7 @@ app.get('/', limiter, (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  let isResponseSent = false;
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -65,7 +66,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) {
+    isResponseSent = true;
+    return res.status(401).send('Missing X-GitHub-Token.');
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
@@ -121,6 +125,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       await session.sendAndWait({ prompt, signal: abortController.signal });
       clearTimeout(timeoutId);
 
+      isResponseSent = true;
       res.write('data: [DONE]\n\n');
       res.end();
     } finally {
@@ -128,11 +133,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
 
   } catch (error) {
-    console.error('Error:', error);
-    if (error instanceof Error && error.name === 'AbortError') {
-      if (!res.headersSent) return res.status(504).send('Request timeout');
+    if (!isResponseSent) {
+      console.error('Agent endpoint error:', error);
+      if (error instanceof Error && error.name === 'AbortError') {
+        isResponseSent = true;
+        if (!res.headersSent) return res.status(504).send('Request timeout');
+      }
+      if (!res.headersSent) {
+        isResponseSent = true;
+        res.status(500).send("The roaster overheated.");
+      }
+    } else {
+      console.error('Error after response sent:', error);
     }
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
   }
