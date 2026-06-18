@@ -64,6 +64,10 @@ app.use((req: Request, res: Response, next: any) => {
   next();
 });
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 app.get('/', (req, res) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
