@@ -4,6 +4,50 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Timeout wrapper for external API calls
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, operation: string): Promise<T> => {
+  let timeoutHandle: NodeJS.Timeout;
+  const timeoutPromise = new Promise<T>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      const err = new Error(`${operation} timeout after ${timeoutMs}ms`);
+      (err as any).code = 'ETIMEDOUT';
+      reject(err);
+    }, timeoutMs);
+  });
+  
+  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
+};
+
+// Exponential backoff retry logic for transient failures
+const withRetry = async <T>(
+  fn: () => Promise<T>,
+  operation: string,
+  maxRetries: number = 2,
+  baseDelayMs: number = 100
+): Promise<T> => {
+  let lastError: Error = new Error(`${operation} failed after all retries`);
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      // Do not retry on authentication or validation errors
+      if (err.status === 401 || err.status === 400 || err.code === 'INVALID_SIGNATURE') {
+        throw err;
+      }
+      // Only retry on transient errors
+      if (attempt < maxRetries && (err.code === 'ETIMEDOUT' || err.status >= 500)) {
+        const delayMs = baseDelayMs * Math.pow(2, attempt);
+        console.warn(`${operation} attempt ${attempt + 1} failed, retrying in ${delayMs}ms:`, err.message);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastError;
+};
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
