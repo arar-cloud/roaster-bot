@@ -174,21 +174,29 @@ app.use((err: any, req: Request, res: Response, next: any) => {
   next();
 });
 
+// Resource cleanup middleware - register finalizer for each request
 app.use((req: Request, res: Response, next: any) => {
-  const originalSend = res.send;
-  res.send = function(data: any) {
-    res.send = originalSend;
-    const result = res.send(data);
-    res.on('finish', () => {
-      if ((req as any).copilotClient) {
-        delete (req as any).copilotClient;
-      }
-      if ((req as any).rawBody) {
-        delete (req as any).rawBody;
-      }
-    });
-    return result;
+  const cleanup = () => {
+    if ((req as any).copilotClient) {
+      try { (req as any).copilotClient.stop?.(); } catch (e) { console.warn('Client stop error:', e); }
+      delete (req as any).copilotClient;
+    }
+    if ((req as any).rawBody) {
+      delete (req as any).rawBody;
+    }
   };
+  resourceCleanup.set(req, cleanup);
+  
+  // Attempt cleanup on response finish
+  res.on('finish', () => {
+    activeRequests.delete(req);
+    cleanup();
+  });
+  res.on('close', () => {
+    activeRequests.delete(req);
+    cleanup();
+  });
+  
   next();
 });
 
