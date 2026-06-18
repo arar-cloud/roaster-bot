@@ -96,6 +96,13 @@ const circuitBreaker = {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Track in-flight requests for graceful shutdown
+const activeRequests = new Set<Request>();
+let isShuttingDown = false;
+
+// Resource cleanup finalizer for request-scoped resources
+const resourceCleanup = new WeakMap<Request, () => void>();
+
 // Validate required environment variables at startup
 const requiredEnvVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN'];
 const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
