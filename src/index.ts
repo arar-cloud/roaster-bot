@@ -77,14 +77,21 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  let client: CopilotClient | null = null;
   
   try {
+    try {
+      client = new CopilotClient({
+        env: {
+          GITHUB_TOKEN: token,
+          ...process.env
+        }
+      });
+    } catch (initErr) {
+      console.error('Copilot client initialization failed:', initErr);
+      return res.status(503).json({ error: 'Service temporarily unavailable', retry: true });
+    }
+    
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -100,14 +107,20 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    let session;
+    try {
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+    } catch (sessionErr) {
+      console.error('Failed to create Copilot session:', sessionErr);
+      return res.status(503).json({ error: 'Service temporarily unavailable', retry: true });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
