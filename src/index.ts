@@ -113,13 +113,25 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
 
-    await session.sendAndWait({ prompt });
+    // Create abort controller with 30-second timeout
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 30000);
 
-    res.write('data: [DONE]\n\n');
-    res.end();
+    try {
+      await session.sendAndWait({ prompt, signal: abortController.signal });
+      clearTimeout(timeoutId);
+
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
   } catch (error) {
     console.error('Error:', error);
+    if (error instanceof Error && error.name === 'AbortError') {
+      if (!res.headersSent) return res.status(504).send('Request timeout');
+    }
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
