@@ -48,6 +48,27 @@ app.use((req, res, next) => {
 
 app.use(helmet());
 
+// Structured logging middleware
+app.use((req, res, next) => {
+  const startTime = Date.now();
+  const requestId = crypto.randomBytes(8).toString('hex');
+  
+  res.on('finish', () => {
+    const duration = Date.now() - startTime;
+    console.log(JSON.stringify({
+      timestamp: new Date().toISOString(),
+      requestId,
+      method: req.method,
+      path: req.path,
+      statusCode: res.statusCode,
+      duration: `${duration}ms`,
+      userAgent: req.get('user-agent'),
+    }));
+  });
+  
+  next();
+});
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
