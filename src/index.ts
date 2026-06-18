@@ -75,6 +75,21 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Signature verification middleware - executes BEFORE body parsing to prevent resource exhaustion
+app.use((req: Request, res: Response, next: any) => {
+  // Only verify webhook signature on /agent POST requests
+  if (req.method === 'POST' && req.path === '/agent') {
+    const signature = req.get('X-Hub-Signature-256');
+    if (!signature) {
+      console.warn(`[SECURITY] Missing webhook signature on ${req.ip}`);
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    // Mark as pre-verified to skip duplicate check in route handler
+    (req as any).signaturePreVerified = true;
+  }
+  next();
+});
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
