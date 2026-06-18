@@ -4,6 +4,8 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB limit
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -25,6 +27,9 @@ const limiter = rateLimit({
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
+    if (buf.length > MAX_BODY_SIZE) {
+      throw new Error('Request body exceeds maximum allowed size');
+    }
     req.rawBody = buf.toString();
   }
 }));
