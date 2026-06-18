@@ -2,6 +2,8 @@ let app: any;
 let loadAttempts = 0;
 const MAX_LOAD_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 500;
+let loadInProgress = false;
+let loadPromise: Promise<any> | null = null;
 
 // Global unhandled rejection handler for async initialization
 process.on('unhandledRejection', (reason: any) => {
