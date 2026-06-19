@@ -115,8 +115,11 @@ const parsePort = (portEnv: string | undefined): number => {
   
   const parsed = parseInt(portEnv, 10);
   if (isNaN(parsed) || parsed < 1 || parsed > 65535) {
-    console.warn(`Invalid PORT value '${portEnv}', using default ${defaultPort}`);
+    log('warn', `Invalid PORT value '${portEnv}', using default ${defaultPort}`);
     return defaultPort;
+  }
+  if (parsed < 1024) {
+    log('warn', `Port ${parsed} requires elevated privileges (< 1024)`);
   }
   return parsed;
 };
