@@ -92,9 +92,19 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
+      requestId?: string;
     }
   }
 }
+
+// Structured logging
+const generateRequestId = (): string => `req-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+const log = (level: 'info' | 'warn' | 'error', message: string, requestId?: string, meta?: any) => {
+  const timestamp = new Date().toISOString();
+  const logEntry = { timestamp, level, message, requestId, ...meta };
+  console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](JSON.stringify(logEntry));
+};
 
 const app = express();
 
