@@ -212,6 +212,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
   // Initialize client with the user's token
   const sanitizedToken = token.trim();
+  // Check circuit breaker
+  if (circuitBreaker.isOpen()) {
+    log('warn', 'Circuit breaker is open - Copilot API unavailable', requestId);
+    return res.status(503).json({ error: 'Service temporarily unavailable' });
+  }
+
   let client;
   try {
     const clientConfig: any = {
@@ -227,10 +233,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
     
     client = new CopilotClient(clientConfig);
+    log('info', 'CopilotClient initialized', requestId);
   } catch (initError) {
-    console.error('Failed to initialize CopilotClient:', initError);
-    res.status(500).json({ error: 'Failed to initialize Copilot client' });
-    return;
+    const classified = classifyError(initError);
+    log('error', 'Failed to initialize CopilotClient', requestId, { errorType: classified.type, message: classified.message });
+    if (classified.type === 'permanent') {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    circuitBreaker.recordFailure();
+    return res.status(500).json({ error: 'Failed to initialize client' });
   }
   
   try {
