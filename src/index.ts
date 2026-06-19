@@ -5,6 +5,88 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Circuit breaker for Copilot API calls
+class CircuitBreaker {
+  private failureCount = 0;
+  private lastFailureTime = 0;
+  private state: 'closed' | 'open' | 'half-open' = 'closed';
+  private readonly failureThreshold = 5;
+  private readonly resetTimeout = 60000; // 60 seconds
+
+  isOpen(): boolean {
+    if (this.state === 'open') {
+      if (Date.now() - this.lastFailureTime > this.resetTimeout) {
+        this.state = 'half-open';
+        return false;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  recordFailure(): void {
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureCount >= this.failureThreshold) {
+      this.state = 'open';
+    }
+  }
+
+  recordSuccess(): void {
+    this.failureCount = 0;
+    this.state = 'closed';
+  }
+}
+
+// Error classification for Copilot API
+interface ClassifiedError {
+  type: 'transient' | 'permanent' | 'unknown';
+  retriable: boolean;
+  message: string;
+}
+
+const classifyError = (error: any): ClassifiedError => {
+  const message = error?.message || String(error);
+  const status = error?.status || error?.code;
+
+  if (status === 429 || message.includes('rate limit')) {
+    return { type: 'transient', retriable: true, message: 'Rate limited' };
+  }
+  if (status === 408 || status === 504 || message.includes('timeout') || message.includes('ETIMEDOUT')) {
+    return { type: 'transient', retriable: true, message: 'Timeout' };
+  }
+  if (status === 401 || status === 403 || message.includes('Unauthorized') || message.includes('token')) {
+    return { type: 'permanent', retriable: false, message: 'Authentication failed' };
+  }
+  if (status >= 500) {
+    return { type: 'transient', retriable: true, message: 'Server error' };
+  }
+  return { type: 'unknown', retriable: false, message };
+};
+
+// Retry logic for transient errors
+const withRetry = async <T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  backoffMs = 1000
+): Promise<T> => {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const classified = classifyError(error);
+      if (!classified.retriable || attempt === maxRetries - 1) {
+        throw error;
+      }
+      const delay = backoffMs * Math.pow(2, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Max retries exceeded');
+};
+
+const circuitBreaker = new CircuitBreaker();
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
