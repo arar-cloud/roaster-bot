@@ -44,7 +44,7 @@ app.use(express.json({
   }
 }));
 
-app.get('/', (req, res) => {
+app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
