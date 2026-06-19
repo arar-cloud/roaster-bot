@@ -245,6 +245,13 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
   
   try {
+    // Validate request body
+    const bodySize = req.rawBody ? req.rawBody.length : 0;
+    if (bodySize > 1048576) { // 1MB limit
+      log('warn', 'Request body exceeds size limit', requestId, { size: bodySize });
+      return res.status(413).json({ error: 'Payload too large' });
+    }
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -256,8 +263,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    if (!Array.isArray(userMessages)) {
+      log('warn', 'Invalid messages format', requestId);
+      return res.status(400).json({ error: 'Invalid message format' });
+    }
+    const lastMessage = userMessages.filter((m: any) => m?.role === 'user').pop();
+    const prompt = lastMessage?.content ? String(lastMessage.content) : "Roast me.";
+    if (prompt.length > 10000) {
+      log('warn', 'Prompt exceeds maximum length', requestId, { length: prompt.length });
+      return res.status(400).json({ error: 'Prompt too long' });
+    }
 
     // Create session following SDK docs
     const controller = new AbortController();
