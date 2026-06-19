@@ -83,12 +83,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const sanitizedToken = token.trim();
   let client;
   try {
-    client = new CopilotClient({
+    const clientConfig: any = {
       env: {
         GITHUB_TOKEN: sanitizedToken,
         ...process.env
       }
-    });
+    };
+    
+    // Allow configurable endpoint via environment variable
+    if (process.env.COPILOT_ENDPOINT) {
+      clientConfig.endpoint = process.env.COPILOT_ENDPOINT;
+    }
+    
+    client = new CopilotClient(clientConfig);
   } catch (initError) {
     console.error('Failed to initialize CopilotClient:', initError);
     res.status(500).json({ error: 'Failed to initialize Copilot client' });
