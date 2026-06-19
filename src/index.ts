@@ -274,32 +274,42 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Prompt too long' });
     }
 
-    // Create session following SDK docs
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
+    // Create session with retry logic and timeout
     let session;
     try {
-      session = await Promise.race([
-        client.createSession({
-          model: "gpt-4o",
-          streaming: true,
-          systemMessage: {
-            mode: "replace",
-            content: systemPrompt
-          }
-        }),
-        new Promise((_, reject) => {
-          controller.signal.addEventListener('abort', () => reject(new Error('CopilotClient API timeout')));
-        })
-      ]);
-    } catch (timeoutError) {
-      console.error('CopilotClient API timeout:', timeoutError);
-      res.status(504).json({ error: 'API request timeout' });
-      clearTimeout(timeoutId);
-      return;
-    } finally {
-      clearTimeout(timeoutId);
+      session = await withRetry(async () => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        
+        try {
+          return await Promise.race([
+            client.createSession({
+              model: "gpt-4o",
+              streaming: true,
+              systemMessage: {
+                mode: "replace",
+                content: systemPrompt
+              }
+            }),
+            new Promise((_, reject) => {
+              controller.signal.addEventListener('abort', () => reject(new Error('CopilotClient API timeout')));
+            })
+          ]);
+        } finally {
+          clearTimeout(timeoutId);
+        }
+      }, 3, 1000);
+      log('info', 'Session created successfully', requestId);
+    } catch (apiError) {
+      const classified = classifyError(apiError);
+      log('error', 'Failed to create Copilot session', requestId, { errorType: classified.type, message: classified.message });
+      
+      if (classified.type === 'transient') {
+        circuitBreaker.recordFailure();
+        return res.status(503).json({ error: 'Service temporarily unavailable' });
+      } else {
+        return res.status(500).json({ error: 'Failed to create session' });
+      }
     }
 
     res.setHeader('Content-Type', 'text/event-stream');
