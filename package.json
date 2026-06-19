@@ -7,7 +7,7 @@
   "scripts": {
     "start": "ts-node-esm src/index.ts",
     "dev": "ts-node-esm src/index.ts",
-    "test": "echo \"No test suite configured yet\" && exit 0"
+    "test": "ts-node-esm src/index.test.ts"
   },
   "keywords": [],
   "author": "",
