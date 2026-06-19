@@ -38,6 +38,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Apply Helmet security headers
+app.use(helmet());
+
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
