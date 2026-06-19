@@ -325,28 +325,58 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    let responseStarted = false;
+    
     session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+      try {
+        if (event.type === "assistant.message_delta") {
+          responseStarted = true;
+          const chunk = {
+            choices: [{ delta: { content: event.data?.deltaContent || '' } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      } catch (streamError) {
+        log('error', 'Error writing to response stream', requestId, { error: String(streamError) });
       }
     });
 
-    await session.sendAndWait({ prompt });
+    try {
+      await session.sendAndWait({ prompt });
+      circuitBreaker.recordSuccess();
+      log('info', 'Session completed successfully', requestId);
+    } catch (sendError) {
+      const classified = classifyError(sendError);
+      log('error', 'Error sending message to session', requestId, { errorType: classified.type, message: classified.message });
+      if (classified.type === 'transient') {
+        circuitBreaker.recordFailure();
+      }
+      if (!responseStarted && !res.headersSent) {
+        res.status(500).json({ error: 'Failed to process request' });
+      }
+      return;
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    const classified = classifyError(error);
+    log('error', 'Error in POST /agent handler', requestId, { errorType: classified.type, message: classified.message });
+    if (classified.type === 'transient') {
+      circuitBreaker.recordFailure();
+    }
+    if (!res.headersSent) res.status(500).json({ error: 'The roaster overheated' });
   } finally {
-    await client.stop();
+    try {
+      if (client) await client.stop();
+    } catch (stopError) {
+      log('warn', 'Error stopping Copilot client', requestId, { error: String(stopError) });
+    }
   }
   } catch (handlerError) {
-    console.error('Unhandled error in POST /agent handler:', handlerError);
+    const requestId = (req as any).requestId || 'unknown';
+    log('error', 'Unhandled error in POST /agent handler', requestId, { error: String(handlerError) });
     if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
 });
