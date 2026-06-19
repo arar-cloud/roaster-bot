@@ -43,6 +43,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  try {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -127,6 +128,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
     await client.stop();
+  }
+  } catch (handlerError) {
+    console.error('Unhandled error in POST /agent handler:', handlerError);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
   }
 });
 
