@@ -14,7 +14,21 @@ declare global {
 }
 
 const app = express();
-const port = process.env.PORT || 3000;
+
+// Validate and parse PORT environment variable
+const parsePort = (portEnv: string | undefined): number => {
+  const defaultPort = 3000;
+  if (!portEnv) return defaultPort;
+  
+  const parsed = parseInt(portEnv, 10);
+  if (isNaN(parsed) || parsed < 1 || parsed > 65535) {
+    console.warn(`Invalid PORT value '${portEnv}', using default ${defaultPort}`);
+    return defaultPort;
+  }
+  return parsed;
+};
+
+const port = parsePort(process.env.PORT);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
