@@ -96,14 +96,32 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    let session;
+    try {
+      session = await Promise.race([
+        client.createSession({
+          model: "gpt-4o",
+          streaming: true,
+          systemMessage: {
+            mode: "replace",
+            content: systemPrompt
+          }
+        }),
+        new Promise((_, reject) => {
+          controller.signal.addEventListener('abort', () => reject(new Error('CopilotClient API timeout')));
+        })
+      ]);
+    } catch (timeoutError) {
+      console.error('CopilotClient API timeout:', timeoutError);
+      res.status(504).json({ error: 'API request timeout' });
+      clearTimeout(timeoutId);
+      return;
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
