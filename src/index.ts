@@ -123,15 +123,33 @@ const parsePort = (portEnv: string | undefined): number => {
 
 const port = parsePort(process.env.PORT);
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  limit: 100,
-  standardHeaders: true,
-  legacyHeaders: false,
-});
+let limiter;
+try {
+  limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+} catch (err) {
+  log('error', 'Failed to initialize rate limiter', undefined, { error: String(err) });
+  process.exit(1);
+}
 
 // Apply Helmet security headers
-app.use(helmet());
+try {
+  app.use(helmet());
+} catch (err) {
+  log('error', 'Failed to initialize Helmet', undefined, { error: String(err) });
+  process.exit(1);
+}
+
+// Add request ID middleware
+app.use((req: Request, res: Response, next) => {
+  req.requestId = generateRequestId();
+  res.setHeader('X-Request-ID', req.requestId);
+  next();
+});
 
 app.use(express.json({
   limit: '1mb',
