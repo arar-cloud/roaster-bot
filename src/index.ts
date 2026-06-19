@@ -171,6 +171,15 @@ app.get('/', limiter, (req, res) => {
   `);
 });
 
+// Health check endpoint for monitoring
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    circuitBreaker: circuitBreaker.isOpen() ? 'open' : 'closed'
+  });
+});
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   try {
   const requestId = req.requestId;
