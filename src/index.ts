@@ -75,11 +75,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
-
-  if (!token) {
-    throw new Error('GITHUB_TOKEN environment variable is required');
-  }
+  if (!token) return res.status(401).json({ error: 'Missing X-GitHub-Token header' });
 
   const message = req.body.message || '';
   if (!message) {
