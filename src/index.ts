@@ -24,6 +24,9 @@ const limiter = rateLimit({
 });
 
 const AGENT_TIMEOUT_MS = 30000; // 30 second timeout for agent processing
+const MAX_RETRIES = 3;
+const BASE_BACKOFF_MS = 100;
+const MAX_BACKOFF_MS = 2000;
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return Promise.race([
@@ -32,6 +35,33 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
       setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
     ),
   ]);
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = MAX_RETRIES
+): Promise<T> {
+  let lastError: Error | null = null;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const isRetryable = error instanceof Error && 
+        (error.message.includes('timeout') || 
+         error.message.includes('ECONNREFUSED') ||
+         error.message.includes('ECONNRESET') ||
+         error.message.includes('429') ||
+         error.message.includes('503'));
+      
+      if (!isRetryable || attempt === maxRetries - 1) break;
+      
+      const backoffMs = Math.min(BASE_BACKOFF_MS * Math.pow(2, attempt), MAX_BACKOFF_MS);
+      console.warn(`Attempt ${attempt + 1} failed, retrying in ${backoffMs}ms:`, error);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
+  }
+  throw lastError || new Error('Max retries exceeded');
 }
 
 app.use(express.json({
