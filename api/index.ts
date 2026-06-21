@@ -13,10 +13,14 @@ if (typeof app.listen !== 'function') {
 // Add global error handler as final middleware
 app.use((err: any, req: any, res: any, next: any) => {
   console.error('Unhandled error in Express app:', err);
-  res.status(500).json({
+  const errorResponse: any = {
     error: 'Internal server error',
-    details: err?.message || 'Unknown error',
-  });
+    message: err?.message || 'Unknown error',
+  };
+  if (process.env.NODE_ENV === 'development' && err?.stack) {
+    errorResponse.stack = err.stack;
+  }
+  res.status(500).json(errorResponse);
 });
 
 export default app;
