@@ -291,17 +291,28 @@ const server = app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
 
+const GRACEFUL_SHUTDOWN_TIMEOUT_MS = 10000;
+
 function gracefulShutdown(signal: string) {
   console.log(`Received ${signal}, closing server gracefully...`);
+  let shutdownComplete = false;
+  
   server.close(() => {
-    console.log('Server closed');
+    shutdownComplete = true;
+    console.log('Server closed gracefully');
     process.exit(0);
   });
 
-  setTimeout(() => {
-    console.error('Forced shutdown after timeout');
-    process.exit(1);
-  }, 10000);
+  // Force shutdown if graceful close times out
+  const forceShutdownTimer = setTimeout(() => {
+    if (!shutdownComplete) {
+      console.error(`Graceful shutdown timeout after ${GRACEFUL_SHUTDOWN_TIMEOUT_MS}ms, forcing exit`);
+      process.exit(1);
+    }
+  }, GRACEFUL_SHUTDOWN_TIMEOUT_MS);
+  
+  // Clear timeout if shutdown completes before it fires
+  process.on('exit', () => clearTimeout(forceShutdownTimer));
 }
 
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
