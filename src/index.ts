@@ -62,6 +62,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
+    if (typeof rawBody !== 'string' || rawBody.length === 0) {
+      return res.status(400).json({ error: 'Invalid webhook body' });
+    }
+
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
