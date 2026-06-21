@@ -132,13 +132,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   try {
-    // Wrap async operation with timeout and success response
-    const response = await withTimeout(
-      client.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [{ role: 'user', content: message }],
-      }),
-      AGENT_TIMEOUT_MS
+    // Wrap async operation with retry and timeout
+    const response = await withRetry(async () =>
+      withTimeout(
+        client.chat.completions.create({
+          model: 'gpt-4o',
+          messages: [{ role: 'user', content: message }],
+        }),
+        AGENT_TIMEOUT_MS
+      )
     );
 
     const responseText = response.choices[0]?.message?.content || '';
