@@ -69,16 +69,69 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   ]);
 }
 
+interface CircuitBreakerState {
+  failures: number;
+  lastFailureTime: number;
+  state: 'closed' | 'open' | 'half-open';
+}
+
+const circuitBreaker: CircuitBreakerState = {
+  failures: 0,
+  lastFailureTime: 0,
+  state: 'closed',
+};
+
+const CIRCUIT_BREAKER_THRESHOLD = 5;
+const CIRCUIT_BREAKER_RESET_MS = 60000; // 1 minute
+
+function checkCircuitBreaker(): boolean {
+  if (circuitBreaker.state === 'open') {
+    if (Date.now() - circuitBreaker.lastFailureTime > CIRCUIT_BREAKER_RESET_MS) {
+      console.log('Circuit breaker reset to half-open');
+      circuitBreaker.state = 'half-open';
+      circuitBreaker.failures = 0;
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
+
+function recordCircuitBreakerFailure(): void {
+  circuitBreaker.failures++;
+  circuitBreaker.lastFailureTime = Date.now();
+  if (circuitBreaker.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+    console.error('Circuit breaker opened due to repeated failures');
+    circuitBreaker.state = 'open';
+  }
+}
+
+function recordCircuitBreakerSuccess(): void {
+  if (circuitBreaker.state === 'half-open') {
+    console.log('Circuit breaker closed after successful request');
+    circuitBreaker.state = 'closed';
+    circuitBreaker.failures = 0;
+  }
+}
+
 async function withRetry<T>(
   fn: () => Promise<T>,
   maxRetries: number = MAX_RETRIES
 ): Promise<T> {
+  if (!checkCircuitBreaker()) {
+    throw new Error('Circuit breaker is open: service unavailable');
+  }
+  
   let lastError: Error | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      return await fn();
+      const result = await fn();
+      recordCircuitBreakerSuccess();
+      return result;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+      recordCircuitBreakerFailure();
+      
       const isRetryable = error instanceof Error && 
         (error.message.includes('timeout') || 
          error.message.includes('ECONNREFUSED') ||
