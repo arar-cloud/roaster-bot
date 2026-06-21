@@ -4,6 +4,24 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Try to use Redis store if available, fallback to memory
+let rateLimitStore: any = undefined;
+try {
+  const RedisStore = (await import('rate-limit-redis')).default;
+  const redis = (await import('redis')).default;
+  const client = redis.createClient({
+    host: process.env.REDIS_HOST || 'localhost',
+    port: parseInt(process.env.REDIS_PORT || '6379'),
+  });
+  client.connect().catch(() => console.warn('Redis store unavailable, using memory store'));
+  rateLimitStore = new RedisStore({
+    client,
+    prefix: 'rate-limit:',
+  });
+} catch (err) {
+  console.warn('Redis rate limit store not available, using default memory store');
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
