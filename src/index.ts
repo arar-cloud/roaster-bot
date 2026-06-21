@@ -208,8 +208,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   // Initialize client with the user's token
-  let client: CopilotClient;
+  let client: CopilotClient | null = null;
   try {
+    if (!token) {
+      throw new Error('GitHub token is required for CopilotClient initialization');
+    }
     client = new CopilotClient({
       env: {
         GITHUB_TOKEN: token,
@@ -217,8 +220,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       }
     });
   } catch (err) {
-    console.error('Failed to initialize CopilotClient:', err);
-    throw new Error(`CopilotClient initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+    const initError = err instanceof Error ? err : new Error(String(err));
+    console.error('Failed to initialize CopilotClient:', {
+      message: initError.message,
+      stack: initError.stack,
+      token: token ? 'provided' : 'missing',
+    });
+    return res.status(500).json({
+      error: 'Failed to initialize AI client',
+      details: initError.message,
+    });
   }
 
   try {
