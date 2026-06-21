@@ -81,6 +81,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     throw new Error('GITHUB_TOKEN environment variable is required');
   }
 
+  const message = req.body.message || '';
+  if (!message) {
+    return res.status(400).json({ error: 'Missing message in request body' });
+  }
+
   // Initialize client with the user's token
   let client: CopilotClient;
   try {
@@ -96,6 +101,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   try {
+    // Wrap async operation with timeout and success response
+    const response = await withTimeout(
+      client.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [{ role: 'user', content: message }],
+      }),
+      AGENT_TIMEOUT_MS
+    );
+
+    const responseText = response.choices[0]?.message?.content || '';
+    return res.status(200).json({ response: responseText });
+
+    // Original streaming code preserved below (not executed)
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
