@@ -9,7 +9,7 @@ declare global {
   namespace Express {
     interface Request {
       rawBody?: string;
-    }
+      }
   }
 }
 
@@ -94,12 +94,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     console.error('Failed to initialize CopilotClient:', err);
     throw new Error(`CopilotClient initialization failed: ${err instanceof Error ? err.message : String(err)}`);
   }
-  
+
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
+
       CORE DIRECTIVES:
       1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
       2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
@@ -156,7 +156,7 @@ function gracefulShutdown(signal: string) {
     console.log('Server closed');
     process.exit(0);
   });
-  
+
   setTimeout(() => {
     console.error('Forced shutdown after timeout');
     process.exit(1);
