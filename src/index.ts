@@ -51,6 +51,8 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  store: rateLimitStore,
+  skip: (req) => process.env.NODE_ENV === 'development' && req.get('X-Skip-Rate-Limit') === 'true',
 });
 
 const AGENT_TIMEOUT_MS = 30000; // 30 second timeout for agent processing
