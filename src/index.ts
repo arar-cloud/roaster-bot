@@ -67,6 +67,10 @@ async function withRetry<T>(
 app.use(express.json({
   limit: '1mb',
   verify: (req: any, res, buf) => {
+    const contentType = req.get('Content-Type');
+    if (contentType && !contentType.includes('application/json')) {
+      throw new Error('Invalid Content-Type: expected application/json');
+    }
     req.rawBody = buf.toString();
   }
 }));
