@@ -65,6 +65,7 @@ async function withRetry<T>(
 }
 
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
