@@ -291,10 +291,24 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('Error processing agent request:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'The roaster overheated',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   } finally {
-    await client.stop();
+    if (client) {
+      try {
+        await client.stop();
+      } catch (cleanupErr) {
+        console.error('Error during client cleanup:', cleanupErr);
+      }
+    }
   }
 });
 
