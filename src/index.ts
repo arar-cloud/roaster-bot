@@ -82,12 +82,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  let client: CopilotClient;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (err) {
+    console.error('Failed to initialize CopilotClient:', err);
+    throw new Error(`CopilotClient initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
   
   try {
     const systemPrompt = `
