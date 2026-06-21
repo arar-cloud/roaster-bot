@@ -23,6 +23,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+const AGENT_TIMEOUT_MS = 30000; // 30 second timeout for agent processing
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
+    ),
+  ]);
+}
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
