@@ -74,6 +74,26 @@ async function withRetry<T>(
   throw lastError || new Error('Retry failed after max attempts');
 }
 
+// Timeout utility for async operations
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string = 'operation'
+): Promise<T> {
+  let timeoutHandle: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
+}
+
 // Set payload size limit
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
