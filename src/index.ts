@@ -171,14 +171,18 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    const session = await withTimeout(
+      client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      }),
+      30000,
+      'CopilotClient createSession request'
+    );
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
