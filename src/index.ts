@@ -31,6 +31,49 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Retry utility with exponential backoff
+interface RetryOptions {
+  maxAttempts?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  backoffMultiplier?: number;
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: RetryOptions = {}
+): Promise<T> {
+  const {
+    maxAttempts = 3,
+    initialDelayMs = 100,
+    maxDelayMs = 5000,
+    backoffMultiplier = 2,
+  } = options;
+
+  let lastError: Error | undefined;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const isLastAttempt = attempt === maxAttempts;
+
+      if (isLastAttempt) break;
+
+      // Exponential backoff with jitter
+      const delayMs = Math.min(
+        initialDelayMs * Math.pow(backoffMultiplier, attempt - 1) + Math.random() * 1000,
+        maxDelayMs
+      );
+
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+
+  throw lastError || new Error('Retry failed after max attempts');
+}
+
 // Set payload size limit
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
 
