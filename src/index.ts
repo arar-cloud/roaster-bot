@@ -107,6 +107,18 @@ app.use(express.json({
   }
 }));
 
+// Global error handlers to prevent process crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // In production, log to monitoring service and consider graceful shutdown
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Attempt graceful shutdown
+  process.exit(1);
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
