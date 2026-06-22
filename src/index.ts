@@ -120,13 +120,20 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const token = req.get('X-GitHub-Token');
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Initialize client with the user's token with error handling
+  let client: CopilotClient;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('CopilotClient initialization failed (token may be invalid):', errorMsg);
+    return res.status(500).json({ error: 'Failed to initialize GitHub client' });
+  }
   
   try {
     const systemPrompt = `
@@ -172,10 +179,15 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    console.error('Session error (token may have expired):', errorMsg);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    try {
+      await client.stop();
+    } catch (cleanupError) {
+      console.error('Cleanup error:', cleanupError instanceof Error ? cleanupError.message : String(cleanupError));
+    }
   }
 });
 
