@@ -31,9 +31,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Set payload size limit
+const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
+
 app.use(express.json({
+  limit: '1mb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    if (buf.length > MAX_PAYLOAD_SIZE) {
+      throw new Error(`Payload size ${buf.length} exceeds maximum allowed size ${MAX_PAYLOAD_SIZE}`);
+    }
+    req.rawBody = buf.toString('utf8');
   }
 }));
 
