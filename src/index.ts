@@ -13,6 +13,14 @@ declare global {
   }
 }
 
+// Validate required environment variables at startup
+if (!process.env.WEBHOOK_SECRET) {
+  throw new Error('WEBHOOK_SECRET environment variable is required. Set it before starting the server.');
+}
+if (!process.env.GITHUB_TOKEN) {
+  throw new Error('GITHUB_TOKEN environment variable is required. Set it before starting the server.');
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
