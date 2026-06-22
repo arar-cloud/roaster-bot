@@ -107,6 +107,17 @@ app.use(express.json({
   }
 }));
 
+// Error handler for body parsing failures - applies before route handlers
+app.use((err: any, req: Request, res: Response, next: Function) => {
+  if (err instanceof SyntaxError && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON payload' });
+  }
+  if (err.message && err.message.includes('Payload size')) {
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  next(err);
+});
+
 // Global error handlers to prevent process crashes
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
