@@ -8,8 +8,6 @@ import { CopilotClient } from '@github/copilot-sdk';
 declare global {
   namespace Express {
     interface Request {
-    res.status(401).json({ error: 'Unauthorized: invalid signature' });
-    return;
       rawBody?: string;
     }
   }
@@ -17,6 +15,14 @@ declare global {
 
 const app = express();
 const port = process.env.PORT || 3000;
+
+// Validate critical environment variables at startup
+if (!process.env.GITHUB_TOKEN) {
+  throw new Error('GITHUB_TOKEN environment variable is required');
+}
+if (!process.env.WEBHOOK_SECRET) {
+  throw new Error('WEBHOOK_SECRET environment variable is required');
+}
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -27,6 +33,9 @@ const limiter = rateLimit({
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
+    if (!buf) {
+      throw new Error('Request body is missing');
+    }
     req.rawBody = buf.toString();
   }
 }));
