@@ -20,7 +20,7 @@ const port = process.env.PORT || 3000;
 let copilotClient: CopilotClient | null = null;
 const getCopilotClient = (): CopilotClient => {
   if (!copilotClient) {
-    copilotClient = getCopilotClient();
+    copilotClient = new CopilotClient();
   }
   return copilotClient;
 };
