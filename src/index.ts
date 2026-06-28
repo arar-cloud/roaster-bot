@@ -32,6 +32,19 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Pre-compute HMAC digest at startup to avoid blocking on every request
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET || '';
+const MAX_PAYLOAD_SIZE = 10 * 1024 * 1024; // 10MB limit
+let precomputedHmac: string | null = null;
+
+if (WEBHOOK_SECRET) {
+  // Pre-compute a digest template at startup (non-blocking module init)
+  precomputedHmac = crypto
+    .createHmac('sha256', WEBHOOK_SECRET)
+    .update('')
+    .digest('hex');
+}
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
