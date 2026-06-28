@@ -47,6 +47,11 @@ if (WEBHOOK_SECRET) {
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
+    // Validate Content-Length before buffering to prevent memory bloat
+    const contentLength = parseInt(req.get('content-length') || '0', 10);
+    if (contentLength > MAX_PAYLOAD_SIZE) {
+      throw new Error(`Payload too large: ${contentLength} bytes exceeds ${MAX_PAYLOAD_SIZE} byte limit`);
+    }
     req.rawBody = buf.toString();
   }
 }));
