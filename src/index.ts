@@ -54,8 +54,14 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    try {
+      const signatureBuffer = Buffer.from(signature);
+      const digestBuffer = Buffer.from(digest);
+      if (!crypto.timingSafeEqual(signatureBuffer, digestBuffer)) {
+        return res.status(401).send('Invalid signature.');
+      }
+    } catch {
+      return res.status(401).send('Invalid signature.');
     }
   }
 
