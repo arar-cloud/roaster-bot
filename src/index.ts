@@ -67,19 +67,25 @@ app.get('/', limiter, (req, res) => {
 
 app.post('/agent', limiter, validateAgentInput, async (req: Request, res: Response) => {
   // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return res.status(403).json({ error: 'Webhook authentication disabled' });
+  }
+  
+  const signature = req.get('X-Hub-Signature-256');
+  if (!signature) {
+    return res.status(401).json({ error: 'Missing webhook signature' });
+  }
+  
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).json({ error: 'Missing raw body' });
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+  const digest = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+  const signatureBuffer = Buffer.from(signature.replace('sha256=', ''));
+  const digestBuffer = Buffer.from(digest);
+  
+  if (!crypto.timingSafeEqual(signatureBuffer, digestBuffer)) {
+    return res.status(401).json({ error: 'Invalid webhook signature' });
   }
 
   const token = req.get('X-GitHub-Token');
