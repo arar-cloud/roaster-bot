@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -23,13 +24,35 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation middleware
+const validateAgentInput = (req: any, res: Response, next: any) => {
+  if (req.method !== 'POST') return next();
+  
+  const contentLength = req.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > 1048576) { // 1MB limit
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  
+  if (typeof req.body !== 'object' || req.body === null) {
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
+  
+  if (!Array.isArray(req.body.messages)) {
+    return res.status(400).json({ error: 'Missing or invalid messages array' });
+  }
+  
+  next();
+};
+
+app.use(helmet());
+
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
 
-app.get('/', (req, res) => {
+app.get('/', limiter, (req, res) => {
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
@@ -42,21 +65,27 @@ app.get('/', (req, res) => {
   `);
 });
 
-app.post('/agent', limiter, async (req: Request, res: Response) => {
+app.post('/agent', limiter, validateAgentInput, async (req: Request, res: Response) => {
   // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return res.status(403).json({ error: 'Webhook authentication disabled' });
+  }
+  
+  const signature = req.get('X-Hub-Signature-256');
+  if (!signature) {
+    return res.status(401).json({ error: 'Missing webhook signature' });
+  }
+  
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).json({ error: 'Missing raw body' });
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+  const digest = crypto.createHmac('sha256', webhookSecret).update(rawBody).digest('hex');
+  const signatureBuffer = Buffer.from(signature.replace('sha256=', ''));
+  const digestBuffer = Buffer.from(digest);
+  
+  if (!crypto.timingSafeEqual(signatureBuffer, digestBuffer)) {
+    return res.status(401).json({ error: 'Invalid webhook signature' });
   }
 
   const token = req.get('X-GitHub-Token');
