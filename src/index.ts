@@ -24,6 +24,26 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Input validation middleware
+const validateAgentInput = (req: any, res: Response, next: any) => {
+  if (req.method !== 'POST') return next();
+  
+  const contentLength = req.get('content-length');
+  if (contentLength && parseInt(contentLength, 10) > 1048576) { // 1MB limit
+    return res.status(413).json({ error: 'Payload too large' });
+  }
+  
+  if (typeof req.body !== 'object' || req.body === null) {
+    return res.status(400).json({ error: 'Invalid request body' });
+  }
+  
+  if (!Array.isArray(req.body.messages)) {
+    return res.status(400).json({ error: 'Missing or invalid messages array' });
+  }
+  
+  next();
+};
+
 app.use(helmet());
 
 app.use(express.json({
