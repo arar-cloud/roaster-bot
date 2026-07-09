@@ -16,6 +16,34 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Request context tracking for session isolation and audit logging
+const requestContextMap = new Map<string, {
+  requestId: string;
+  token: string;
+  timestamp: number;
+  endpoint: string;
+  ip: string;
+}>();
+
+// Generate unique request IDs
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Audit log helper
+function auditLog(requestId: string, action: string, details: any): void {
+  const context = requestContextMap.get(requestId);
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    requestId,
+    action,
+    endpoint: context?.endpoint,
+    ip: context?.ip,
+    ...details
+  };
+  console.log('[AUDIT]', JSON.stringify(logEntry));
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
