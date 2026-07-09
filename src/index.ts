@@ -179,6 +179,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     ip: requestIp,
   });
 
+  logSecurityEvent('agent_request', {
+    ip: requestIp,
+    messageCount: (req.body.messages || []).length,
+  });
+
   // Initialize client with the user's token
   // Only pass whitelisted environment variables to CopilotClient
   const client = new CopilotClient({
@@ -238,6 +243,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     });
 
     await session.sendAndWait({ prompt });
+
+    logSecurityEvent('agent_success', {
+      ip: requestIp,
+    });
 
     res.write('data: [DONE]\n\n');
     res.end();
