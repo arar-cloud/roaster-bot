@@ -44,12 +44,41 @@ function auditLog(requestId: string, action: string, details: any): void {
   console.log('[AUDIT]', JSON.stringify(logEntry));
 }
 
+// IP-based rate limiter for unauthenticated requests
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req: any) => {
+    return req.ip || 'unknown';
+  }
 });
+
+// Per-token rate limiter for authenticated requests
+const tokenLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+function checkTokenRateLimit(token: string): { allowed: boolean; remaining: number; resetTime: number } {
+  const now = Date.now();
+  const window = 15 * 60 * 1000; // 15 minutes
+  const limit = 300; // Higher limit for authenticated tokens
+
+  let record = tokenLimitMap.get(token);
+  
+  if (!record || now > record.resetTime) {
+    record = { count: 0, resetTime: now + window };
+    tokenLimitMap.set(token, record);
+  }
+
+  const allowed = record.count < limit;
+  record.count++;
+
+  return {
+    allowed,
+    remaining: Math.max(0, limit - record.count),
+    resetTime: record.resetTime
+  };
+}
 
 // Payload validation constants
 const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
