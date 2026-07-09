@@ -172,10 +172,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   // Initialize client with the user's token
+  // Only pass whitelisted environment variables to CopilotClient
   const client = new CopilotClient({
     env: {
-      GITHUB_TOKEN: token,
-      ...process.env
+      GITHUB_TOKEN: token
+      // Do not spread process.env to prevent secret exposure
     }
   });
   
