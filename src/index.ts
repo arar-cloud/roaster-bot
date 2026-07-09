@@ -137,7 +137,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const rawBody = req.rawBody;
-  if (!rawBody) return res.status(400).send('Missing raw body.');
+  if (!rawBody) {
+    logSecurityEvent('missing_raw_body', { ip: req.ip || 'unknown' });
+    return res.status(400).send('Bad request.');
+  }
 
   if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
     logSecurityEvent('webhook_signature_verification_failed', {
@@ -231,8 +234,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    logSecurityEvent('session_error', {
+      ip: req.ip || 'unknown',
+      error: error instanceof Error ? error.message : String(error)
+    });
+    if (!res.headersSent) res.status(500).send('Internal server error.');
   } finally {
     await client.stop();
   }
