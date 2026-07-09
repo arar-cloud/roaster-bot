@@ -148,10 +148,13 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
+  const requestIp = req.ip || 'unknown';
+  
   if (!token) {
     logSecurityEvent('missing_github_token', {
       origin: req.get('origin'),
       userAgent: req.get('user-agent'),
+      ip: requestIp,
     });
     return res.status(401).send('Missing X-GitHub-Token.');
   }
@@ -160,6 +163,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     logSecurityEvent('invalid_github_token_format', {
       origin: req.get('origin'),
       userAgent: req.get('user-agent'),
+      ip: requestIp,
     });
     return res.status(401).send('Invalid X-GitHub-Token format.');
   }
@@ -173,6 +177,17 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
   
   try {
+    // Validate user messages for injection attacks
+    const userMessages = req.body.messages || [];
+    if (!Array.isArray(userMessages)) {
+      logSecurityEvent('invalid_messages_format', {
+        origin: req.get('origin'),
+        userAgent: req.get('user-agent'),
+        ip: requestIp,
+      });
+      return res.status(400).json({ error: 'Bad request' });
+    }
+    
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
