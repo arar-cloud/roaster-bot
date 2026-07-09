@@ -4,6 +4,49 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Startup validation for environment variables
+function validateEnvironment(): void {
+  const requiredVars = ['WEBHOOK_SECRET', 'GITHUB_TOKEN'];
+  const optionalVars = ['PORT', 'ALLOWED_ORIGINS'];
+  const errors: string[] = [];
+
+  // Check required variables
+  requiredVars.forEach(varName => {
+    if (!process.env[varName]) {
+      errors.push(`Missing required environment variable: ${varName}`);
+    }
+  });
+
+  // Validate WEBHOOK_SECRET format if present
+  const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (webhookSecret && webhookSecret.length < 16) {
+    errors.push('WEBHOOK_SECRET must be at least 16 characters');
+  }
+
+  // Validate GITHUB_TOKEN format if present
+  const githubToken = process.env.GITHUB_TOKEN;
+  if (githubToken && !/^(ghp_|gho_|ghu_)/i.test(githubToken)) {
+    errors.push('GITHUB_TOKEN does not match expected GitHub token format');
+  }
+
+  // Validate PORT if present
+  const port = process.env.PORT;
+  if (port && (isNaN(parseInt(port, 10)) || parseInt(port, 10) < 1 || parseInt(port, 10) > 65535)) {
+    errors.push('PORT must be a valid port number (1-65535)');
+  }
+
+  if (errors.length > 0) {
+    console.error('[STARTUP ERROR] Environment validation failed:');
+    errors.forEach(err => console.error(`  - ${err}`));
+    process.exit(1);
+  }
+
+  console.log('[STARTUP] Environment variables validated successfully');
+}
+
+// Run validation at startup
+validateEnvironment();
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
