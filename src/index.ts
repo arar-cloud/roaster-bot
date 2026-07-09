@@ -155,8 +155,21 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('[API Error]', error instanceof Error ? error.message : 'Unknown error');
+    
+    // Filter error response to prevent information disclosure
+    if (!res.headersSent) {
+      if (error instanceof SyntaxError) {
+        res.status(400).send('Invalid request format');
+      } else if (error instanceof Error && error.message.includes('Message content')) {
+        res.status(400).send('Invalid message content');
+      } else if (error instanceof Error && error.message.includes('message format')) {
+        res.status(400).send('Invalid message format');
+      } else {
+        // Generic error response without internal details
+        res.status(500).send('The roaster overheated.');
+      }
+    }
   } finally {
     await client.stop();
   }
