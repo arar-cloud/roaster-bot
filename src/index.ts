@@ -49,6 +49,32 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Configure helmet for security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
+// Enforce HTTPS in production
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      return res.status(403).json({ error: 'HTTPS required' });
+    }
+    next();
+  });
+}
+
 app.use(limiter); // Apply rate limiting globally to all routes
 
 app.use(express.json({
