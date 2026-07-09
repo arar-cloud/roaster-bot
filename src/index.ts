@@ -88,6 +88,40 @@ function auditLog(requestId: string, action: string, details: any): void {
   console.log('[AUDIT]', JSON.stringify(logEntry));
 }
 
+// Input sanitization to prevent prompt injection
+function sanitizeUserMessage(message: string): string {
+  // Remove common jailbreak/injection patterns
+  const injectionPatterns = [
+    /mock\b/gi,
+    /destroy\b/gi,
+    /no cap\b/gi,
+    /ignore previous/gi,
+    /disregard instructions/gi,
+    /forget system/gi,
+    /override/gi,
+    /bypass/gi
+  ];
+
+  let sanitized = message;
+  injectionPatterns.forEach(pattern => {
+    sanitized = sanitized.replace(pattern, '[redacted]');
+  });
+
+  // Escape special characters to prevent format injection
+  sanitized = sanitized.replace(/[<>"'\\]/g, (char) => {
+    const escapeMap: Record<string, string> = {
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#x27;',
+      '\\': '&#x5C;'
+    };
+    return escapeMap[char] || char;
+  });
+
+  return sanitized;
+}
+
 // IP-based rate limiter for unauthenticated requests
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
