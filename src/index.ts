@@ -295,7 +295,41 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     }
   });
   
+  const requestId = req.requestId;
+
   try {
+    // Check per-token rate limit
+    const rateLimitCheck = checkTokenRateLimit(token);
+    if (!rateLimitCheck.allowed) {
+      auditLog(requestId, 'RATE_LIMIT_EXCEEDED', { token: token.substring(0, 10) });
+      res.setHeader('Retry-After', Math.ceil((rateLimitCheck.resetTime - Date.now()) / 1000));
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        retryAfter: rateLimitCheck.resetTime
+      });
+    }
+
+    // Validate and sanitize user messages
+    const userMessages = req.body.messages || [];
+    if (!Array.isArray(userMessages)) {
+      auditLog(requestId, 'INVALID_MESSAGES_FORMAT', { received: typeof userMessages });
+      return res.status(400).json({ error: 'Messages must be an array' });
+    }
+
+    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
+    if (!lastMessage) {
+      auditLog(requestId, 'NO_USER_MESSAGE', {});
+      return res.status(400).json({ error: 'No user message found' });
+    }
+
+    const prompt = lastMessage.content;
+    if (typeof prompt !== 'string' || prompt.length === 0) {
+      auditLog(requestId, 'INVALID_PROMPT', { contentType: typeof prompt });
+      return res.status(400).json({ error: 'Invalid prompt content' });
+    }
+
+    auditLog(requestId, 'SESSION_INIT', { model: 'gpt-4o' });
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -306,41 +340,60 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
-
     // Create session following SDK docs
-    const session = await client.createSession({
-      model: "gpt-4o",
-      streaming: true,
-      systemMessage: {
-        mode: "replace",
-        content: systemPrompt
-      }
-    });
+    let session;
+    try {
+      session = await client.createSession({
+        model: "gpt-4o",
+        streaming: true,
+        systemMessage: {
+          mode: "replace",
+          content: systemPrompt
+        }
+      });
+    } catch (sessionError) {
+      auditLog(requestId, 'SESSION_CREATION_FAILED', { error: sessionError instanceof Error ? sessionError.message : String(sessionError) });
+      return res.status(503).json({ error: 'Failed to initialize session' });
+    }
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    session.on((event: any) => {
-      if (event.type === "assistant.message_delta") {
-        const chunk = {
-          choices: [{ delta: { content: event.data.deltaContent } }]
-        };
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    try {
+      session.on((event: any) => {
+        if (event.type === "assistant.message_delta") {
+          if (!event.data || typeof event.data.deltaContent !== 'string') {
+            auditLog(requestId, 'MALFORMED_RESPONSE', { eventType: event.type });
+            return;
+          }
+          const chunk = {
+            choices: [{ delta: { content: event.data.deltaContent } }]
+          };
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
+      });
+
+      await session.sendAndWait({ prompt });
+      auditLog(requestId, 'SESSION_COMPLETE', { success: true });
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } catch (sessionError) {
+      const errorMsg = sessionError instanceof Error ? sessionError.message : String(sessionError);
+      auditLog(requestId, 'SESSION_EXECUTION_FAILED', { error: errorMsg.substring(0, 200) });
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Session execution failed' });
+      } else {
+        res.write(`data: ${JSON.stringify({ error: 'Stream interrupted' })}\n\n`);
+        res.end();
       }
-    });
-
-    await session.sendAndWait({ prompt });
-
-    res.write('data: [DONE]\n\n');
-    res.end();
-
+    }
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    auditLog(requestId, 'REQUEST_FAILED', { error: errorMsg.substring(0, 200) });
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Request processing failed' });
+    }
   } finally {
     await client.stop();
   }
