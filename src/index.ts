@@ -23,11 +23,53 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Payload validation constants
+const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
+const MAX_JSON_DEPTH = 10;
+const MAX_ARRAY_SIZE = 1000;
+
+// Check JSON payload depth recursively
+function validateJsonDepth(obj: any, currentDepth: number = 0): boolean {
+  if (currentDepth > MAX_JSON_DEPTH) {
+    return false;
+  }
+
+  if (Array.isArray(obj)) {
+    if (obj.length > MAX_ARRAY_SIZE) {
+      return false;
+    }
+    return obj.every(item => validateJsonDepth(item, currentDepth + 1));
+  }
+
+  if (obj !== null && typeof obj === 'object') {
+    return Object.values(obj).every(value => validateJsonDepth(value, currentDepth + 1));
+  }
+
+  return true;
+}
+
 app.use(express.json({
+  limit: `${MAX_PAYLOAD_SIZE / 1024}kb`,
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
+    
+    // Validate Content-Length header
+    const contentLength = parseInt(req.get('content-length') || '0', 10);
+    if (contentLength > MAX_PAYLOAD_SIZE) {
+      throw new Error(`Payload exceeds maximum size of ${MAX_PAYLOAD_SIZE} bytes`);
+    }
   }
 }));
+
+// Middleware to validate JSON depth and structure
+app.use((req: any, res: Response, next) => {
+  if (req.body && typeof req.body === 'object') {
+    if (!validateJsonDepth(req.body)) {
+      return res.status(400).json({ error: 'Request payload exceeds complexity limits' });
+    }
+  }
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send(`
