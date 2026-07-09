@@ -26,6 +26,21 @@ function verifyWebhookSignature(payload: string, signature: string, secret: stri
   return crypto.timingSafeEqual(expectedSignature, signature);
 }
 
+// Validate GitHub token format and length
+function validateGitHubToken(token: string | undefined): boolean {
+  if (!token || typeof token !== 'string') {
+    return false;
+  }
+  // GitHub tokens are typically 40-255 chars, alphanumeric with underscore/dash
+  if (token.length < 20 || token.length > 255) {
+    return false;
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(token)) {
+    return false;
+  }
+  return true;
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
