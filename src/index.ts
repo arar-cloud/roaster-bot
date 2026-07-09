@@ -16,6 +16,16 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Verify webhook signature using constant-time comparison
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  if (!signature || !secret) {
+    return false;
+  }
+  const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const expectedSignature = `sha256=${hash}`;
+  return crypto.timingSafeEqual(expectedSignature, signature);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
