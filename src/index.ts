@@ -99,6 +99,29 @@ app.use((req: any, res: Response, next) => {
   next();
 });
 
+// Request context initialization middleware
+app.use((req: any, res: Response, next) => {
+  const requestId = generateRequestId();
+  req.requestId = requestId;
+  res.setHeader('X-Request-ID', requestId);
+  
+  // Capture request metadata for audit logging
+  requestContextMap.set(requestId, {
+    requestId,
+    token: req.get('X-GitHub-Token') || '',
+    timestamp: Date.now(),
+    endpoint: req.path,
+    ip: req.ip || req.connection.remoteAddress || 'unknown'
+  });
+  
+  // Cleanup context when response finishes
+  res.on('finish', () => {
+    requestContextMap.delete(requestId);
+  });
+  
+  next();
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
