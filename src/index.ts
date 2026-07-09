@@ -151,6 +151,50 @@ app.use((req: any, res: Response, next) => {
   next();
 });
 
+// Origin validation middleware for webhook endpoint
+function validateOrigin(req: any, res: Response, next: any): boolean {
+  const origin = req.get('origin');
+  const referer = req.get('referer');
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean);
+
+  // If no allowed origins configured, reject
+  if (allowedOrigins.length === 0) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return false;
+  }
+
+  // Validate origin header
+  if (origin && !allowedOrigins.includes(origin)) {
+    res.status(403).json({ error: 'Origin not allowed' });
+    return false;
+  }
+
+  // Validate referer header
+  if (referer) {
+    try {
+      const refererUrl = new URL(referer);
+      const refererOrigin = `${refererUrl.protocol}//${refererUrl.host}`;
+      if (!allowedOrigins.includes(refererOrigin)) {
+        res.status(403).json({ error: 'Referer not allowed' });
+        return false;
+      }
+    } catch (e) {
+      res.status(400).json({ error: 'Invalid referer header' });
+      return false;
+    }
+  }
+
+  // Set secure CORS headers for allowed origins
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Methods', 'POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-GitHub-Token,X-Hub-Signature-256');
+    res.setHeader('Access-Control-Max-Age', '3600');
+  }
+
+  return true;
+}
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
@@ -165,6 +209,11 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
+  // Origin validation for cross-origin requests
+  if (!validateOrigin(req as any, res, undefined)) {
+    return res.status(403).json({ error: 'Cross-origin request rejected' });
+  }
+
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
