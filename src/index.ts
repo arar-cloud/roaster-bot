@@ -328,6 +328,23 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid prompt content' });
     }
 
+    // Sanitize messages and validate structure for API safety
+    const sanitizedMessages = userMessages.map((msg: any) => {
+      if (!msg || typeof msg !== 'object') {
+        throw new Error('Invalid message structure');
+      }
+      const validRoles = ['system', 'user', 'assistant'];
+      if (!validRoles.includes(msg.role)) {
+        throw new Error(`Invalid role: ${msg.role}`);
+      }
+      if (typeof msg.content !== 'string') {
+        throw new Error('Message content must be string');
+      }
+      return { role: msg.role, content: msg.content };
+    });
+
+    auditLog(requestId, 'REQUEST_RECEIVED', { messageCount: sanitizedMessages.length });
+
     auditLog(requestId, 'SESSION_INIT', { model: 'gpt-4o' });
 
     const systemPrompt = `
