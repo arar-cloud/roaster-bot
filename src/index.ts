@@ -118,7 +118,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
+    // Sanitize messages to prevent prompt injection
+    const sanitizedMessages = userMessages.map((m: any) => ({
+      ...m,
+      content: typeof m.content === 'string' ? m.content.replace(/[<>"']/g, (c: string) => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c) : m.content
+    }));
+    const lastMessage = sanitizedMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
