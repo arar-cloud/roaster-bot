@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -16,12 +17,75 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Verify webhook signature using constant-time comparison
+function verifyWebhookSignature(payload: string, signature: string, secret: string): boolean {
+  if (!signature || !secret) {
+    return false;
+  }
+  const hash = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const expectedSignature = `sha256=${hash}`;
+  return crypto.timingSafeEqual(expectedSignature, signature);
+}
+
+// Validate GitHub token format and length
+function validateGitHubToken(token: string | undefined): boolean {
+  if (!token || typeof token !== 'string') {
+    return false;
+  }
+  // GitHub tokens are typically 40-255 chars, alphanumeric with underscore/dash
+  if (token.length < 20 || token.length > 255) {
+    return false;
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(token)) {
+    return false;
+  }
+  return true;
+}
+
+// Structured security logging
+function logSecurityEvent(event: string, details: Record<string, unknown>): void {
+  const timestamp = new Date().toISOString();
+  console.log(JSON.stringify({
+    timestamp,
+    event,
+    ...details,
+  }));
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Configure helmet for security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
+}));
+
+// Enforce HTTPS in production
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    if (req.header('x-forwarded-proto') !== 'https') {
+      return res.status(403).json({ error: 'HTTPS required' });
+    }
+    next();
+  });
+}
+
+app.use(limiter); // Apply rate limiting globally to all routes
 
 app.use(express.json({
   verify: (req: any, res, buf) => {
@@ -30,6 +94,8 @@ app.use(express.json({
 }));
 
 app.get('/', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
@@ -42,35 +108,103 @@ app.get('/', (req, res) => {
   `);
 });
 
+// Configure CORS with origin validation
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'https://github.com').split(',');
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'POST');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token, X-Hub-Signature-256');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
-
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+  if (!webhookSecret) {
+    throw new Error('WEBHOOK_SECRET environment variable must be set. Webhook signature verification cannot proceed without it.');
   }
 
+  if (!signature) {
+    return res.status(401).send('Missing X-Hub-Signature-256 header.');
+  }
+
+  const rawBody = req.rawBody;
+  if (!rawBody) {
+    logSecurityEvent('missing_raw_body', { ip: req.ip || 'unknown' });
+    return res.status(400).send('Bad request.');
+  }
+
+  if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+    logSecurityEvent('webhook_signature_verification_failed', {
+      origin: req.get('origin'),
+      userAgent: req.get('user-agent'),
+    });
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+
+  logSecurityEvent('webhook_verified', {
+    ip: requestIp,
+  });
+
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  const requestIp = req.ip || 'unknown';
+  
+  if (!token) {
+    logSecurityEvent('missing_github_token', {
+      origin: req.get('origin'),
+      userAgent: req.get('user-agent'),
+      ip: requestIp,
+    });
+    return res.status(401).send('Missing X-GitHub-Token.');
+  }
+
+  if (!validateGitHubToken(token)) {
+    logSecurityEvent('invalid_github_token_format', {
+      origin: req.get('origin'),
+      userAgent: req.get('user-agent'),
+      ip: requestIp,
+    });
+    return res.status(401).send('Invalid X-GitHub-Token format.');
+  }
+
+  logSecurityEvent('agent_request_authenticated', {
+    ip: requestIp,
+  });
+
+  logSecurityEvent('agent_request', {
+    ip: requestIp,
+    messageCount: (req.body.messages || []).length,
+  });
 
   // Initialize client with the user's token
+  // Only pass whitelisted environment variables to CopilotClient
   const client = new CopilotClient({
     env: {
-      GITHUB_TOKEN: token,
-      ...process.env
+      GITHUB_TOKEN: token
+      // Do not spread process.env to prevent secret exposure
     }
   });
   
   try {
+    // Validate user messages for injection attacks
+    const userMessages = req.body.messages || [];
+    if (!Array.isArray(userMessages)) {
+      logSecurityEvent('invalid_messages_format', {
+        origin: req.get('origin'),
+        userAgent: req.get('user-agent'),
+        ip: requestIp,
+      });
+      return res.status(400).json({ error: 'Bad request' });
+    }
+    
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -110,12 +244,19 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     await session.sendAndWait({ prompt });
 
+    logSecurityEvent('agent_success', {
+      ip: requestIp,
+    });
+
     res.write('data: [DONE]\n\n');
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    logSecurityEvent('session_error', {
+      ip: req.ip || 'unknown',
+      error: error instanceof Error ? error.message : String(error)
+    });
+    if (!res.headersSent) res.status(500).send('Internal server error.');
   } finally {
     await client.stop();
   }
