@@ -150,6 +150,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
+  logSecurityEvent('webhook_verified', {
+    ip: requestIp,
+  });
+
   const token = req.get('X-GitHub-Token');
   const requestIp = req.ip || 'unknown';
   
@@ -170,6 +174,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     });
     return res.status(401).send('Invalid X-GitHub-Token format.');
   }
+
+  logSecurityEvent('agent_request_authenticated', {
+    ip: requestIp,
+  });
 
   // Initialize client with the user's token
   // Only pass whitelisted environment variables to CopilotClient
