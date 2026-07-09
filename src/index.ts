@@ -42,6 +42,16 @@ function validateGitHubToken(token: string | undefined): boolean {
   return true;
 }
 
+// Structured security logging
+function logSecurityEvent(event: string, details: Record<string, unknown>): void {
+  const timestamp = new Date().toISOString();
+  console.log(JSON.stringify({
+    timestamp,
+    event,
+    ...details,
+  }));
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -130,12 +140,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!rawBody) return res.status(400).send('Missing raw body.');
 
   if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
-    console.warn('Webhook signature verification failed');
+    logSecurityEvent('webhook_signature_verification_failed', {
+      origin: req.get('origin'),
+      userAgent: req.get('user-agent'),
+    });
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) {
+    logSecurityEvent('missing_github_token', {
+      origin: req.get('origin'),
+      userAgent: req.get('user-agent'),
+    });
+    return res.status(401).send('Missing X-GitHub-Token.');
+  }
+
+  if (!validateGitHubToken(token)) {
+    logSecurityEvent('invalid_github_token_format', {
+      origin: req.get('origin'),
+      userAgent: req.get('user-agent'),
+    });
+    return res.status(401).send('Invalid X-GitHub-Token format.');
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
