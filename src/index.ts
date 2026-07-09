@@ -17,6 +17,26 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Security middleware
+app.use(helmet());
+
+// CORS configuration
+const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
+const corsMiddleware = (req: Request, res: Response, next: Function) => {
+  const origin = req.headers.origin || '';
+  if (corsOrigins.length > 0 && corsOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Signature-256');
+  }
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+};
+app.use(corsMiddleware);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -24,9 +44,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+const rootLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(express.json({
+  limit: '10kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    req.rawBody = buf.toString('utf-8');
   }
 }));
 
