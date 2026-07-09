@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -16,6 +17,26 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Security middleware
+app.use(helmet());
+
+// CORS configuration
+const corsOrigins = (process.env.CORS_ORIGINS || '').split(',').filter(Boolean);
+const corsMiddleware = (req: Request, res: Response, next: Function) => {
+  const origin = req.headers.origin || '';
+  if (corsOrigins.length > 0 && corsOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, X-Hub-Signature-256');
+  }
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+    return;
+  }
+  next();
+};
+app.use(corsMiddleware);
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -23,13 +44,21 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+const rootLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 app.use(express.json({
+  limit: '10kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    req.rawBody = buf.toString('utf-8');
   }
 }));
 
-app.get('/', (req, res) => {
+app.get('/', rootLimiter, (req, res) => {
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
@@ -44,19 +73,26 @@ app.get('/', (req, res) => {
 
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
-  const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    return res.status(500).send('Webhook secret not configured');
+  }
 
-  if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+  const signature = req.get('X-Hub-Signature-256');
+  if (!signature) {
+    return res.status(401).send('Missing signature');
+  }
 
-    const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+  const rawBody = req.rawBody;
+  if (!rawBody) return res.status(400).send('Missing raw body.');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
-    }
+  // Compute HMAC-SHA256 signature
+  const hmac = crypto.createHmac('sha256', webhookSecret);
+  const expectedSignature = 'sha256=' + hmac.update(rawBody).digest('hex');
+
+  // Constant-time comparison to prevent timing attacks
+  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    return res.status(401).send('Invalid signature');
   }
 
   const token = req.get('X-GitHub-Token');
@@ -82,7 +118,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
+    // Sanitize messages to prevent prompt injection
+    const sanitizedMessages = userMessages.map((m: any) => ({
+      ...m,
+      content: typeof m.content === 'string' ? m.content.replace(/[<>"']/g, (c: string) => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c) : m.content
+    }));
+    const lastMessage = sanitizedMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
@@ -114,8 +155,21 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    console.error('[API Error]', error instanceof Error ? error.message : 'Unknown error');
+    
+    // Filter error response to prevent information disclosure
+    if (!res.headersSent) {
+      if (error instanceof SyntaxError) {
+        res.status(400).send('Invalid request format');
+      } else if (error instanceof Error && error.message.includes('Message content')) {
+        res.status(400).send('Invalid message content');
+      } else if (error instanceof Error && error.message.includes('message format')) {
+        res.status(400).send('Invalid message format');
+      } else {
+        // Generic error response without internal details
+        res.status(500).send('The roaster overheated.');
+      }
+    }
   } finally {
     await client.stop();
   }
