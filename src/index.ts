@@ -51,7 +51,8 @@ validateEnvironment();
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string;
+      rawBody?: Buffer | string;
+      rawBodyString?: string;
     }
   }
 }
@@ -150,8 +151,10 @@ function validateJsonDepth(obj: any, currentDepth: number = 0): boolean {
 
 app.use(express.json({
   limit: `${MAX_PAYLOAD_SIZE / 1024}kb`,
-  verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+  verify: (req: any, res, buf: Buffer) => {
+    // Capture raw buffer before any middleware mutation
+    req.rawBody = buf;
+    req.rawBodyString = buf.toString('utf8');
     
     // Validate Content-Length header
     const contentLength = parseInt(req.get('content-length') || '0', 10);
@@ -262,11 +265,12 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+    // Use captured raw body Buffer to prevent middleware tampering
+    const rawBodyBuffer = typeof req.rawBody === 'string' ? Buffer.from(req.rawBody, 'utf8') : (req.rawBody || Buffer.alloc(0));
+    if (rawBodyBuffer.length === 0) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
-    const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    const digest = 'sha256=' + hmac.update(rawBodyBuffer).digest('hex');
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
         // Simple check for dev
