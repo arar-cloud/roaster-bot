@@ -83,11 +83,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   const rawBody = req.rawBody;
   if (!rawBody) return res.status(400).send('Missing raw body.');
 
-  const hmac = crypto.createHmac('sha256', webhookSecret);
-  const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
-
-  if (signature !== digest) {
-    return res.status(401).send('Invalid webhook signature.');
+  if (!verifyWebhookSignature(rawBody, signature, webhookSecret)) {
+    console.warn('Webhook signature verification failed');
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   const token = req.get('X-GitHub-Token');
