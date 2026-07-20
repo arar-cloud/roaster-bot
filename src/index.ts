@@ -122,13 +122,17 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     // Constant-time comparison to prevent timing attacks
     let isValid = false;
     try {
+      // Prevent timing attacks with constant-time comparison
       isValid = crypto.timingSafeEqual(Buffer.from(signature || ''), Buffer.from(digest));
     } catch (err) {
+      // Length mismatch or invalid buffers - treat as failed verification
       isValid = false;
+      console.warn('Webhook signature verification failed: buffer comparison error');
     }
 
     if (!isValid) {
-      return res.status(401).json({ error: 'Invalid webhook signature' });
+      console.warn('Webhook signature verification failed: invalid signature');
+      return res.status(401).json({ error: 'Unauthorized' });
     }
     
     // Clean up rawBody cache after successful verification
