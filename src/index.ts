@@ -25,10 +25,23 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '1mb', // Prevent memory exhaustion from oversized payloads
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
 }));
+
+// Request body schema validation middleware
+app.use((req, res, next) => {
+  if (req.method === 'POST' && req.path === '/agent') {
+    const { userMessages } = req.body;
+    if (!userMessages) {
+      res.status(400).json({ error: 'Missing required field: userMessages' });
+      return;
+    }
+  }
+  next();
+});
 
 app.get('/', (req, res) => {
   res.send(`
