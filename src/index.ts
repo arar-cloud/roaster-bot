@@ -204,8 +204,25 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     res.end();
 
   } catch (error) {
-    console.error('Error:', error);
-    if (!res.headersSent) res.status(500).send("The roaster overheated.");
+    // Log detailed error internally for debugging
+    console.error('CopilotClient error:', error instanceof Error ? error.message : String(error));
+    
+    // Return sanitized error response to prevent information disclosure
+    if (!res.headersSent) {
+      if (error instanceof Error) {
+        if (error.message.includes('timeout') || error.message.includes('ECONNREFUSED')) {
+          res.status(503).json({ error: 'Service temporarily unavailable' });
+        } else if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+          res.status(401).json({ error: 'Authentication failed' });
+        } else if (error.message.includes('403') || error.message.includes('Forbidden')) {
+          res.status(403).json({ error: 'Access denied' });
+        } else {
+          res.status(500).json({ error: 'Request processing failed' });
+        }
+      } else {
+        res.status(500).json({ error: 'Request processing failed' });
+      }
+    }
   } finally {
     await client.stop();
   }
