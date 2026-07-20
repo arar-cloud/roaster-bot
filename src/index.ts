@@ -23,6 +23,28 @@ if (!process.env.WEBHOOK_SECRET) {
   process.exit(1);
 }
 
+// Apply security headers middleware
+app.use(helmet());
+
+// CORS and origin validation middleware
+app.use((req, res, next) => {
+  const origin = req.headers.origin as string;
+  // Configure allowed origins from environment or restrict to same-origin
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',');
+  if (origin && allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token, X-Hub-Signature-256');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(204);
+    return;
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
