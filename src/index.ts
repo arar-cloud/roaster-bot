@@ -17,6 +17,12 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Enforce required security configuration
+if (!process.env.WEBHOOK_SECRET) {
+  console.error('FATAL: WEBHOOK_SECRET environment variable is not set. Webhook authentication is disabled.');
+  process.exit(1);
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
