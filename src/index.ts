@@ -116,7 +116,29 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     `;
 
     const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
+    
+    // Sanitize and validate user messages to prevent prompt injection
+    if (!Array.isArray(userMessages)) {
+      res.status(400).json({ error: 'userMessages must be an array' });
+      return;
+    }
+    
+    const maxMessageLength = 2000;
+    const sanitizedMessages = userMessages.map((msg: any) => {
+      if (typeof msg !== 'object' || msg === null) {
+        throw new Error('Each user message must be an object');
+      }
+      if (typeof msg.content !== 'string') {
+        throw new Error('Message content must be a string');
+      }
+      if (msg.content.length > maxMessageLength) {
+        throw new Error(`Message exceeds maximum length of ${maxMessageLength} characters`);
+      }
+      // Remove null bytes and excessive whitespace that could be used in injection attacks
+      return { ...msg, content: msg.content.replace(/\x00/g, '').trim() };
+    });
+    
+    const lastMessage = sanitizedMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
 
     // Create session following SDK docs
