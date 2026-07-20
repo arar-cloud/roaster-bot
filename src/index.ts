@@ -118,6 +118,11 @@ function sanitizeOutput(output: string): string {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Configure trust proxy to prevent X-Forwarded-For spoofing
+// Set to 1 if behind single proxy (e.g., Vercel), true for all proxies, or specific IP
+const trustProxy = process.env.TRUST_PROXY || (process.env.NODE_ENV === 'production' ? 1 : 0);
+app.set('trust proxy', trustProxy);
+
 // Enforce required security configuration
 if (!process.env.WEBHOOK_SECRET) {
   console.error('FATAL: WEBHOOK_SECRET environment variable is not set. Webhook authentication is disabled.');
