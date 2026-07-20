@@ -68,7 +68,15 @@ const agentLimiter = rateLimit({
 app.use(express.json({
   limit: '1mb', // Prevent memory exhaustion from oversized payloads
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    // Store rawBody in scoped cache with unique ID instead of on request object
+    const bodyId = `body_${++cacheCounter}_${Date.now()}`;
+    rawBodyCache.set(bodyId, buf.toString());
+    req.rawBodyId = bodyId;
+    // Clean up old cache entries to prevent memory leaks
+    if (rawBodyCache.size > 100) {
+      const firstKey = rawBodyCache.keys().next().value;
+      rawBodyCache.delete(firstKey);
+    }
   }
 }));
 
@@ -103,7 +111,8 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
   if (webhookSecret && signature) {
-    const rawBody = req.rawBody;
+    const bodyId = (req as any).rawBodyId;
+    const rawBody = bodyId ? rawBodyCache.get(bodyId) : undefined;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
@@ -122,7 +131,7 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     }
     
     // Clean up rawBody cache after successful verification
-    delete req.rawBody;
+    if (bodyId) rawBodyCache.delete(bodyId);
   }
 
   const token = req.get('X-GitHub-Token');
