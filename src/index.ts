@@ -241,6 +241,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global error handler middleware - must come before route handlers
+app.use((err: any, req: Request, res: Response, next: Function) => {
+  // Log detailed error for debugging
+  console.error('Unhandled error:', err);
+  
+  // Return generic error message to client to prevent information disclosure
+  const statusCode = err.statusCode || 500;
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  res.status(statusCode).json({
+    error: isProduction ? 'An error occurred' : err.message,
+  });
+});
+
+// 404 handler
+app.use((req: Request, res: Response) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
 app.get('/', (req, res) => {
   res.send(`
     <html>
