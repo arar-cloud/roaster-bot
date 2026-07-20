@@ -173,13 +173,8 @@ app.use(express.json({
   verify: (req: any, res, buf) => {
     // Store rawBody in scoped cache with unique ID instead of on request object
     const bodyId = `body_${++cacheCounter}_${Date.now()}`;
-    rawBodyCache.set(bodyId, buf.toString());
+    addToRawBodyCache(bodyId, buf.toString());
     req.rawBodyId = bodyId;
-    // Clean up old cache entries to prevent memory leaks
-    if (rawBodyCache.size > 100) {
-      const firstKey = rawBodyCache.keys().next().value;
-      rawBodyCache.delete(firstKey);
-    }
   }
 }));
 
@@ -215,7 +210,7 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
 
   if (webhookSecret && signature) {
     const bodyId = (req as any).rawBodyId;
-    const rawBody = bodyId ? rawBodyCache.get(bodyId) : undefined;
+    const rawBody = bodyId ? getRawBodyFromCache(bodyId) : undefined;
     if (!rawBody) return res.status(400).json({ error: 'Invalid request' });
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
