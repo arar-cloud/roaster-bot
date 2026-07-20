@@ -48,6 +48,40 @@ declare global {
   }
 }
 
+// Sanitize and validate user input to prevent prompt injection
+function sanitizeUserInput(input: string, maxLength: number = 2000): string {
+  if (!input || typeof input !== 'string') {
+    return '';
+  }
+  
+  // Truncate to max length
+  let sanitized = input.substring(0, maxLength);
+  
+  // Remove null bytes and control characters
+  sanitized = sanitized.replace(/\x00/g, '').replace(/[\x01-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+  
+  // Escape backticks and prompt delimiters to prevent injection
+  sanitized = sanitized.replace(/`/g, '\\`').replace(/---/g, '\\-\\-\\-');
+  
+  return sanitized.trim();
+}
+
+function sanitizeOutput(output: string): string {
+  if (!output || typeof output !== 'string') {
+    return '';
+  }
+  
+  // Remove null bytes and control characters
+  let sanitized = output.replace(/\x00/g, '').replace(/[\x01-\x08\x0B-\x0C\x0E-\x1F]/g, '');
+  
+  // Truncate extremely long responses
+  if (sanitized.length > 10000) {
+    sanitized = sanitized.substring(0, 10000) + '... [truncated]';
+  }
+  
+  return sanitized;
+}
+
 const app = express();
 const port = process.env.PORT || 3000;
 
