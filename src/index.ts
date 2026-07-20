@@ -5,11 +5,15 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Request body cache for webhook verification only
+const rawBodyCache = new Map<string, string>();
+let cacheCounter = 0;
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
     interface Request {
-      rawBody?: string;
+      rawBodyId?: string;
     }
   }
 }
