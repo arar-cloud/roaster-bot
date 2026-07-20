@@ -183,13 +183,23 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Invalid token format' });
   }
 
-  // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
-  });
+  // Initialize client with the user's token and validate
+  if (!isValidGitHubToken(token)) {
+    return res.status(400).json({ error: 'Invalid token format or insufficient scope' });
+  }
+  
+  let client: CopilotClient;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token,
+        ...process.env
+      }
+    });
+  } catch (initError) {
+    console.error('CopilotClient initialization failed:', initError instanceof Error ? initError.message : 'Unknown error');
+    return res.status(401).json({ error: 'Authentication failed: invalid token or insufficient scope' });
+  }
   
   try {
     const systemPrompt = `
@@ -259,6 +269,9 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
   } catch (error) {
     // Log detailed error internally for debugging
     console.error('CopilotClient error:', error instanceof Error ? error.message : String(error));
+    
+    // Track token failures for rate limiting
+    trackTokenFailure(token);
     
     // Return sanitized error response to prevent information disclosure
     if (!res.headersSent) {
