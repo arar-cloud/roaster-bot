@@ -6,9 +6,42 @@ import helmet from 'helmet';
 import Ajv from 'ajv';
 import { CopilotClient } from '@github/copilot-sdk';
 
-// Request body cache for webhook verification only
-const rawBodyCache = new Map<string, string>();
+// Request body cache for webhook verification only with size limit and TTL
+const rawBodyCache = new Map<string, { body: string; timestamp: number }>();
+const CACHE_MAX_SIZE = 100;
+const CACHE_TTL_MS = 300000; // 5 minutes
 let cacheCounter = 0;
+
+function addToRawBodyCache(id: string, body: string): void {
+  // Clean expired entries
+  const now = Date.now();
+  for (const [key, value] of rawBodyCache.entries()) {
+    if (now - value.timestamp > CACHE_TTL_MS) {
+      rawBodyCache.delete(key);
+    }
+  }
+  
+  // Enforce size limit with LRU eviction
+  if (rawBodyCache.size >= CACHE_MAX_SIZE) {
+    const firstKey = rawBodyCache.keys().next().value;
+    if (firstKey) rawBodyCache.delete(firstKey);
+  }
+  
+  rawBodyCache.set(id, { body, timestamp: now });
+}
+
+function getRawBodyFromCache(id: string): string | null {
+  const entry = rawBodyCache.get(id);
+  if (!entry) return null;
+  
+  const now = Date.now();
+  if (now - entry.timestamp > CACHE_TTL_MS) {
+    rawBodyCache.delete(id);
+    return null;
+  }
+  
+  return entry.body;
+}
 
 // Token validation and rate limit tracking
 const tokenFailureTracker = new Map<string, { count: number; firstAttempt: number }>();
