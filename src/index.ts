@@ -28,6 +28,12 @@ if (!process.env.WEBHOOK_SECRET) {
   process.exit(1);
 }
 
+// Validate GITHUB_TOKEN at startup
+if (!process.env.GITHUB_TOKEN) {
+  console.error('FATAL: GITHUB_TOKEN environment variable is not set. LLM requests will fail.');
+  process.exit(1);
+}
+
 // Apply security headers middleware
 app.use(helmet());
 
