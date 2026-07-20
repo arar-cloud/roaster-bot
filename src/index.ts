@@ -201,6 +201,15 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     return res.status(401).json({ error: 'Authentication failed: invalid token or insufficient scope' });
   }
   
+  // Helper function to sanitize user input and prevent prompt injection
+  const sanitizeUserInput = (input: string): string => {
+    if (typeof input !== 'string') {
+      throw new Error('Input must be a string');
+    }
+    // Remove null bytes and excessive whitespace
+    return input.replace(/\x00/g, '').trim();
+  };
+  
   try {
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
@@ -236,7 +245,7 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     });
     
     const lastMessage = sanitizedMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = lastMessage ? lastMessage.content : "Roast me.";
+    const prompt = lastMessage ? sanitizeUserInput(lastMessage.content) : "Roast me.";
 
     // Create session following SDK docs
     const session = await client.createSession({
