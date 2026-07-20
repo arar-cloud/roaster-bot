@@ -130,14 +130,46 @@ if (!process.env.GITHUB_TOKEN) {
   process.exit(1);
 }
 
-// Apply security headers middleware
-app.use(helmet());
+// Apply security headers middleware with CSP
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'"],
+    },
+  },
+}));
+
+// Validate and parse allowed origins with strict format checking
+function validateOrigin(origin: string): boolean {
+  if (!origin || typeof origin !== 'string') return false;
+  try {
+    const url = new URL(origin);
+    // In production, only allow HTTPS
+    if (process.env.NODE_ENV === 'production' && url.protocol !== 'https:') {
+      return false;
+    }
+    // Reject wildcard-like origins and suspicious patterns
+    if (origin.includes('*') || origin.includes('..')) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // CORS and origin validation middleware
 app.use((req, res, next) => {
   const origin = req.headers.origin as string;
-  // Configure allowed origins from environment or restrict to same-origin
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',');
+  // Configure allowed origins from environment with strict validation
+  const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000')
+    .split(',')
+    .map((o: string) => o.trim())
+    .filter((o: string) => validateOrigin(o));
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Access-Control-Allow-Credentials', 'true');
