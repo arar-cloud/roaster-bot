@@ -116,6 +116,9 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
+    
+    // Clean up rawBody cache after successful verification
+    delete req.rawBody;
   }
 
   const token = req.get('X-GitHub-Token');
