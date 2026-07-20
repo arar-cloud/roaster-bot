@@ -52,6 +52,15 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Stricter rate limiter for sensitive /agent endpoint
+const agentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 20, // Much stricter limit for authentication/LLM endpoint
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests to /agent endpoint, please try again later',
+});
+
 app.use(express.json({
   limit: '1mb', // Prevent memory exhaustion from oversized payloads
   verify: (req: any, res, buf) => {
