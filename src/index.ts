@@ -194,6 +194,14 @@ const limiter = rateLimit({
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => {
+    // Skip rate limiting for health checks if needed
+    return false;
+  },
+  handler: (req, res) => {
+    console.warn(`Rate limit exceeded for IP: ${req.ip}`);
+    res.status(429).json({ error: 'Too many requests, please try again later.' });
+  },
 });
 
 // Stricter rate limiter for sensitive /agent endpoint
@@ -203,6 +211,12 @@ const agentLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: 'Too many requests to /agent endpoint, please try again later',
+});
+
+// Set request timeout to prevent slow-client attacks (30 seconds)
+app.use((req, res, next) => {
+  req.setTimeout(30000);
+  next();
 });
 
 app.use(express.json({
