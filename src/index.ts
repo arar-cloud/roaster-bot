@@ -113,7 +113,7 @@ app.post('/agent', agentLimiter, async (req: Request, res: Response) => {
   if (webhookSecret && signature) {
     const bodyId = (req as any).rawBodyId;
     const rawBody = bodyId ? rawBodyCache.get(bodyId) : undefined;
-    if (!rawBody) return res.status(400).send('Missing raw body.');
+    if (!rawBody) return res.status(400).json({ error: 'Invalid request' });
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
