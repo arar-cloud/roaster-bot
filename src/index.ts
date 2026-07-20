@@ -3,6 +3,7 @@ import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import Ajv from 'ajv';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Request body cache for webhook verification only
