@@ -10,6 +10,35 @@ import { CopilotClient } from '@github/copilot-sdk';
 const rawBodyCache = new Map<string, string>();
 let cacheCounter = 0;
 
+// Token validation and rate limit tracking
+const tokenFailureTracker = new Map<string, { count: number; firstAttempt: number }>();
+const MAX_TOKEN_FAILURES = 10;
+const TOKEN_FAILURE_WINDOW_MS = 3600000; // 1 hour
+
+function isValidGitHubToken(token: string): boolean {
+  // GitHub tokens typically start with ghp_, ghu_, or ghs_ and are base62-encoded
+  if (!token || typeof token !== 'string') return false;
+  return /^(ghp_|ghu_|ghs_)[A-Za-z0-9_]{36,255}$/.test(token);
+}
+
+function trackTokenFailure(token: string): boolean {
+  const now = Date.now();
+  const tracker = tokenFailureTracker.get(token);
+  
+  if (!tracker) {
+    tokenFailureTracker.set(token, { count: 1, firstAttempt: now });
+    return true;
+  }
+  
+  if (now - tracker.firstAttempt > TOKEN_FAILURE_WINDOW_MS) {
+    tokenFailureTracker.set(token, { count: 1, firstAttempt: now });
+    return true;
+  }
+  
+  tracker.count++;
+  return tracker.count <= MAX_TOKEN_FAILURES;
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
