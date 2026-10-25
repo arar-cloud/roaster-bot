@@ -92,8 +92,19 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Apply security middleware
-app.use(helmet());
+// Apply security headers via Helmet with strict configuration
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'"],
+    },
+  },
+  frameguard: { action: 'deny' },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+  xContentTypeOptions: { nosniff: true },
+}));
 
 // Configure CORS: only allow requests from same origin
 app.use((req, res, next) => {
@@ -128,8 +139,13 @@ const tokenLimiter = rateLimit({
   }
 });
 
+// Global rate limiter applied to all endpoints
+app.use(limiter);
+
+// Configure express.json with strict parsing and size limits
 app.use(express.json({
-  limit: '10kb',
+  limit: '1mb',
+  strict: true,
   verify: (req: any, res, buf) => {
     if (buf) {
       req.rawBody = buf.toString('utf8');
