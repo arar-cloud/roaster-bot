@@ -85,18 +85,22 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const expectedSignature = 'sha256=' + hmac.digest('hex');
 
     // Constant-time comparison to prevent timing attacks and reject unsigned payloads
-    const isValid = crypto.timingSafeEqual(
-      Buffer.from(signature || ''),
-      Buffer.from(expectedSignature)
-    ).catch(() => false);
-    
-    if (!isValid) {
+    try {
+      crypto.timingSafeEqual(
+        Buffer.from(signature || ''),
+        Buffer.from(expectedSignature)
+      );
+    } catch (error) {
       return res.status(401).json({ error: 'Webhook signature verification failed' });
     }
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    return res.status(401).json({ error: 'Missing X-GitHub-Token' });
+  }
 
   // Initialize client with the user's token
   const client = new CopilotClient({
