@@ -120,7 +120,11 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
 
-  if (webhookSecret && signature) {
+  if (webhookSecret) {
+    if (!signature) {
+      console.warn('[SECURITY] Webhook secret configured but signature missing');
+      return res.status(401).json({ error: 'Invalid webhook signature' });
+    }
     const rawBody = req.rawBody;
     if (!rawBody) return res.status(400).send('Missing raw body.');
 
@@ -135,7 +139,8 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
         Buffer.from(expectedSignature)
       );
     } catch (error) {
-      return res.status(401).json({ error: 'Webhook signature verification failed' });
+      console.warn(`[SECURITY] Webhook signature verification failed. Expected: ${expectedSignature}, Received: ${signature}`);
+      return res.status(401).json({ error: 'Invalid webhook signature' });
     }
   }
 
