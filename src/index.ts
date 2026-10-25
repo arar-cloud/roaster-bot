@@ -27,6 +27,21 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Apply security middleware
+app.use(helmet());
+
+// Configure CORS: only allow requests from same origin
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', req.get('origin') === process.env.ALLOWED_ORIGIN ? req.get('origin') : 'null');
+  res.header('Access-Control-Allow-Methods', 'POST, GET');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, X-GitHub-Token');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
