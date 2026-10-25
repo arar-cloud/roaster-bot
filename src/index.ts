@@ -193,11 +193,21 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   }
 
   // Initialize client with the user's token - isolated without spreading process.env
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token
+  let client;
+  try {
+    client = new CopilotClient({
+      env: {
+        GITHUB_TOKEN: token
+      }
+    });
+  } catch (initError) {
+    // Log full error internally for debugging, but return safe message to client
+    console.error('[SECURITY] CopilotClient initialization error:', initError instanceof Error ? initError.message : 'Unknown error');
+    if (!res.headersSent) {
+      return res.status(500).json({ error: 'An error occurred while processing your request. Please try again later.' });
     }
-  });
+    return;
+  }
 
   try {
     // Validate payload to prevent prompt injection and malformed data
@@ -249,17 +259,12 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
         timeoutPromise
       ]);
     } catch (sessionError: any) {
-      const errorMessage = sessionError?.message || 'Unknown error';
-      console.error('Session error:', errorMessage);
+      // Log full error internally for debugging, but return safe message to client
+      console.error('[SECURITY] Session error:', sessionError instanceof Error ? sessionError.message : 'Unknown error');
 
       if (!res.headersSent) {
-        if (errorMessage.includes('timeout')) {
-          res.status(504).json({ error: 'Request timeout' });
-        } else if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
-          res.status(401).json({ error: 'Authentication failed' });
-        } else {
-          res.status(500).json({ error: 'Internal server error' });
-        }
+        // Do not expose error details to client - return generic safe message
+        res.status(500).json({ error: 'An error occurred while processing your request. Please try again later.' });
       }
       return;
     }
