@@ -184,6 +184,15 @@ app.get('/', (req, res) => {
 });
 
 app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) => {
+  // CSRF token validation
+  const csrfToken = req.headers['x-csrf-token'] as string;
+  if (!csrfToken || !validateCSRFToken(csrfToken)) {
+    console.warn(`[SECURITY] CSRF token validation failed. Token: ${csrfToken ? 'present but invalid' : 'missing'}. IP: ${req.ip}`);
+    return res.status(403).json({ error: 'CSRF token invalid or missing' });
+  }
+
+  console.info(`[AUDIT] Valid CSRF token accepted. IP: ${req.ip}`);
+
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
   const webhookSecret = process.env.WEBHOOK_SECRET;
@@ -207,7 +216,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
         Buffer.from(expectedSignature)
       );
     } catch (error) {
-      console.warn(`[SECURITY] Webhook signature verification failed. Expected: ${expectedSignature}, Received: ${signature}`);
+      console.warn(`[SECURITY] Webhook signature verification failed. Expected: ${expectedSignature}, Received: ${signature}. IP: ${req.ip}`);
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
   }
