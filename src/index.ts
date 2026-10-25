@@ -26,6 +26,24 @@ function isValidGitHubToken(token: string): boolean {
   return true;
 }
 
+// Sanitize user input to prevent prompt injection
+function sanitizeInput(input: unknown): string {
+  if (typeof input !== 'string') {
+    throw new Error('Invalid input: must be a string');
+  }
+  // Limit input length to prevent excessively long prompts
+  if (input.length > 4096) {
+    throw new Error('Input exceeds maximum length of 4096 characters');
+  }
+  // Remove control characters and suspicious prompt directives
+  let sanitized = input
+    .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+    .replace(/\\n\s*system\s*:/gi, '') // Remove system directive attempts
+    .replace(/\\n\s*admin\s*:/gi, '') // Remove admin directive attempts
+    .trim();
+  return sanitized;
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
