@@ -50,8 +50,11 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '10kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    if (buf) {
+      req.rawBody = buf.toString('utf8');
+    }
   }
 }));
 
