@@ -2,7 +2,18 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
+
+// Constant-time string comparison to prevent timing attacks
+function constantTimeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 // Extend Express Request type properly
 declare global {
