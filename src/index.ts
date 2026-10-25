@@ -53,9 +53,16 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    const expectedSignature = 'sha256=' + hmac.digest('hex');
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    // Constant-time comparison to prevent timing attacks and reject unsigned payloads
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(signature || ''),
+      Buffer.from(expectedSignature)
+    ).catch(() => false);
+    
+    if (!isValid) {
+      return res.status(401).json({ error: 'Webhook signature verification failed' });
     }
   }
 
