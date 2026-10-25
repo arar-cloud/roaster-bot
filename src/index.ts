@@ -71,11 +71,25 @@ app.use((req, res, next) => {
   next();
 });
 
+// Global rate limiter
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
   standardHeaders: true,
   legacyHeaders: false,
+});
+
+// Per-token rate limiter to prevent abuse via multiple tokens
+const tokenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 20, // Stricter per-token limit
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Use token hash as key to avoid exposing token in memory
+    const token = req.headers['x-github-token'] as string;
+    return token ? crypto.createHash('sha256').update(token).digest('hex') : 'unknown';
+  }
 });
 
 app.use(express.json({
