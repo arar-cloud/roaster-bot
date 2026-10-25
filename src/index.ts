@@ -80,6 +80,25 @@ function validateAgentPayload(body: any): { message: string; context?: string } 
   return { message, context };
 }
 
+// CSRF token management
+const csrfTokens = new Map<string, number>();
+const CSRF_TOKEN_EXPIRY = 60 * 60 * 1000; // 1 hour
+
+const generateCSRFToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+const validateCSRFToken = (token: string): boolean => {
+  const timestamp = csrfTokens.get(token);
+  if (!timestamp) return false;
+  
+  const isValid = Date.now() - timestamp < CSRF_TOKEN_EXPIRY;
+  if (isValid) {
+    csrfTokens.delete(token);
+  }
+  return isValid;
+};
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -154,12 +173,15 @@ app.use(express.json({
 }));
 
 app.get('/', (req, res) => {
+  const csrfToken = generateCSRFToken();
+  csrfTokens.set(csrfToken, Date.now());
   res.send(`
     <html>
       <body style="background: #1a1a1a; color: #ff4444; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
         <div style="text-align: center;">
           <h1 style="font-size: 3rem;">🔥 The Roaster is Online 🔥</h1>
           <p style="color: #ccc;">Prepare your code for total annihilation.</p>
+          <input type="hidden" id="csrfToken" value="${csrfToken}">
         </div>
       </body>
     </html>
