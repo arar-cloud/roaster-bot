@@ -166,7 +166,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
 
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const prompt = sanitizeInput(lastMessage ? lastMessage.content : "Roast me.");
+    const sanitizedPrompt = sanitizeInput(lastMessage ? lastMessage.content : "Roast me.");
 
     // Create session following SDK docs
     const session = await client.createSession({
@@ -191,7 +191,31 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
       }
     });
 
-    await session.sendAndWait({ prompt });
+    // Create timeout promise to prevent hanging requests (30 second max)
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Request timeout')), 30000);
+    });
+
+    try {
+      await Promise.race([
+        session.sendAndWait({ prompt: sanitizedPrompt }),
+        timeoutPromise
+      ]);
+    } catch (sessionError: any) {
+      const errorMessage = sessionError?.message || 'Unknown error';
+      console.error('Session error:', errorMessage);
+      
+      if (!res.headersSent) {
+        if (errorMessage.includes('timeout')) {
+          res.status(504).json({ error: 'Request timeout' });
+        } else if (errorMessage.includes('authentication') || errorMessage.includes('401')) {
+          res.status(401).json({ error: 'Authentication failed' });
+        } else {
+          res.status(500).json({ error: 'Internal server error' });
+        }
+      }
+      return;
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
