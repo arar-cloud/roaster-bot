@@ -151,11 +151,16 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
     return res.status(401).json({ error: 'Missing X-GitHub-Token' });
   }
 
-  // Initialize client with the user's token
+  // Validate GitHub token format
+  if (!isValidGitHubToken(token)) {
+    console.warn('[SECURITY] GitHub token format invalid');
+    return res.status(401).json({ error: 'Invalid GitHub token format' });
+  }
+
+  // Initialize client with the user's token - isolated without spreading process.env
   const client = new CopilotClient({
     env: {
-      GITHUB_TOKEN: token,
-      ...process.env
+      GITHUB_TOKEN: token
     }
   });
 
