@@ -15,6 +15,17 @@ function constantTimeCompare(a: string, b: string): boolean {
   return result === 0;
 }
 
+// Validate GitHub token format
+function isValidGitHubToken(token: string): boolean {
+  if (!token || typeof token !== 'string') return false;
+  // GitHub tokens typically start with 'gh' or 'ghs_' and are alphanumeric + underscore
+  // Personal access tokens (classic) are 40 chars, new format varies but typically 36+ chars
+  if (token.length < 20 || token.length > 255) return false;
+  // Only allow alphanumeric, underscore, and hyphen
+  if (!/^[a-zA-Z0-9_-]+$/.test(token)) return false;
+  return true;
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
