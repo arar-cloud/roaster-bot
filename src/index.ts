@@ -215,8 +215,9 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
         Buffer.from(signature || ''),
         Buffer.from(expectedSignature)
       );
+      console.info(`[AUDIT] Webhook signature verified successfully. IP: ${req.ip}, Timestamp: ${new Date().toISOString()}`);
     } catch (error) {
-      console.warn(`[SECURITY] Webhook signature verification failed. Expected: ${expectedSignature}, Received: ${signature}. IP: ${req.ip}`);
+      console.warn(`[SECURITY] Webhook signature verification failed. Expected: ${expectedSignature.substring(0, 16)}..., Received: ${signature ? signature.substring(0, 16) + '...' : 'none'}. IP: ${req.ip}, Timestamp: ${new Date().toISOString()}`);
       return res.status(401).json({ error: 'Invalid webhook signature' });
     }
   }
