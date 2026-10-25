@@ -45,6 +45,41 @@ function sanitizeInput(input: unknown): string {
   return sanitized;
 }
 
+// Validate and sanitize agent endpoint payload
+function validateAgentPayload(body: any): { message: string; context?: string } {
+  const MAX_MESSAGE_LENGTH = 5000;
+  const MAX_CONTEXT_LENGTH = 10000;
+
+  if (!body || typeof body !== 'object') {
+    throw new Error('Payload must be a JSON object');
+  }
+
+  const { message, context } = body;
+
+  if (typeof message !== 'string' || message.trim() === '') {
+    console.warn('[SECURITY] Invalid message: not a string or empty');
+    throw new Error('Message must be a non-empty string');
+  }
+
+  if (message.length > MAX_MESSAGE_LENGTH) {
+    console.warn(`[SECURITY] Message exceeds max length: ${message.length} > ${MAX_MESSAGE_LENGTH}`);
+    throw new Error(`Message must not exceed ${MAX_MESSAGE_LENGTH} characters`);
+  }
+
+  if (context !== undefined) {
+    if (typeof context !== 'string') {
+      console.warn('[SECURITY] Context invalid: not a string');
+      throw new Error('Context must be a string if provided');
+    }
+    if (context.length > MAX_CONTEXT_LENGTH) {
+      console.warn(`[SECURITY] Context exceeds max length: ${context.length} > ${MAX_CONTEXT_LENGTH}`);
+      throw new Error(`Context must not exceed ${MAX_CONTEXT_LENGTH} characters`);
+    }
+  }
+
+  return { message, context };
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -165,6 +200,9 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
   });
 
   try {
+    // Validate payload to prevent prompt injection and malformed data
+    const { message, context } = validateAgentPayload(req.body);
+
     const systemPrompt = `
       You are 'The Roaster' 🌶️💀.
       Your goal is to DESTROY the user's self-esteem by roasting their code.
@@ -175,9 +213,7 @@ app.post('/agent', limiter, tokenLimiter, async (req: Request, res: Response) =>
       3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
     `;
 
-    const userMessages = req.body.messages || [];
-    const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
-    const sanitizedPrompt = sanitizeInput(lastMessage ? lastMessage.content : "Roast me.");
+    const sanitizedPrompt = sanitizeInput(message);
 
     // Create session following SDK docs
     const session = await client.createSession({
