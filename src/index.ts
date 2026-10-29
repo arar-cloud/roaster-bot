@@ -14,6 +14,17 @@ declare global {
 }
 
 const app = express();
+
+const clientCache = new Map<string, CopilotClient>();
+
+function getCopilotClient(token: string, env: NodeJS.ProcessEnv): CopilotClient {
+    let client = clientCache.get(token);
+    if (!client) {
+        client = new CopilotClient({ env });
+        clientCache.set(token, client);
+    }
+    return client;
+}
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
@@ -23,6 +34,10 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(express.json({ limit: '100kb' }));
+// Raw body capture is limited to the webhook route below.
+app.use('/webhook', express.json({ limit: '100kb', verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); } }));
+app.use((_req, _res, next) => next());
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
@@ -42,6 +57,9 @@ app.get('/', (req, res) => {
   `);
 });
 
+// NOTE: express-rate-limit uses an in-memory store by default. On Vercel each
+// serverless instance keeps its own counter, so this limit is per-instance only.
+// Use a shared store or an edge-level limit for a global guarantee.
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
@@ -53,9 +71,11 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
 
     const hmac = crypto.createHmac('sha256', webhookSecret);
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
+    const sigBuf = Buffer.from(signature);
+    const digestBuf = Buffer.from(digest);
 
-    if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+    if (sigBuf.length !== digestBuf.length || !crypto.timingSafeEqual(sigBuf, digestBuf)) {
+      return res.status(401).send('Invalid signature.');
     }
   }
 
@@ -63,11 +83,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
+  const client = getCopilotClient(token, {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    GITHUB_TOKEN: token
   });
   
   try {
@@ -117,7 +136,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    // Cached client is reused across requests; do not stop it per request.
   }
 });
 
