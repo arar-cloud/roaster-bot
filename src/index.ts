@@ -74,11 +74,10 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   if (!token) return res.status(401).send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
-  const client = new CopilotClient({
-    env: {
-      GITHUB_TOKEN: token,
-      ...process.env
-    }
+  const client = getCopilotClient(token, {
+    PATH: process.env.PATH,
+    HOME: process.env.HOME,
+    GITHUB_TOKEN: token
   });
   
   try {
@@ -128,7 +127,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     console.error('Error:', error);
     if (!res.headersSent) res.status(500).send("The roaster overheated.");
   } finally {
-    await client.stop();
+    // Cached client is reused across requests; do not stop it per request.
   }
 });
 
