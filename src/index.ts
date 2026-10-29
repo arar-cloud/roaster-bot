@@ -34,6 +34,10 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(express.json({ limit: '100kb' }));
+// Raw body capture is limited to the webhook route below.
+app.use('/webhook', express.json({ limit: '100kb', verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); } }));
+app.use((_req, _res, next) => next());
 app.use(express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
