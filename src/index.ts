@@ -14,6 +14,17 @@ declare global {
 }
 
 const app = express();
+
+const clientCache = new Map<string, CopilotClient>();
+
+function getCopilotClient(token: string, env: NodeJS.ProcessEnv): CopilotClient {
+    let client = clientCache.get(token);
+    if (!client) {
+        client = new CopilotClient({ env });
+        clientCache.set(token, client);
+    }
+    return client;
+}
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
