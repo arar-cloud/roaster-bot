@@ -53,6 +53,9 @@ app.get('/', (req, res) => {
   `);
 });
 
+// NOTE: express-rate-limit uses an in-memory store by default. On Vercel each
+// serverless instance keeps its own counter, so this limit is per-instance only.
+// Use a shared store or an edge-level limit for a global guarantee.
 app.post('/agent', limiter, async (req: Request, res: Response) => {
   // Webhook signature verification
   const signature = req.get('X-Hub-Signature-256');
