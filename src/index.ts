@@ -4,6 +4,34 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+// Reuse one CopilotClient per token instead of creating one per request.
+const copilotClients = new Map<string, CopilotClient>();
+
+// Pass only the variables the SDK needs instead of the full process.env.
+function buildClientEnv(token: string): Record<string, string> {
+  const env: Record<string, string> = { GITHUB_TOKEN: token };
+  for (const key of ['PATH', 'HOME']) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
+export function getCopilotClient(token: string): CopilotClient {
+  let client = copilotClients.get(token);
+  if (!client) {
+    client = new CopilotClient({ env: buildClientEnv(token) } as any);
+    copilotClients.set(token, client);
+  }
+  return client;
+}
+
+export async function stopAllCopilotClients(): Promise<void> {
+  const clients = [...copilotClients.values()];
+  copilotClients.clear();
+  await Promise.allSettled(clients.map((c) => c.stop()));
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
