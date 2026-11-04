@@ -16,6 +16,24 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Centralized request validation: every webhook request must carry a raw body
+function requireRawBody(req: Request, res: Response, next: () => void): void {
+  if (typeof req.rawBody !== 'string' || req.rawBody.length === 0) {
+    res.status(400).json({ error: 'Missing raw request body' });
+    return;
+  }
+  next();
+}
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason instanceof Error ? reason.message : reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+  process.exit(1);
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -23,7 +41,10 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
+
 app.use(express.json({
+  limit: '100kb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
