@@ -2,7 +2,14 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
-import { CopilotClient } from '@github/copilot-sdk';
+import type { CopilotClient as CopilotClientType } from '@github/copilot-sdk';
+
+// Load the SDK lazily so module initialization (serverless cold start) does not pay for it.
+let copilotSdkPromise: Promise<typeof import('@github/copilot-sdk')> | undefined;
+function loadCopilotSdk(): Promise<typeof import('@github/copilot-sdk')> {
+  copilotSdkPromise ??= import('@github/copilot-sdk');
+  return copilotSdkPromise;
+}
 
 // Reuse one CopilotClient per token instead of creating one per request.
 const copilotClients = new Map<string, CopilotClient>();
