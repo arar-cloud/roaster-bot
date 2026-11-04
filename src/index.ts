@@ -16,6 +16,15 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason instanceof Error ? reason.message : reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+  process.exit(1);
+});
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
