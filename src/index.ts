@@ -52,6 +52,7 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '16kb',
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
