@@ -16,6 +16,8 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+export default app;
+
 // NOTE: Uses the default in-memory store, so limits reset per serverless instance
 // and apply only to routes that mount this limiter (currently /agent).
 const limiter = rateLimit({
@@ -126,6 +128,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+if (!process.env.VERCEL) app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
