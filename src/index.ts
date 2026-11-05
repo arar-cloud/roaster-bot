@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -14,8 +15,17 @@ declare global {
 }
 
 const app = express();
+app.disable('x-powered-by');
+app.use(helmet({
+  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+  referrerPolicy: { policy: 'no-referrer' },
+}));
 const port = process.env.PORT || 3000;
 
+export default app;
+
+// NOTE: Uses the default in-memory store, so limits reset per serverless instance
+// and apply only to routes that mount this limiter (currently /agent).
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -23,9 +33,17 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
+
+// Single source of truth for the landing page: public/index.html
+app.use(express.static('public'));
+
 app.use(express.json({
+  limit: '100kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    if (req.is('application/json')) {
+      req.rawBody = buf.toString();
+    }
   }
 }));
 
@@ -121,6 +139,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+if (!process.env.VERCEL) app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
