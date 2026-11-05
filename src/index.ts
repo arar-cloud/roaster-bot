@@ -14,6 +14,7 @@ declare global {
 }
 
 const app = express();
+app.use(helmet());
 const port = process.env.PORT || 3000;
 
 export default app;
