@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 const app = express();
 const port = process.env.PORT || 3000;
+export default app;
 // NOTE: Uses the default in-memory store, so limits reset per serverless instance
 // and apply only to routes that mount this limiter (currently /agent).
 const limiter = rateLimit({
@@ -103,6 +104,7 @@ app.post('/agent', limiter, async (req, res) => {
         await client.stop();
     }
 });
-app.listen(port, () => {
-    console.log(`Server running on ${port}`);
-});
+if (!process.env.VERCEL)
+    app.listen(port, () => {
+        console.log(`Server running on ${port}`);
+    });
