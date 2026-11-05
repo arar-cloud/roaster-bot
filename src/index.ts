@@ -14,7 +14,11 @@ declare global {
 }
 
 const app = express();
-app.use(helmet());
+app.disable('x-powered-by');
+app.use(helmet({
+  strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+  referrerPolicy: { policy: 'no-referrer' },
+}));
 const port = process.env.PORT || 3000;
 
 export default app;
