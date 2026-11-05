@@ -21,7 +21,7 @@ app.use(express.static('public'));
 app.use(express.json({
     limit: '100kb',
     verify: (req, res, buf) => {
-        if (req.path === '/agent') {
+        if (req.is('application/json')) {
             req.rawBody = buf.toString();
         }
     }
