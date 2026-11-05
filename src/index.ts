@@ -16,6 +16,8 @@ declare global {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// NOTE: Uses the default in-memory store, so limits reset per serverless instance
+// and apply only to routes that mount this limiter (currently /agent).
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
@@ -24,8 +26,11 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '100kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    if (req.path === '/agent') {
+      req.rawBody = buf.toString();
+    }
   }
 }));
 
