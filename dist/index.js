@@ -4,7 +4,11 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 const app = express();
-app.use(helmet());
+app.disable('x-powered-by');
+app.use(helmet({
+    strictTransportSecurity: { maxAge: 31536000, includeSubDomains: true },
+    referrerPolicy: { policy: 'no-referrer' },
+}));
 const port = process.env.PORT || 3000;
 export default app;
 // NOTE: Uses the default in-memory store, so limits reset per serverless instance
