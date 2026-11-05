@@ -23,7 +23,8 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
-app.use(express.json({
+app.use('/agent', limiter);
+app.use('/agent', express.json({
   verify: (req: any, res, buf) => {
     req.rawBody = buf.toString();
   }
