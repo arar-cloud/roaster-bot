@@ -28,6 +28,8 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
+
 // Single source of truth for the landing page: public/index.html
 app.use(express.static('public'));
 
