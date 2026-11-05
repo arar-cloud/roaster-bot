@@ -27,6 +27,9 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Single source of truth for the landing page: public/index.html
+app.use(express.static('public'));
+
 app.use(express.json({
   limit: '100kb',
   verify: (req: any, res, buf) => {
