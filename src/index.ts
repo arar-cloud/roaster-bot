@@ -24,8 +24,11 @@ const limiter = rateLimit({
 });
 
 app.use(express.json({
+  limit: '100kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    if (req.path === '/agent') {
+      req.rawBody = buf.toString();
+    }
   }
 }));
 
