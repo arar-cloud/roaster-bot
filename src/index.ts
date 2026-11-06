@@ -6,6 +6,9 @@ import { CopilotClient } from '@github/copilot-sdk';
 
 let sharedCopilotClient: CopilotClient | null = null;
 
+// Built once at module load instead of on every /agent request.
+const ROASTER_SYSTEM_PROMPT_TEMPLATE_PLACEHOLDER = '';
+
 // Reuse one client across requests instead of constructing a new client per /agent call.
 function getCopilotClient(options?: ConstructorParameters<typeof CopilotClient>[0]): CopilotClient {
   if (!sharedCopilotClient) {
