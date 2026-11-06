@@ -14,6 +14,8 @@ declare global {
 }
 
 const app = express();
+// Honor X-Forwarded-For from the Vercel/edge proxy so per-client rate limits apply to the real client IP
+app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
