@@ -9,7 +9,7 @@ let sharedCopilotClient: CopilotClient | null = null;
 // Reuse one client across requests instead of constructing a new client per /agent call.
 function getCopilotClient(options?: ConstructorParameters<typeof CopilotClient>[0]): CopilotClient {
   if (!sharedCopilotClient) {
-    sharedCopilotClient = new CopilotClient(options);
+    sharedCopilotClient = new CopilotClient({ env: pickCopilotEnv(), ...options });
   }
   return sharedCopilotClient;
 }
