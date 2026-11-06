@@ -18,6 +18,10 @@ const app = express();
 app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
 
+if (!process.env.WEBHOOK_SECRET) {
+  console.warn('[security] WEBHOOK_SECRET is not set: webhook signature verification is disabled. Set WEBHOOK_SECRET in production.');
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
