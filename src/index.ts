@@ -4,6 +4,27 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+let sharedCopilotClient: CopilotClient | null = null;
+
+// Reuse one client across requests instead of constructing a new client per /agent call.
+function getCopilotClient(options?: ConstructorParameters<typeof CopilotClient>[0]): CopilotClient {
+  if (!sharedCopilotClient) {
+    sharedCopilotClient = new CopilotClient(options);
+  }
+  return sharedCopilotClient;
+}
+
+// Pass only the environment variables the Copilot CLI needs instead of the whole process.env.
+function pickCopilotEnv(): Record<string, string> {
+  const allowed = ['PATH', 'HOME', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN', 'XDG_CONFIG_HOME'];
+  const env: Record<string, string> = {};
+  for (const key of allowed) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
