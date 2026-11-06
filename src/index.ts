@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -14,6 +15,7 @@ declare global {
 }
 
 const app = express();
+app.use(helmet());
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
