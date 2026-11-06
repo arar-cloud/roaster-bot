@@ -71,7 +71,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 
   const token = req.get('X-GitHub-Token');
-  if (!token) return res.status(401).send('Missing X-GitHub-Token.');
+  if (!token) return res.status(401).json({ error: 'Missing X-GitHub-Token' });send('Missing X-GitHub-Token.');
 
   // Initialize client with the user's token
   const client = new CopilotClient({
