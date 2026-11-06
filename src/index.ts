@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -14,7 +15,37 @@ declare global {
 }
 
 const app = express();
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"]
+      }
+    },
+    crossOriginEmbedderPolicy: false,
+    referrerPolicy: { policy: 'no-referrer' }
+  })
+);
 const port = process.env.PORT || 3000;
+
+const MAX_TOKEN_LENGTH = 256;
+const TOKEN_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
+// Returns the token only if it is present, within length limits, and uses an allowed charset.
+function getValidatedGitHubToken(header: string | string[] | undefined): string | null {
+  if (typeof header !== 'string') return null;
+  const token = header.trim();
+  if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) return null;
+  if (!TOKEN_PATTERN.test(token)) return null;
+  return token;
+}
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -55,7 +86,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+        return res.status(401).json({ error: 'Invalid webhook signature' });
     }
   }
 
