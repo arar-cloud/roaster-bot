@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { CopilotClient } from '@github/copilot-sdk';
 
 // Extend Express Request type properly
@@ -14,6 +15,7 @@ declare global {
 }
 
 const app = express();
+app.use(helmet());
 const port = process.env.PORT || 3000;
 
 const limiter = rateLimit({
@@ -55,7 +57,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+        return res.status(401).json({ error: 'Invalid webhook signature' });
     }
   }
 
