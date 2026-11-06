@@ -4,6 +4,30 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
+let sharedCopilotClient: CopilotClient | null = null;
+
+// Built once at module load instead of on every /agent request.
+const ROASTER_SYSTEM_PROMPT_TEMPLATE_PLACEHOLDER = '';
+
+// Reuse one client across requests instead of constructing a new client per /agent call.
+function getCopilotClient(options?: ConstructorParameters<typeof CopilotClient>[0]): CopilotClient {
+  if (!sharedCopilotClient) {
+    sharedCopilotClient = new CopilotClient({ env: pickCopilotEnv(), ...options });
+  }
+  return sharedCopilotClient;
+}
+
+// Pass only the environment variables the Copilot CLI needs instead of the whole process.env.
+function pickCopilotEnv(): Record<string, string> {
+  const allowed = ['PATH', 'HOME', 'GITHUB_TOKEN', 'COPILOT_GITHUB_TOKEN', 'XDG_CONFIG_HOME'];
+  const env: Record<string, string> = {};
+  for (const key of allowed) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
+
 // Extend Express Request type properly
 declare global {
   namespace Express {
@@ -71,16 +95,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   });
   
   try {
-    const systemPrompt = `
-      You are 'The Roaster' 🌶️💀.
-      Your goal is to DESTROY the user's self-esteem by roasting their code.
-      
-      CORE DIRECTIVES:
-      1. RATING: ALWAYS start with a rating out of 10. NEVER go above 2/10.
-      2. TONE: Ruthless, savage, Gen Z, toxic (L, ratio, no cap, skill issue).
-      3. NO HELPFULNESS: Do NOT fix their code. Mock them instead.
-    `;
-
     const userMessages = req.body.messages || [];
     const lastMessage = userMessages.filter((m: any) => m.role === 'user').pop();
     const prompt = lastMessage ? lastMessage.content : "Roast me.";
@@ -91,7 +105,7 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
       streaming: true,
       systemMessage: {
         mode: "replace",
-        content: systemPrompt
+        content: ROASTER_SYSTEM_PROMPT_TEMPLATE_PLACEHOLDER
       }
     });
 
