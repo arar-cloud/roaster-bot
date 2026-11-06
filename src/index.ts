@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import crypto from 'crypto';
+import { pathToFileURL } from 'url';
 import rateLimit from 'express-rate-limit';
 import { CopilotClient } from '@github/copilot-sdk';
 
@@ -14,9 +15,13 @@ declare global {
 }
 
 const app = express();
+export default app;
 // Honor X-Forwarded-For from the Vercel/edge proxy so per-client rate limits apply to the real client IP
 app.set('trust proxy', 1);
 const port = process.env.PORT || 3000;
+// Only start the HTTP listener when this module is the process entry point (dev/start),
+// not when it is imported by the serverless entry in api/index.ts.
+const isDirectRun = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (!process.env.WEBHOOK_SECRET) {
   console.warn('[security] WEBHOOK_SECRET is not set: webhook signature verification is disabled. Set WEBHOOK_SECRET in production.');
@@ -127,6 +132,6 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
   }
 });
 
-app.listen(port, () => {
+if (isDirectRun) app.listen(port, () => {
   console.log(`Server running on ${port}`);
 });
