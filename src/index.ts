@@ -18,6 +18,18 @@ const app = express();
 app.use(helmet());
 const port = process.env.PORT || 3000;
 
+const MAX_TOKEN_LENGTH = 256;
+const TOKEN_PATTERN = /^[A-Za-z0-9_.-]+$/;
+
+// Returns the token only if it is present, within length limits, and uses an allowed charset.
+function getValidatedGitHubToken(header: string | string[] | undefined): string | null {
+  if (typeof header !== 'string') return null;
+  const token = header.trim();
+  if (token.length === 0 || token.length > MAX_TOKEN_LENGTH) return null;
+  if (!TOKEN_PATTERN.test(token)) return null;
+  return token;
+}
+
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: 100,
