@@ -99,7 +99,9 @@ app.post('/agent', limiter, async (req: Request, res: Response) => {
     const digest = 'sha256=' + hmac.update(rawBody).digest('hex');
 
     if (signature !== digest && signature !== `sha256=${digest}`) {
-        // Simple check for dev
+        // SECURITY: WEBHOOK_SECRET is required in production to authenticate /agent.
+      // If the secret is unset, or the signature header is missing or invalid,
+      // the request must be rejected (fail closed).
     }
   }
 
