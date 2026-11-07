@@ -17,6 +17,10 @@ declare global {
 const app = express();
 
 app.disable('x-powered-by');
+// Vercel terminates TLS and forwards through one platform proxy hop.
+// Trust exactly one hop so req.ip and express-rate-limit use the real client IP
+// without trusting arbitrary client-supplied X-Forwarded-For chains.
+app.set('trust proxy', 1);
 app.use(
   helmet({
     contentSecurityPolicy: {
