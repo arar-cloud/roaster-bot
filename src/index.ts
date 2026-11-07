@@ -15,6 +15,19 @@ declare global {
 }
 
 const app = express();
+
+app.disable('x-powered-by');
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
+    },
+  })
+);
+
 export default app;
 const port = process.env.PORT || 3000;
 
