@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
-    "@types/express-rate-limit": "^6.0.2",
     "@types/node": "^25.0.10",
     "typescript": "^5.9.3"
   }
