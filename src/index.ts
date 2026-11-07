@@ -23,9 +23,22 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+app.use(limiter);
+
 app.use(express.json({
+  limit: '100kb',
   verify: (req: any, res, buf) => {
-    req.rawBody = buf.toString();
+    let cachedRawBody: string | undefined;
+    Object.defineProperty(req, 'rawBody', {
+      configurable: true,
+      enumerable: false,
+      get() {
+        if (cachedRawBody === undefined) {
+          cachedRawBody = buf.toString();
+        }
+        return cachedRawBody;
+      },
+    });
   }
 }));
 
