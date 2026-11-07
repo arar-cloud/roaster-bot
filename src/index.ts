@@ -29,6 +29,11 @@ const limiter = rateLimit({
 
 app.use(limiter);
 
+app.get('/', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=300');
+  res.type('html').send(LANDING_PAGE_HTML);
+});
+
 app.use(express.json({
   limit: '100kb',
   verify: (req: any, res, buf) => {
